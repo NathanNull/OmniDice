@@ -1,0 +1,9 @@
+(technically this is ambiguous but I'm using Pratt parsing so who cares)
+expr    := identifier | number | dice | binop | unop | bracket
+identifier := letter alphanumeric*
+number  := int | float
+int     := digit*
+float   := digit+ "." digit*
+binop   := expr ("+" | "-" | "*" | "/" | "d") expr -- separate dice out later, add custom die support {...}
+unop    := "-" expr
+bracket :=  "(" expr ")"
