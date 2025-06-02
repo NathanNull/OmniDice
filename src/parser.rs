@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(PartialEq)]
-pub enum OperatorType {
+pub enum OpType {
     Infix,
     Prefix,
     Postfix,
@@ -184,16 +184,16 @@ impl Parser {
             ExprContents::Binop(binop) => self.decide_type(&binop.lhs.contents).decide_op_type(
                 self.decide_type(&binop.rhs.contents),
                 binop.op,
-                OperatorType::Infix,
+                OpType::Infix,
             ),
             ExprContents::Prefix(prefix) => Datatype::Void.decide_op_type(
                 self.decide_type(&prefix.rhs.contents),
                 prefix.prefix,
-                OperatorType::Prefix,
+                OpType::Prefix,
             ),
             ExprContents::Postfix(postfix) => self
                 .decide_type(&postfix.lhs.contents)
-                .decide_op_type(Datatype::Void, postfix.postfix, OperatorType::Postfix),
+                .decide_op_type(Datatype::Void, postfix.postfix, OpType::Postfix),
             ExprContents::Assign(assign) => self.decide_type(&assign.val.contents),
         }
     }
@@ -233,7 +233,7 @@ impl Parser {
             Token::Op(op) => {
                 let ((), r_bp) = prefix_binding_power(op);
                 let rhs = self.parse_expr(r_bp);
-                self.make_expr(VOID.contents, rhs, op, OperatorType::Prefix)
+                self.make_expr(VOID.contents, rhs, op, OpType::Prefix)
             }
             Token::LBracket => {
                 if self.peek() == Token::RBracket {
@@ -264,7 +264,7 @@ impl Parser {
                     break;
                 }
                 self.next();
-                lhs = self.make_expr(lhs, VOID.contents, op, OperatorType::Postfix);
+                lhs = self.make_expr(lhs, VOID.contents, op, OpType::Postfix);
                 continue;
             }
             let (l_bp, r_bp) = infix_binding_power(op);
@@ -273,7 +273,7 @@ impl Parser {
             }
             self.next();
             let rhs = self.parse_expr(r_bp);
-            lhs = self.make_expr(lhs, rhs, op, OperatorType::Infix);
+            lhs = self.make_expr(lhs, rhs, op, OpType::Infix);
         }
         lhs
     }
@@ -283,34 +283,34 @@ impl Parser {
         lhs: ExprContents,
         rhs: ExprContents,
         op: Op,
-        op_type: OperatorType,
+        op_type: OpType,
     ) -> ExprContents {
         match (op, op_type) {
-            (Op::Plus | Op::Minus | Op::Times | Op::Divided | Op::D, OperatorType::Infix) => {
+            (Op::Plus | Op::Minus | Op::Times | Op::Divided | Op::D, OpType::Infix) => {
                 ExprContents::Binop(Binop {
                     lhs: Box::new(self.new_expr(lhs)),
                     rhs: Box::new(self.new_expr(rhs)),
                     op,
                 })
             }
-            (Op::Minus, OperatorType::Prefix) => ExprContents::Prefix(Prefix {
+            (Op::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 prefix: op,
                 rhs: Box::new(self.new_expr(rhs)),
             }),
             // "d6" expands to "1d6"
-            (Op::D, OperatorType::Prefix) => ExprContents::Binop(Binop {
+            (Op::D, OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: Box::new(self.new_expr(ExprContents::Literal(Literal::Int(1)))),
                 rhs: Box::new(self.new_expr(rhs)),
                 op,
             }),
-            (Op::Assign, OperatorType::Infix) => ExprContents::Assign(Assign {
+            (Op::Assign, OpType::Infix) => ExprContents::Assign(Assign {
                 assignee: match lhs {
                     ExprContents::Accessor(acc) => acc,
                     _ => panic!("Expected accessor, found {lhs:?}"),
                 },
                 val: Box::new(self.new_expr(rhs)),
             }),
-            (Op::Access, OperatorType::Infix) => {
+            (Op::Access, OpType::Infix) => {
                 let rhs = match rhs {
                     ExprContents::Accessor(Accessor::Variable(var)) => var,
                     _ => panic!("Expected property, found {rhs:?}"),
@@ -319,11 +319,11 @@ impl Parser {
             }
             (
                 Op::Plus | Op::Times | Op::Divided | Op::Assign | Op::Access,
-                OperatorType::Prefix,
+                OpType::Prefix,
             ) => {
                 unreachable!("Invalid prefix operation {op:?}")
             }
-            (_, OperatorType::Postfix) => unreachable!("Invalid postfix operation {op:?}"),
+            (_, OpType::Postfix) => unreachable!("Invalid postfix operation {op:?}"),
         }
     }
 }

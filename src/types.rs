@@ -1,6 +1,6 @@
 use std::{fmt::{Debug, Display}, ops::{Add, Div, Mul, Neg, Sub}};
 
-use crate::{distribution::Distribution, lexer::Op, parser::OperatorType};
+use crate::{distribution::Distribution, lexer::Op, parser::OpType};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Datatype {
@@ -11,7 +11,7 @@ pub enum Datatype {
 }
 
 impl Datatype {
-    pub fn decide_op_type(self, rhs: Self, op: Op, op_type: OperatorType) -> Datatype {
+    pub fn decide_op_type(self, rhs: Self, op: Op, op_type: OpType) -> Datatype {
         // almost certainly there's a better way of doing this, and I'll probably implement something
         // later, but while I have relatively few types this is fine.
         match ((self, rhs), op) {
@@ -32,11 +32,11 @@ impl Datatype {
             ((Self::Int, Self::Dice) | (Self::Dice, Self::Int), _) => {
                 Self::Dice
             }
-            ((Self::Void, _), _) if op_type == OperatorType::Prefix => match (rhs, op) {
+            ((Self::Void, _), _) if op_type == OpType::Prefix => match (rhs, op) {
                 (Self::Int | Self::Float | Self::Dice, Op::Minus) => rhs,
                 _ => panic!("Invalid prefix operator {op:?} on type {rhs:?}"),
             },
-            ((_, Self::Void), _) if op_type == OperatorType::Postfix => match (self, op) {
+            ((_, Self::Void), _) if op_type == OpType::Postfix => match (self, op) {
                 _ => panic!("Currently no postfixes are valid"),
             },
             ((Self::Void, _) | (_, Self::Void), _) => panic!("Can't operate on Void type"),
