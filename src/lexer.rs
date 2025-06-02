@@ -24,14 +24,15 @@ pub enum Op {
 
 impl Debug for Op {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Plus => write!(f, "+"),
-            Self::Minus => write!(f, "-"),
-            Self::Times => write!(f, "*"),
-            Self::Divided => write!(f, "/"),
-            Self::D => write!(f, "d"),
-            Self::Assign => write!(f, "="),
-        }
+        let c = match self {
+            Self::Plus => "+",
+            Self::Minus => "-",
+            Self::Times => "*",
+            Self::Divided => "/",
+            Self::D => "d",
+            Self::Assign => "=",
+        };
+        write!(f, "{c}")
     }
 }
 

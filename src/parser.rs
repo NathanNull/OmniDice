@@ -16,6 +16,7 @@ pub enum Expr {
     Binop(Binop),
     Prefix(Prefix),
     Postfix(Postfix),
+    Assign(Assign),
 }
 
 impl Debug for Expr {
@@ -26,6 +27,7 @@ impl Debug for Expr {
             Self::Binop(Binop { op, lhs, rhs }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
             Self::Prefix(Prefix { prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
             Self::Postfix(Postfix { postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
+            Self::Assign(Assign { assignee, val }) => write!(f, "(set {assignee:?} {val:?})"),
         }
     }
 }
@@ -64,6 +66,12 @@ pub struct Prefix {
 pub struct Postfix {
     pub postfix: Op,
     pub lhs: Box<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Assign {
+    pub assignee: Box<Expr>,
+    pub val: Box<Expr>,
 }
 
 pub struct Parser {
@@ -129,10 +137,16 @@ impl Parser {
             Token::Op(op) => {
                 let ((), r_bp) = prefix_binding_power(op);
                 let rhs = Box::new(self.parse_expr(r_bp));
-                Expr::Prefix(Prefix { prefix: op, rhs })
+                make_expr(
+                    Box::new(Expr::Literal(Literal::Void)),
+                    rhs,
+                    op,
+                    OperatorType::Prefix,
+                )
             }
             Token::LBracket => {
-                if self.peek() == Token::RBracket { // ()
+                if self.peek() == Token::RBracket {
+                    // ()
                     self.next();
                     Expr::Literal(Literal::Void)
                 } else {
@@ -159,10 +173,12 @@ impl Parser {
                     break;
                 }
                 self.next();
-                lhs = Expr::Postfix(Postfix {
-                    postfix: op,
-                    lhs: Box::new(lhs),
-                });
+                lhs = make_expr(
+                    Box::new(lhs),
+                    Box::new(Expr::Literal(Literal::Void)),
+                    op,
+                    OperatorType::Postfix,
+                );
                 continue;
             }
             let (l_bp, r_bp) = infix_binding_power(op);
@@ -171,11 +187,7 @@ impl Parser {
             }
             self.next();
             let rhs = self.parse_expr(r_bp);
-            lhs = Expr::Binop(Binop {
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-                op,
-            });
+            lhs = make_expr(Box::new(lhs), Box::new(rhs), op, OperatorType::Infix);
         }
         lhs
     }
@@ -186,7 +198,7 @@ fn infix_binding_power(op: Op) -> (u8, u8) {
         Op::Plus | Op::Minus => (3, 4),
         Op::Times | Op::Divided => (5, 6),
         Op::D => (7, 8),
-        Op::Assign => (1, 2),
+        Op::Assign => (2, 1),
     }
 }
 
@@ -203,5 +215,28 @@ fn prefix_binding_power(op: Op) -> ((), u8) {
 fn postfix_binding_power(op: Op) -> Option<(u8, ())> {
     match op {
         _ => None,
+    }
+}
+
+enum OperatorType {
+    Infix,
+    Prefix,
+    Postfix,
+}
+
+fn make_expr(lhs: Box<Expr>, rhs: Box<Expr>, op: Op, op_type: OperatorType) -> Expr {
+    match (op, op_type) {
+        (Op::Plus | Op::Minus | Op::Times | Op::Divided | Op::D, OperatorType::Infix) => {
+            Expr::Binop(Binop { lhs, rhs, op })
+        }
+        (Op::Minus, OperatorType::Prefix) => Expr::Prefix(Prefix { prefix: op, rhs }),
+        (Op::Assign, OperatorType::Infix) => Expr::Assign(Assign {
+            assignee: lhs,
+            val: rhs,
+        }),
+        (Op::Plus | Op::Times | Op::Divided | Op::D | Op::Assign, OperatorType::Prefix) => {
+            unreachable!("Invalid operation/position")
+        }
+        (_, OperatorType::Postfix) => unreachable!("Invalid operation/position"),
     }
 }
