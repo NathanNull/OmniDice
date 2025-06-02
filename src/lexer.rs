@@ -8,6 +8,7 @@ pub enum Token {
     LBracket,
     RBracket,
     Op(Op),
+    EOL,
     EOF,
 }
 
@@ -18,6 +19,7 @@ pub enum Op {
     Times,
     Divided,
     D,
+    Assign,
 }
 
 impl Debug for Op {
@@ -28,6 +30,7 @@ impl Debug for Op {
             Self::Times => write!(f, "*"),
             Self::Divided => write!(f, "/"),
             Self::D => write!(f, "d"),
+            Self::Assign => write!(f, "="),
         }
     }
 }
@@ -146,18 +149,18 @@ impl<'a> Lexer<'a> {
             None => return None,
         };
         let res = match c {
-            '+' => Some(Token::Op(Op::Plus)),
-            '-' => Some(Token::Op(Op::Minus)),
-            '*' => Some(Token::Op(Op::Times)),
-            '/' => Some(Token::Op(Op::Divided)),
-            'd' => Some(Token::Op(Op::D)),
-            '(' => Some(Token::LBracket),
-            ')' => Some(Token::RBracket),
-            _ => None,
+            '+' => Token::Op(Op::Plus),
+            '-' => Token::Op(Op::Minus),
+            '*' => Token::Op(Op::Times),
+            '/' => Token::Op(Op::Divided),
+            'd' => Token::Op(Op::D),
+            '(' => Token::LBracket,
+            ')' => Token::RBracket,
+            '=' => Token::Op(Op::Assign),
+            ';' => Token::EOL,
+            _ => return None,
         };
-        if res.is_some() {
-            self.next();
-        }
-        res
+        self.next();
+        Some(res)
     }
 }
