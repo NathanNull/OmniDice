@@ -132,14 +132,19 @@ impl Parser {
                 Expr::Prefix(Prefix { prefix: op, rhs })
             }
             Token::LBracket => {
-                let lhs = self.parse_expr(0);
-                let next = self.next();
-                assert_eq!(
-                    next,
-                    Token::RBracket,
-                    "Expected right bracket, found {next:?}"
-                );
-                lhs
+                if self.peek() == Token::RBracket { // ()
+                    self.next();
+                    Expr::Literal(Literal::Void)
+                } else {
+                    let lhs = self.parse_expr(0);
+                    let next = self.next();
+                    assert_eq!(
+                        next,
+                        Token::RBracket,
+                        "Expected right bracket, found {next:?}"
+                    );
+                    lhs
+                }
             }
             tk => panic!("Expected literal or ident, found {tk:?}"),
         };

@@ -191,7 +191,7 @@ impl Add for Value {
                 Self::Float(f + i as f32)
             }
 
-            (s, r) => return Err(format!("Can't add values of type {s:?} and {r:?}")),
+            (s, r) => return Err(format!("Can't add values {s:?} and {r:?}")),
         })
     }
 }
@@ -212,7 +212,7 @@ impl Sub for Value {
                 Self::Float(f - i as f32)
             }
 
-            (s, r) => return Err(format!("Can't subtract values of type {s:?} and {r:?}")),
+            (s, r) => return Err(format!("Can't subtract values {s:?} and {r:?}")),
         })
     }
 }
@@ -233,7 +233,7 @@ impl Mul for Value {
                 Self::Float(f * i as f32)
             }
 
-            (s, r) => return Err(format!("Can't multiply values of type {s:?} and {r:?}")),
+            (s, r) => return Err(format!("Can't multiply values {s:?} and {r:?}")),
         })
     }
 }
@@ -254,7 +254,7 @@ impl Div for Value {
                 Self::Float(f / i as f32)
             }
 
-            (s, r) => return Err(format!("Can't divide values of type {s:?} and {r:?}")),
+            (s, r) => return Err(format!("Can't divide values {s:?} and {r:?}")),
         })
     }
 }
