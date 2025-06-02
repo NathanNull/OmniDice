@@ -12,7 +12,7 @@ pub enum Token {
     EOF,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Op {
     Plus,
     Minus,
@@ -20,6 +20,7 @@ pub enum Op {
     Divided,
     D,
     Assign,
+    Access,
 }
 
 impl Debug for Op {
@@ -31,6 +32,7 @@ impl Debug for Op {
             Self::Divided => "/",
             Self::D => "d",
             Self::Assign => "=",
+            Self::Access => ".",
         };
         write!(f, "{c}")
     }
@@ -158,6 +160,7 @@ impl<'a> Lexer<'a> {
             '(' => Token::LBracket,
             ')' => Token::RBracket,
             '=' => Token::Op(Op::Assign),
+            '.' => Token::Op(Op::Access),
             ';' => Token::EOL,
             _ => return None,
         };

@@ -65,6 +65,13 @@ impl Distribution {
     pub fn max(&self) -> i32 {
         self.values.last_key_value().map(|(k, _)| *k).unwrap_or(0)
     }
+
+    pub fn mean(&self) -> f32 {
+        self.values
+            .iter()
+            .map(|(val, prob)| *val as f32 * prob)
+            .sum::<f32>()
+    }
 }
 
 const OUT_WIDTH: usize = 50;
@@ -105,7 +112,7 @@ impl Add for Distribution {
         for (_, prob) in &mut out {
             *prob /= sum;
         }
-        if out.iter().any(|o|!o.1.is_finite()) {
+        if out.iter().any(|o| !o.1.is_finite()) {
             panic!("{self:?}+{rhs:?} caused NaN")
         }
         Self { values: out }
@@ -126,7 +133,7 @@ impl Sub for Distribution {
         for (_, prob) in &mut out {
             *prob /= sum;
         }
-        if out.iter().any(|o|!o.1.is_finite()) {
+        if out.iter().any(|o| !o.1.is_finite()) {
             panic!("{self:?}+{rhs:?} caused NaN")
         }
         Self { values: out }
@@ -147,7 +154,7 @@ impl Mul for Distribution {
         for (_, prob) in &mut out {
             *prob /= sum;
         }
-        if out.iter().any(|o|!o.1.is_finite()) {
+        if out.iter().any(|o| !o.1.is_finite()) {
             panic!("{self:?}+{rhs:?} caused NaN")
         }
         Self { values: out }
@@ -168,7 +175,7 @@ impl Div for Distribution {
         for (_, prob) in &mut out {
             *prob /= sum;
         }
-        if out.iter().any(|o|!o.1.is_finite()) {
+        if out.iter().any(|o| !o.1.is_finite()) {
             panic!("{self:?}+{rhs:?} caused NaN")
         }
         Self { values: out }

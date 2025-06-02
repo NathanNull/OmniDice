@@ -1,1 +1,3 @@
-test = test2 = test3 = ()
+die = 1d6;
+dice = die + die + die;
+dice.mean + dice.max

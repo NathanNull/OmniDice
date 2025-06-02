@@ -7,7 +7,7 @@ use std::{
 use crate::{
     distribution::Distribution,
     lexer::Op,
-    parser::{Assign, Binop, Expr, Literal, Postfix, Prefix, Program},
+    parser::{Accessor, Assign, Binop, Expr, ExprContents, Literal, Postfix, Prefix, Program}, types::Value,
 };
 
 pub struct Interpreter {
@@ -23,26 +23,38 @@ impl Interpreter {
         }
     }
 
-    pub fn run(&mut self) -> Value {
-        match self.ast.clone() {
-            Program::Scope(exprs) => {
-                let mut last = Value::Void;
-                for expr in exprs {
-                    last = self.eval_expr(&expr);
+    pub fn run(&mut self) -> (Value, &HashMap<String, Value>) {
+        (
+            match self.ast.clone() {
+                Program::Scope(exprs) => {
+                    let mut last = Value::Void;
+                    for expr in exprs {
+                        last = self.eval_expr(&expr);
+                    }
+                    last
                 }
-                last
-            }
-        }
+            },
+            &self.variables,
+        )
     }
 
     fn eval_expr(&mut self, expr: &Expr) -> Value {
-        match expr {
-            Expr::Identifier(ident) => self.get_var(ident),
-            Expr::Literal(number) => self.eval_literal(number),
-            Expr::Binop(binop) => self.eval_binop(binop),
-            Expr::Prefix(prefix) => self.eval_prefix(prefix),
-            Expr::Postfix(postfix) => self.eval_postfix(postfix),
-            Expr::Assign(assign) => self.eval_assign(assign),
+        match &expr.contents {
+            ExprContents::Accessor(acc) => self.eval_accessor(acc),
+            ExprContents::Literal(number) => self.eval_literal(number),
+            ExprContents::Binop(binop) => self.eval_binop(binop),
+            ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
+            ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
+            ExprContents::Assign(assign) => self.eval_assign(assign),
+        }
+    }
+
+    fn eval_accessor(&mut self, acc: &Accessor) -> Value {
+        match acc {
+            Accessor::Variable(ident) => self.get_var(ident),
+            Accessor::Property(base, property) => {
+                self.eval_expr(&base).get_property(property)
+            },
         }
     }
 
@@ -68,7 +80,7 @@ impl Interpreter {
                 }
                 (l, r) => panic!("Can't create dice from values {l:?} and {r:?}"),
             },
-            Op::Assign => unreachable!("invalid op"),
+            Op::Assign | Op::Access => unreachable!("invalid op"),
         }
     }
 
@@ -92,13 +104,8 @@ impl Interpreter {
     }
 
     fn eval_postfix(&mut self, postfix: &Postfix) -> Value {
-        let rhs = self.eval_expr(&postfix.lhs);
-        self.eval_postfix_core(rhs, postfix.postfix)
-    }
-
-    fn eval_postfix_core(&mut self, _lhs: Value, op: Op) -> Value {
-        match op {
-            Op::Times => Value::Int(0),           // how have you done this
+        let _rhs = self.eval_expr(&postfix.lhs);
+        match postfix.postfix {
             p => unreachable!("Invalid postfix operator {p:?}"),
         }
     }
@@ -110,137 +117,10 @@ impl Interpreter {
         val
     }
 
-    fn eval_assignee(&mut self, assignee: &Expr) -> String {
-        match assignee {
-            Expr::Identifier(name) => name.clone(),
-            val => panic!("Can't assign to value {val:?}")
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum Value {
-    Int(i32),
-    Float(f32),
-    Dice(Distribution),
-    Void,
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Int(i) => write!(f, "i{i}"),
-            Self::Float(fl) => write!(f, "f{fl}"),
-            Self::Dice(dice) => write!(f, "d{}-{}", dice.min(), dice.max()),
-            Self::Void => write!(f, "()"),
-        }
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Int(v) => write!(f, "{v}"),
-            Self::Float(v) => write!(f, "{v}"),
-            Self::Dice(v) => write!(f, "{v}"),
-            Self::Void => write!(f, "()"),
-        }
-    }
-}
-
-impl Add for Value {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Self::Dice(d1), Self::Dice(d2)) => Self::Dice(d1 + d2),
-            (Self::Float(f1), Self::Float(f2)) => Self::Float(f1 + f2),
-            (Self::Int(i1), Self::Int(i2)) => Self::Int(i1 + i2),
-
-            (Self::Dice(d), Self::Int(i)) | (Self::Int(i), Self::Dice(d)) => {
-                Self::Dice(d + Distribution::from_vec(vec![i]))
-            }
-            (Self::Float(f), Self::Int(i)) | (Self::Int(i), Self::Float(f)) => {
-                Self::Float(f + i as f32)
-            }
-
-            (s, r) => panic!("Can't add values {s:?} and {r:?}"),
-        }
-    }
-}
-
-impl Sub for Value {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Self::Dice(d1), Self::Dice(d2)) => Self::Dice(d1 - d2),
-            (Self::Float(f1), Self::Float(f2)) => Self::Float(f1 - f2),
-            (Self::Int(i1), Self::Int(i2)) => Self::Int(i1 - i2),
-
-            (Self::Dice(d), Self::Int(i)) | (Self::Int(i), Self::Dice(d)) => {
-                Self::Dice(d - Distribution::from_vec(vec![i]))
-            }
-            (Self::Float(f), Self::Int(i)) | (Self::Int(i), Self::Float(f)) => {
-                Self::Float(f - i as f32)
-            }
-
-            (s, r) => panic!("Can't subtract values {s:?} and {r:?}"),
-        }
-    }
-}
-
-impl Mul for Value {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Self::Dice(d1), Self::Dice(d2)) => Self::Dice(d1 * d2),
-            (Self::Float(f1), Self::Float(f2)) => Self::Float(f1 * f2),
-            (Self::Int(i1), Self::Int(i2)) => Self::Int(i1 * i2),
-
-            (Self::Dice(d), Self::Int(i)) | (Self::Int(i), Self::Dice(d)) => {
-                Self::Dice(d * Distribution::from_vec(vec![i]))
-            }
-            (Self::Float(f), Self::Int(i)) | (Self::Int(i), Self::Float(f)) => {
-                Self::Float(f * i as f32)
-            }
-
-            (s, r) => panic!("Can't multiply values {s:?} and {r:?}"),
-        }
-    }
-}
-
-impl Div for Value {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Self::Dice(d1), Self::Dice(d2)) => Self::Dice(d1 / d2),
-            (Self::Float(f1), Self::Float(f2)) => Self::Float(f1 / f2),
-            (Self::Int(i1), Self::Int(i2)) => Self::Int(i1 / i2),
-
-            (Self::Dice(d), Self::Int(i)) | (Self::Int(i), Self::Dice(d)) => {
-                Self::Dice(d / Distribution::from_vec(vec![i]))
-            }
-            (Self::Float(f), Self::Int(i)) | (Self::Int(i), Self::Float(f)) => {
-                Self::Float(f / i as f32)
-            }
-
-            (s, r) => panic!("Can't divide values {s:?} and {r:?}"),
-        }
-    }
-}
-
-impl Neg for Value {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        match self {
-            Value::Int(i) => Value::Int(-i),
-            Value::Float(f) => Value::Float(-f),
-            Value::Dice(d) => Value::Dice(Distribution::from_vec(vec![0]) - d),
-            _ => panic!("Can't negate the value '{self}'"),
+    fn eval_assignee(&mut self, assignee: &Accessor) -> String {
+        match &assignee {
+            Accessor::Variable(name) => name.clone(),
+            Accessor::Property(_, _) => todo!("Properties not implemented yet"),
         }
     }
 }
