@@ -7,13 +7,13 @@ pub enum Token {
     Float(f32),
     LBracket,
     RBracket,
-    Op(Op),
+    Op(OpToken),
     EOL,
     EOF,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Op {
+pub enum OpToken {
     Plus,
     Minus,
     Times,
@@ -23,7 +23,7 @@ pub enum Op {
     Access,
 }
 
-impl Debug for Op {
+impl Debug for OpToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c = match self {
             Self::Plus => "+",
@@ -58,18 +58,27 @@ impl<'a> Lexer<'a> {
 
     pub fn lex(&mut self) -> TokenString {
         let mut tokens = vec![];
-        while self.peek().is_some() {
+        while {
             while self.peek().is_some_and(|c| c.is_whitespace()) {
                 self.next();
             }
-            if let Some(tk) = self.lex_identifier() {
+            true
+        } && self.peek().is_some()
+        {
+            if self.lex_comment() {
+                // it's a comment, carry on
+            } else if let Some(tk) = self.lex_identifier() {
                 tokens.push(tk)
             } else if let Some(tk) = self.lex_number() {
                 tokens.push(tk)
             } else if let Some(tk) = self.lex_special() {
                 tokens.push(tk)
             } else {
-                panic!("Couldn't tokenize")
+                panic!(
+                    "Couldn't tokenize, next is {:?}, rest is {:?}",
+                    self.peek(),
+                    self.code.as_str()
+                )
             }
         }
         tokens.push(Token::EOF);
@@ -93,6 +102,22 @@ impl<'a> Lexer<'a> {
     }
     fn replace(&mut self, c: char) {
         self.peeked.push(c);
+    }
+
+    fn lex_comment(&mut self) -> bool {
+        if self.peek().is_none_or(|c|c!='/') {
+            return false;
+        }
+        self.next();
+        if self.peek().is_none_or(|c|c!='/') {
+            self.replace('/');
+            return false;
+        }
+        self.next();
+        while self.peek().is_some_and(|c|c != '\n') {
+            self.next();
+        }
+        true
     }
 
     fn lex_identifier(&mut self) -> Option<Token> {
@@ -152,15 +177,15 @@ impl<'a> Lexer<'a> {
             None => return None,
         };
         let res = match c {
-            '+' => Token::Op(Op::Plus),
-            '-' => Token::Op(Op::Minus),
-            '*' => Token::Op(Op::Times),
-            '/' => Token::Op(Op::Divided),
-            'd' => Token::Op(Op::D),
+            '+' => Token::Op(OpToken::Plus),
+            '-' => Token::Op(OpToken::Minus),
+            '*' => Token::Op(OpToken::Times),
+            '/' => Token::Op(OpToken::Divided),
+            'd' => Token::Op(OpToken::D),
             '(' => Token::LBracket,
             ')' => Token::RBracket,
-            '=' => Token::Op(Op::Assign),
-            '.' => Token::Op(Op::Access),
+            '=' => Token::Op(OpToken::Assign),
+            '.' => Token::Op(OpToken::Access),
             ';' => Token::EOL,
             _ => return None,
         };

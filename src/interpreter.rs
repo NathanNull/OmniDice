@@ -1,13 +1,9 @@
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-    ops::{Add, Div, Mul, Neg, Sub},
-};
+use std::collections::HashMap;
 
 use crate::{
     distribution::Distribution,
-    lexer::Op,
-    parser::{Accessor, Assign, Binop, Expr, ExprContents, Literal, Postfix, Prefix, Program}, types::Value,
+    parser::{Accessor, Assign, Binop, Expr, ExprContents, Literal, Op, Postfix, Prefix, Program},
+    types::Value,
 };
 
 pub struct Interpreter {
@@ -39,22 +35,22 @@ impl Interpreter {
     }
 
     fn eval_expr(&mut self, expr: &Expr) -> Value {
-        match &expr.contents {
+        let res = match &expr.contents {
             ExprContents::Accessor(acc) => self.eval_accessor(acc),
             ExprContents::Literal(number) => self.eval_literal(number),
             ExprContents::Binop(binop) => self.eval_binop(binop),
             ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
             ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
             ExprContents::Assign(assign) => self.eval_assign(assign),
-        }
+        };
+        assert_eq!(res.get_type(), expr.output);
+        res
     }
 
     fn eval_accessor(&mut self, acc: &Accessor) -> Value {
         match acc {
             Accessor::Variable(ident) => self.get_var(ident),
-            Accessor::Property(base, property) => {
-                self.eval_expr(&base).get_property(property)
-            },
+            Accessor::Property(base, property) => self.eval_expr(&base).get_property(property),
         }
     }
 
@@ -69,7 +65,7 @@ impl Interpreter {
     fn eval_binop(&mut self, binop: &Binop) -> Value {
         let lhs = self.eval_expr(&binop.lhs);
         let rhs = self.eval_expr(&binop.rhs);
-        match binop.op {
+        let res = match binop.op {
             Op::Plus => lhs.clone() + rhs.clone(),
             Op::Minus => lhs.clone() - rhs.clone(),
             Op::Times => lhs.clone() * rhs.clone(),
@@ -80,8 +76,8 @@ impl Interpreter {
                 }
                 (l, r) => panic!("Can't create dice from values {l:?} and {r:?}"),
             },
-            Op::Assign | Op::Access => unreachable!("invalid op"),
-        }
+        };
+        res
     }
 
     fn get_var(&self, var: &String) -> Value {
@@ -112,15 +108,10 @@ impl Interpreter {
 
     fn eval_assign(&mut self, assign: &Assign) -> Value {
         let val = self.eval_expr(&assign.val);
-        let var = self.eval_assignee(&assign.assignee);
-        self.set_var(var, val.clone());
-        val
-    }
-
-    fn eval_assignee(&mut self, assignee: &Accessor) -> String {
-        match &assignee {
-            Accessor::Variable(name) => name.clone(),
-            Accessor::Property(_, _) => todo!("Properties not implemented yet"),
+        match &assign.assignee {
+            Accessor::Variable(name) => self.set_var(name.clone(), val.clone()),
+            Accessor::Property(base, prop) => self.eval_expr(&base).set_property(prop, val.clone()),
         }
+        val
     }
 }

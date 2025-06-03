@@ -1,15 +1,52 @@
 use std::{collections::HashMap, fmt::Debug, vec::IntoIter};
 
+use strum::EnumIter;
+
 use crate::{
-    lexer::{Op, Token, TokenString},
-    types::Datatype,
+    lexer::{OpToken, Token, TokenString},
+    types::{Datatype, OPS, PROPERTIES},
 };
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, EnumIter)]
 pub enum OpType {
     Infix,
     Prefix,
     Postfix,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
+pub enum Op {
+    Plus,
+    Minus,
+    Times,
+    Divided,
+    D,
+}
+
+impl Debug for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c = match self {
+            Self::Plus => "+",
+            Self::Minus => "-",
+            Self::Times => "*",
+            Self::Divided => "/",
+            Self::D => "d",
+        };
+        write!(f, "{c}")
+    }
+}
+
+impl From<OpToken> for Op {
+    fn from(value: OpToken) -> Self {
+        match value {
+            OpToken::Plus => Self::Plus,
+            OpToken::Minus => Self::Minus,
+            OpToken::Times => Self::Times,
+            OpToken::Divided => Self::Divided,
+            OpToken::D => Self::D,
+            OpToken::Assign | OpToken::Access => panic!("Invalid operation {value:?}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -25,6 +62,9 @@ pub enum ExprContents {
     Binop(Binop),
     Prefix(Prefix),
     Postfix(Postfix),
+    // TODO: potential postfix ideas:
+    // An operator that makes dice crit or explode
+    // (write more as I think of them)
     Assign(Assign),
     Accessor(Accessor),
 }
@@ -177,23 +217,37 @@ impl Parser {
                     .get(var)
                     .expect(&format!("Unknown variable {var}")),
                 Accessor::Property(base, prop) => {
-                    self.decide_type(&base.contents).decide_property_type(prop)
+                    let ty = self.decide_type(&base.contents);
+                    *PROPERTIES
+                        .get(&(ty, prop.clone()))
+                        .expect(&format!("Invalid property {prop} for type {ty:?}"))
                 }
             },
             ExprContents::Literal(literal) => literal.val_type(),
-            ExprContents::Binop(binop) => self.decide_type(&binop.lhs.contents).decide_op_type(
-                self.decide_type(&binop.rhs.contents),
-                binop.op,
-                OpType::Infix,
-            ),
-            ExprContents::Prefix(prefix) => Datatype::Void.decide_op_type(
-                self.decide_type(&prefix.rhs.contents),
-                prefix.prefix,
-                OpType::Prefix,
-            ),
-            ExprContents::Postfix(postfix) => self
-                .decide_type(&postfix.lhs.contents)
-                .decide_op_type(Datatype::Void, postfix.postfix, OpType::Postfix),
+            ExprContents::Binop(binop) => *OPS
+                .get(&(
+                    self.decide_type(&binop.lhs.contents),
+                    self.decide_type(&binop.rhs.contents),
+                    binop.op,
+                    OpType::Infix,
+                ))
+                .unwrap(),
+            ExprContents::Prefix(prefix) => *OPS
+                .get(&(
+                    Datatype::Void,
+                    self.decide_type(&prefix.rhs.contents),
+                    prefix.prefix,
+                    OpType::Prefix,
+                ))
+                .unwrap(),
+            ExprContents::Postfix(postfix) => *OPS
+                .get(&(
+                    self.decide_type(&postfix.lhs.contents),
+                    Datatype::Void,
+                    postfix.postfix,
+                    OpType::Postfix,
+                ))
+                .unwrap(),
             ExprContents::Assign(assign) => self.decide_type(&assign.val.contents),
         }
     }
@@ -282,35 +336,46 @@ impl Parser {
         &mut self,
         lhs: ExprContents,
         rhs: ExprContents,
-        op: Op,
+        op: OpToken,
         op_type: OpType,
     ) -> ExprContents {
         match (op, op_type) {
-            (Op::Plus | Op::Minus | Op::Times | Op::Divided | Op::D, OpType::Infix) => {
-                ExprContents::Binop(Binop {
-                    lhs: Box::new(self.new_expr(lhs)),
-                    rhs: Box::new(self.new_expr(rhs)),
-                    op,
-                })
-            }
-            (Op::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
-                prefix: op,
+            (
+                OpToken::Plus | OpToken::Minus | OpToken::Times | OpToken::Divided | OpToken::D,
+                OpType::Infix,
+            ) => ExprContents::Binop(Binop {
+                lhs: Box::new(self.new_expr(lhs)),
+                rhs: Box::new(self.new_expr(rhs)),
+                op: op.into(),
+            }),
+            (OpToken::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
+                prefix: op.into(),
                 rhs: Box::new(self.new_expr(rhs)),
             }),
             // "d6" expands to "1d6"
-            (Op::D, OpType::Prefix) => ExprContents::Binop(Binop {
+            (OpToken::D, OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: Box::new(self.new_expr(ExprContents::Literal(Literal::Int(1)))),
                 rhs: Box::new(self.new_expr(rhs)),
-                op,
+                op: op.into(),
             }),
-            (Op::Assign, OpType::Infix) => ExprContents::Assign(Assign {
-                assignee: match lhs {
+            (OpToken::Assign, OpType::Infix) => {
+                let val = Box::new(self.new_expr(rhs));
+                let assignee = match lhs {
                     ExprContents::Accessor(acc) => acc,
                     _ => panic!("Expected accessor, found {lhs:?}"),
-                },
-                val: Box::new(self.new_expr(rhs)),
-            }),
-            (Op::Access, OpType::Infix) => {
+                };
+                match &assignee {
+                    Accessor::Variable(_) => {}
+                    Accessor::Property(base, prop) => {
+                        assert_eq!(
+                            Some(&val.output),
+                            PROPERTIES.get(&(base.output, prop.clone()))
+                        )
+                    }
+                }
+                ExprContents::Assign(Assign { assignee, val })
+            }
+            (OpToken::Access, OpType::Infix) => {
                 let rhs = match rhs {
                     ExprContents::Accessor(Accessor::Variable(var)) => var,
                     _ => panic!("Expected property, found {rhs:?}"),
@@ -318,7 +383,11 @@ impl Parser {
                 ExprContents::Accessor(Accessor::Property(Box::new(self.new_expr(lhs)), rhs))
             }
             (
-                Op::Plus | Op::Times | Op::Divided | Op::Assign | Op::Access,
+                OpToken::Plus
+                | OpToken::Times
+                | OpToken::Divided
+                | OpToken::Assign
+                | OpToken::Access,
                 OpType::Prefix,
             ) => {
                 unreachable!("Invalid prefix operation {op:?}")
@@ -328,28 +397,27 @@ impl Parser {
     }
 }
 
-fn infix_binding_power(op: Op) -> (u8, u8) {
+fn infix_binding_power(op: OpToken) -> (u8, u8) {
     match op {
-        Op::Assign => (2, 1),
-        Op::Plus | Op::Minus => (3, 4),
-        Op::Times | Op::Divided => (5, 6),
-        Op::Access => (7, 8),
-        Op::D => (9, 10),
+        OpToken::Assign => (2, 1),
+        OpToken::Plus | OpToken::Minus => (3, 4),
+        OpToken::Times | OpToken::Divided => (5, 6),
+        OpToken::Access => (7, 8),
+        OpToken::D => (9, 10),
     }
 }
 
-fn prefix_binding_power(op: Op) -> ((), u8) {
+fn prefix_binding_power(op: OpToken) -> ((), u8) {
     match op {
-        Op::Minus => ((), 11),
-        Op::D => ((), 10),
+        OpToken::Minus => ((), 11),
+        OpToken::D => ((), 10),
         _ => panic!("Invalid prefix operator: {op:?}"),
     }
 }
 
 // TODO: see if there are even any good postfix operators
-// Decrement/increment maybe
-// Deal with this once I add actual variable support (or an interpreter at all for that matter)
-fn postfix_binding_power(op: Op) -> Option<(u8, ())> {
+// Decrement/increment maybe, but then those really are just += 1 and -= 1...
+fn postfix_binding_power(op: OpToken) -> Option<(u8, ())> {
     match op {
         _ => None,
     }

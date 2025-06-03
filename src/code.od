@@ -1,3 +1,2 @@
-die = 1d6;
-dice = die + die + die;
-dice.mean + dice.max
+die = 1d6+3;
+dice = die + die + die; // 3d6
