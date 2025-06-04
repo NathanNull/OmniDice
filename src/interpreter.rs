@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     distribution::Distribution,
-    parser::{Accessor, Assign, Binop, Expr, ExprContents, Literal, Op, Postfix, Prefix, Scope},
+    parser::{Accessor, Assign, Binop, Expr, ExprContents, Op, Postfix, Prefix, Scope},
     types::Value,
 };
 
@@ -38,7 +38,7 @@ impl Interpreter {
     fn eval_expr(&mut self, expr: &Expr) -> Value {
         let res = match &expr.contents {
             ExprContents::Accessor(acc) => self.eval_accessor(acc),
-            ExprContents::Literal(number) => self.eval_literal(number),
+            ExprContents::Literal(val) => val.clone(),
             ExprContents::Binop(binop) => self.eval_binop(binop),
             ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
             ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
@@ -53,14 +53,6 @@ impl Interpreter {
         match acc {
             Accessor::Variable(ident) => self.get_var(ident),
             Accessor::Property(base, property) => self.eval_expr(&base).get_property(property),
-        }
-    }
-
-    fn eval_literal(&mut self, number: &Literal) -> Value {
-        match number {
-            Literal::Float(f) => Value::Float(*f),
-            Literal::Int(i) => Value::Int(*i),
-            Literal::Void => Value::Void,
         }
     }
 

@@ -1,28 +1,26 @@
 use std::{collections::HashMap, vec::IntoIter};
 
 use crate::{
-    Peekable,
-    lexer::{Bracket, OpToken, Token, TokenString},
-    types::{Datatype, OPS, PROPERTIES},
+    lexer::{Bracket, Keyword, OpToken, Token, TokenString}, types::{Datatype, Value, OPS, PROPERTIES}, TokenIter
 };
 
 pub mod expr;
 pub use expr::*;
 
 pub struct Parser {
-    tokens: Peekable<IntoIter<Token>>,
+    tokens: TokenIter<IntoIter<Token>>,
     var_types: Vec<HashMap<String, Datatype>>,
 }
 
 const VOID: Expr = Expr {
-    contents: ExprContents::Literal(Literal::Void),
+    contents: ExprContents::Literal(Value::Void),
     output: Datatype::Void,
 };
 
 impl Parser {
     pub fn new(tokens: TokenString) -> Self {
         Self {
-            tokens: Peekable::new(tokens.into_iter()),
+            tokens: TokenIter::new(tokens.into_iter()),
             var_types: vec![],
         }
     }
@@ -62,7 +60,7 @@ impl Parser {
                         .expect(&format!("Invalid property {prop} for type {ty:?}"))
                 }
             },
-            ExprContents::Literal(literal) => literal.val_type(),
+            ExprContents::Literal(literal) => literal.get_type(),
             ExprContents::Binop(binop) => *OPS
                 .get(&(
                     self.decide_type(&binop.lhs.contents),
@@ -138,8 +136,10 @@ impl Parser {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
             Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
-            Token::Float(f) => ExprContents::Literal(Literal::Float(f)),
-            Token::Int(i) => ExprContents::Literal(Literal::Int(i)),
+            Token::Float(f) => ExprContents::Literal(Value::Float(f)),
+            Token::Int(i) => ExprContents::Literal(Value::Int(i)),
+            Token::Keyword(Keyword::True) => ExprContents::Literal(Value::Bool(true)),
+            Token::Keyword(Keyword::False) => ExprContents::Literal(Value::Bool(false)),
             Token::Op(op) => {
                 let ((), r_bp) = prefix_binding_power(op);
                 let rhs = self.parse_expr(r_bp, expected_end);
@@ -226,7 +226,7 @@ impl Parser {
             }),
             // "d6" expands to "1d6"
             (OpToken::D, OpType::Prefix) => ExprContents::Binop(Binop {
-                lhs: Box::new(self.new_expr(ExprContents::Literal(Literal::Int(1)))),
+                lhs: Box::new(self.new_expr(ExprContents::Literal(Value::Int(1)))),
                 rhs: Box::new(self.new_expr(rhs)),
                 op: op.into(),
             }),

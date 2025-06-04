@@ -21,12 +21,12 @@ fn main() {
     println!("Output: {output}");
 }
 
-pub struct Peekable<T: Iterator> {
+pub struct TokenIter<T: Iterator> {
     inner: T,
     peeked: Vec<T::Item>,
 }
 
-impl<T: Iterator> Iterator for Peekable<T> {
+impl<T: Iterator> Iterator for TokenIter<T> {
     type Item = T::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -38,7 +38,7 @@ impl<T: Iterator> Iterator for Peekable<T> {
     }
 }
 
-impl<T: Iterator> Peekable<T> {
+impl<T: Iterator> TokenIter<T> {
     pub fn new(inner: T) -> Self {
         Self {
             inner,
@@ -57,5 +57,31 @@ impl<T: Iterator> Peekable<T> {
 
     pub fn replace(&mut self, itm: T::Item) {
         self.peeked.push(itm);
+    }
+
+    pub fn eat(&mut self, pattern: impl Iterator<Item = T::Item>) -> Option<Vec<T::Item>>
+    where
+        T::Item: PartialEq,
+    {
+        let mut removed = vec![];
+        for itm in pattern {
+            let next = self.next();
+            if let Some(n) = next {
+                if n != itm {
+                    self.replace(n);
+                    for r in removed.into_iter().rev() {
+                        self.replace(r);
+                    }
+                    return None;
+                }
+                removed.push(n)
+            } else {
+                for r in removed.into_iter().rev() {
+                    self.replace(r);
+                }
+                return None;
+            }
+        }
+        Some(removed)
     }
 }

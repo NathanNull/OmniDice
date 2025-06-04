@@ -1,16 +1,23 @@
 use std::{fmt::Debug, str::Chars};
 
-use crate::Peekable;
+use crate::TokenIter;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Identifier(String),
+    Keyword(Keyword),
     Int(i32),
     Float(f32),
     Bracket(Bracket),
     Op(OpToken),
     EOL,
     EOF,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Keyword {
+    True,
+    False,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,7 +55,7 @@ impl Debug for OpToken {
 }
 
 pub struct Lexer<'a> {
-    code: Peekable<Chars<'a>>,
+    code: TokenIter<Chars<'a>>,
 }
 
 pub type TokenString = Vec<Token>;
@@ -56,7 +63,7 @@ pub type TokenString = Vec<Token>;
 impl<'a> Lexer<'a> {
     pub fn new(code: &'a str) -> Self {
         Self {
-            code: Peekable::new(code.chars()),
+            code: TokenIter::new(code.chars()),
         }
     }
 
@@ -91,19 +98,19 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_comment(&mut self) -> bool {
-        if self.code.peek().is_none_or(|c| *c != '/') {
-            return false;
+        if let Some(_) = self.code.eat("//".chars()) {
+            while self.code.peek().is_some_and(|c| *c != '\n') {
+                self.code.next();
+            }
+            true
+        } else if let Some(_) = self.code.eat("/*".chars()) {
+            while self.code.eat("*/".chars()).is_none() && self.code.peek().is_some() {
+                self.code.next();
+            }
+            true
+        } else {
+            false
         }
-        self.code.next();
-        if self.code.peek().is_none_or(|c| *c != '/') {
-            self.code.replace('/');
-            return false;
-        }
-        self.code.next();
-        while self.code.peek().is_some_and(|c| *c != '\n') {
-            self.code.next();
-        }
-        true
     }
 
     fn lex_identifier(&mut self) -> Option<Token> {
@@ -129,7 +136,11 @@ impl<'a> Lexer<'a> {
             .strip_prefix("d")
             .is_none_or(|n| n.parse::<i32>().is_err())
         {
-            Some(Token::Identifier(name_str))
+            Some(Token::Keyword(match name_str.as_str() {
+                "true" => Keyword::True,
+                "false" => Keyword::False,
+                _ => return Some(Token::Identifier(name_str)),
+            }))
         } else {
             // Put the tokens back so that the last taken one is replaced first
             // Turns out we didn't actually need them

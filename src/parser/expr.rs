@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use strum::EnumIter;
 
-use crate::{lexer::OpToken, types::Datatype};
+use crate::{lexer::OpToken, types::{Datatype, Value}};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, EnumIter)]
 pub enum OpType {
@@ -50,7 +50,7 @@ pub type Scope = Vec<Expr>;
 
 #[derive(Clone)]
 pub enum ExprContents {
-    Literal(Literal),
+    Literal(Value),
     Binop(Binop),
     Prefix(Prefix),
     Postfix(Postfix),
@@ -124,33 +124,6 @@ impl Display for Expr {
             }
         }
         Ok(())
-    }
-}
-
-#[derive(Clone)]
-pub enum Literal {
-    Float(f32),
-    Int(i32),
-    Void,
-}
-
-impl Debug for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Float(fl) => write!(f, "{fl}"),
-            Self::Int(i) => write!(f, "{i}"),
-            Self::Void => write!(f, "()"),
-        }
-    }
-}
-
-impl Literal {
-    pub fn val_type(&self) -> Datatype {
-        match self {
-            Self::Float(_) => Datatype::Float,
-            Self::Int(_) => Datatype::Int,
-            Self::Void => Datatype::Void,
-        }
     }
 }
 

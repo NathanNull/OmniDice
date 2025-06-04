@@ -16,6 +16,7 @@ use crate::{
 pub enum Datatype {
     Float,
     Int,
+    Bool,
     Dice,
     Void,
 }
@@ -55,6 +56,7 @@ impl Datatype {
     fn get_bin_ops(self, rhs: Self) -> Vec<(Op, Self)> {
         // almost certainly there's a better way of doing this, and I'll probably implement something
         // later, but while I have relatively few types this is fine.
+        const NUM_OPS: [Op; 4] = [Op::Plus, Op::Minus, Op::Times, Op::Divided];
         match (self, rhs) {
             (Self::Int, Self::Int) => Op::iter()
                 .map(|op| (op, if op == Op::D { Self::Dice } else { Self::Int }))
@@ -65,10 +67,9 @@ impl Datatype {
                     .map(|op| (op, Self::Float))
                     .collect()
             }
-            (Self::Dice, Self::Dice) => Op::iter()
-                .filter(|op| *op != Op::D)
-                .map(|op| (op, Self::Dice))
-                .collect(),
+            (Self::Bool, Self::Bool) => vec![], // TODO: implement boolean ops
+            (_, Self::Bool) | (Self::Bool, _) => vec![],
+            (Self::Dice, Self::Dice) => NUM_OPS.iter().map(|op| (*op, Self::Dice)).collect(),
             (Self::Float, Self::Dice) | (Self::Dice, Self::Float) => vec![],
             (Self::Int, Self::Dice) | (Self::Dice, Self::Int) => Op::iter()
                 .filter(|op| *op != Op::D)
@@ -101,7 +102,7 @@ impl Datatype {
     fn get_properties(&self) -> HashMap<String, Datatype> {
         HashMap::from_iter(
             match self {
-                Self::Float | Self::Int => vec![],
+                Self::Float | Self::Int | Self::Bool => vec![],
                 Self::Dice => vec![
                     ("mean", Self::Float),
                     ("min", Self::Int),
@@ -119,6 +120,7 @@ impl Datatype {
 pub enum Value {
     Int(i32),
     Float(f32),
+    Bool(bool),
     Dice(Distribution),
     Void,
 }
@@ -126,7 +128,9 @@ pub enum Value {
 impl Value {
     pub fn get_property(&self, prop: &str) -> Self {
         match self {
-            Self::Float(_) | Self::Int(_) => panic!("Invalid property {prop} for type {self:?}"),
+            Self::Float(_) | Self::Int(_) | Self::Bool(_) => {
+                panic!("Invalid property {prop} for type {self:?}")
+            }
             Self::Dice(d) => match prop {
                 "mean" => Self::Float(d.mean()),
                 "min" => Self::Int(d.min()),
@@ -145,6 +149,7 @@ impl Value {
         match self {
             Self::Int(_) => Datatype::Int,
             Self::Float(_) => Datatype::Float,
+            Self::Bool(_) => Datatype::Bool,
             Self::Dice(_) => Datatype::Dice,
             Self::Void => Datatype::Void,
         }
@@ -154,8 +159,9 @@ impl Value {
 impl Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Int(i) => write!(f, "i{i}"),
-            Self::Float(fl) => write!(f, "f{fl}"),
+            Self::Int(i) => write!(f, "i_{i}"),
+            Self::Float(fl) => write!(f, "f_{fl}"),
+            Self::Bool(b) => write!(f, "b_{b}"),
             Self::Dice(dice) => write!(f, "d{}-{}", dice.min(), dice.max()),
             Self::Void => write!(f, "()"),
         }
@@ -167,6 +173,7 @@ impl Display for Value {
         match self {
             Self::Int(v) => write!(f, "{v}"),
             Self::Float(v) => write!(f, "{v:.2}"),
+            Self::Bool(v) => write!(f, "{v}"),
             Self::Dice(v) => write!(f, "{v}"),
             Self::Void => write!(f, "()"),
         }
