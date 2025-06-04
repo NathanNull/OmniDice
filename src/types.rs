@@ -166,7 +166,7 @@ impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Int(v) => write!(f, "{v}"),
-            Self::Float(v) => write!(f, "{v}"),
+            Self::Float(v) => write!(f, "{v:.2}"),
             Self::Dice(v) => write!(f, "{v}"),
             Self::Void => write!(f, "()"),
         }

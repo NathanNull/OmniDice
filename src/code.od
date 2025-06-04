@@ -1,2 +1,5 @@
 die = 1d6+3;
-dice = die + die + die; // 3d6
+{
+    dice = die + die + die; dice.mean // 3d6
+}
+a = 0;

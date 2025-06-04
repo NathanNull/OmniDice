@@ -2,36 +2,37 @@ use std::collections::HashMap;
 
 use crate::{
     distribution::Distribution,
-    parser::{Accessor, Assign, Binop, Expr, ExprContents, Literal, Op, Postfix, Prefix, Program},
+    parser::{Accessor, Assign, Binop, Expr, ExprContents, Literal, Op, Postfix, Prefix, Scope},
     types::Value,
 };
 
 pub struct Interpreter {
-    ast: Program,
-    variables: HashMap<String, Value>,
+    ast: Expr,
+    variables: Vec<HashMap<String, Value>>,
 }
 
 impl Interpreter {
-    pub fn new(ast: Program) -> Self {
+    pub fn new(ast: Expr) -> Self {
         Self {
             ast,
-            variables: HashMap::new(),
+            variables: vec![],
         }
     }
 
-    pub fn run(&mut self) -> (Value, &HashMap<String, Value>) {
-        (
-            match self.ast.clone() {
-                Program::Scope(exprs) => {
-                    let mut last = Value::Void;
-                    for expr in exprs {
-                        last = self.eval_expr(&expr);
-                    }
-                    last
-                }
-            },
-            &self.variables,
-        )
+    pub fn run(&mut self) -> Value {
+        let ast = self.ast.clone();
+        self.eval_expr(&ast)
+    }
+
+    fn eval_scope(&mut self, scope: &Scope) -> Value {
+        let mut last = Value::Void;
+        // Variables created in scope die when it ends
+        self.variables.push(HashMap::new());
+        for expr in scope {
+            last = self.eval_expr(&expr);
+        }
+        self.variables.pop();
+        last
     }
 
     fn eval_expr(&mut self, expr: &Expr) -> Value {
@@ -42,6 +43,7 @@ impl Interpreter {
             ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
             ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
             ExprContents::Assign(assign) => self.eval_assign(assign),
+            ExprContents::Scope(scope) => self.eval_scope(scope),
         };
         assert_eq!(res.get_type(), expr.output);
         res
@@ -81,14 +83,20 @@ impl Interpreter {
     }
 
     fn get_var(&self, var: &String) -> Value {
-        self.variables
-            .get(var)
-            .expect(&format!("Attempted to access nonexistent variable {var}"))
-            .clone()
+        for scope in self.variables.iter().rev() {
+            if let Some(val) = scope.get(var) {
+                return val.clone();
+            }
+        }
+        panic!("Attempted to access nonexistent variable {var}");
     }
 
     fn set_var(&mut self, var: String, val: Value) {
-        self.variables.insert(var, val);
+        if self.variables.is_empty() {
+            print!("!!!!! tried to set variable while no scope alive");
+            self.variables.push(HashMap::new());
+        }
+        self.variables.last_mut().unwrap().insert(var, val);
     }
 
     fn eval_prefix(&mut self, prefix: &Prefix) -> Value {

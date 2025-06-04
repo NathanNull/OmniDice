@@ -1,15 +1,24 @@
 use std::{fmt::Debug, str::Chars};
 
+use crate::Peekable;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Identifier(String),
     Int(i32),
     Float(f32),
-    LBracket,
-    RBracket,
+    Bracket(Bracket),
     Op(OpToken),
     EOL,
     EOF,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Bracket {
+    Left,
+    Right,
+    LCurly,
+    RCurly,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,31 +48,26 @@ impl Debug for OpToken {
 }
 
 pub struct Lexer<'a> {
-    code: Chars<'a>,
-    peeked: Vec<char>,
+    code: Peekable<Chars<'a>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct TokenString {
-    pub tokens: Vec<Token>,
-}
+pub type TokenString = Vec<Token>;
 
 impl<'a> Lexer<'a> {
     pub fn new(code: &'a str) -> Self {
         Self {
-            code: code.chars(),
-            peeked: vec![],
+            code: Peekable::new(code.chars()),
         }
     }
 
     pub fn lex(&mut self) -> TokenString {
         let mut tokens = vec![];
         while {
-            while self.peek().is_some_and(|c| c.is_whitespace()) {
-                self.next();
+            while self.code.peek().is_some_and(|c| c.is_whitespace()) {
+                self.code.next();
             }
             true
-        } && self.peek().is_some()
+        } && self.code.peek().is_some()
         {
             if self.lex_comment() {
                 // it's a comment, carry on
@@ -74,59 +78,45 @@ impl<'a> Lexer<'a> {
             } else if let Some(tk) = self.lex_special() {
                 tokens.push(tk)
             } else {
+                let str = self.code.inner.as_str();
                 panic!(
                     "Couldn't tokenize, next is {:?}, rest is {:?}",
-                    self.peek(),
-                    self.code.as_str()
+                    self.code.peek(),
+                    str
                 )
             }
         }
         tokens.push(Token::EOF);
-        TokenString { tokens }
-    }
-
-    fn peek(&mut self) -> Option<char> {
-        if self.peeked.is_empty() {
-            if let Some(next) = self.code.next() {
-                self.peeked.push(next);
-            }
-        }
-        self.peeked.last().copied()
-    }
-    fn next(&mut self) -> Option<char> {
-        if let Some(res) = self.peeked.pop() {
-            Some(res)
-        } else {
-            self.code.next()
-        }
-    }
-    fn replace(&mut self, c: char) {
-        self.peeked.push(c);
+        tokens
     }
 
     fn lex_comment(&mut self) -> bool {
-        if self.peek().is_none_or(|c|c!='/') {
+        if self.code.peek().is_none_or(|c| *c != '/') {
             return false;
         }
-        self.next();
-        if self.peek().is_none_or(|c|c!='/') {
-            self.replace('/');
+        self.code.next();
+        if self.code.peek().is_none_or(|c| *c != '/') {
+            self.code.replace('/');
             return false;
         }
-        self.next();
-        while self.peek().is_some_and(|c|c != '\n') {
-            self.next();
+        self.code.next();
+        while self.code.peek().is_some_and(|c| *c != '\n') {
+            self.code.next();
         }
         true
     }
 
     fn lex_identifier(&mut self) -> Option<Token> {
-        if self.peek().is_none_or(|c| !c.is_alphabetic()) {
+        if self.code.peek().is_none_or(|c| !c.is_alphabetic()) {
             return None;
         }
         let mut name = vec![];
-        while self.peek().is_some_and(|c| c.is_alphanumeric() || c == '_') {
-            name.push(self.next().unwrap());
+        while self
+            .code
+            .peek()
+            .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+        {
+            name.push(self.code.next().unwrap());
         }
         let name_str = name
             .iter()
@@ -144,19 +134,23 @@ impl<'a> Lexer<'a> {
             // Put the tokens back so that the last taken one is replaced first
             // Turns out we didn't actually need them
             for c in name.into_iter().rev() {
-                self.replace(c);
+                self.code.replace(c);
             }
             None
         }
     }
 
     fn lex_number(&mut self) -> Option<Token> {
-        if self.peek().is_none_or(|c| !c.is_numeric()) {
+        if self.code.peek().is_none_or(|c| !c.is_numeric()) {
             return None;
         }
         let mut num = vec![];
-        while self.peek().is_some_and(|c| c.is_numeric() || c == '.') {
-            num.push(self.next().unwrap());
+        while self
+            .code
+            .peek()
+            .is_some_and(|c| c.is_numeric() || *c == '.')
+        {
+            num.push(self.code.next().unwrap());
         }
         let num_str = num
             .into_iter()
@@ -172,7 +166,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_special(&mut self) -> Option<Token> {
-        let c = match self.peek() {
+        let c = match self.code.peek() {
             Some(c) => c,
             None => return None,
         };
@@ -182,14 +176,16 @@ impl<'a> Lexer<'a> {
             '*' => Token::Op(OpToken::Times),
             '/' => Token::Op(OpToken::Divided),
             'd' => Token::Op(OpToken::D),
-            '(' => Token::LBracket,
-            ')' => Token::RBracket,
+            '(' => Token::Bracket(Bracket::Left),
+            ')' => Token::Bracket(Bracket::Right),
+            '{' => Token::Bracket(Bracket::LCurly),
+            '}' => Token::Bracket(Bracket::RCurly),
             '=' => Token::Op(OpToken::Assign),
             '.' => Token::Op(OpToken::Access),
             ';' => Token::EOL,
             _ => return None,
         };
-        self.next();
+        self.code.next();
         Some(res)
     }
 }
