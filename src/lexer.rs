@@ -187,12 +187,13 @@ impl<'a> Lexer<'a> {
         while self
             .code
             .peek()
-            .is_some_and(|c| c.is_numeric() || *c == '.')
+            .is_some_and(|c| c.is_numeric() || *c == '.' || *c == '_')
         {
             num.push(self.code.next().unwrap());
         }
         let num_str = num
             .into_iter()
+            .filter(|c| *c != '_')
             .map(|c| c.to_string())
             .collect::<Vec<_>>()
             .concat();

@@ -22,12 +22,12 @@ fn main() {
 }
 
 #[derive(Clone)]
-pub struct TokenIter<T: Iterator> {
+pub struct TokenIter<T: Iterator> where T::Item: std::fmt::Debug {
     inner: T,
     peeked: Vec<T::Item>,
 }
 
-impl<T: Iterator> Iterator for TokenIter<T> {
+impl<T: Iterator> Iterator for TokenIter<T> where T::Item: std::fmt::Debug {
     type Item = T::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -39,7 +39,7 @@ impl<T: Iterator> Iterator for TokenIter<T> {
     }
 }
 
-impl<T: Iterator> TokenIter<T> {
+impl<T: Iterator> TokenIter<T> where T::Item: std::fmt::Debug {
     pub fn new(inner: T) -> Self {
         Self {
             inner,

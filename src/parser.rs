@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 use crate::{
     TokenIter,
     lexer::{Bracket, Keyword, OpToken, Token, TokenString},
-    types::{Datatype, OPS, PROPERTIES, Value},
+    types::{Bool, Datatype, Void},
 };
 
 pub mod expr;
@@ -15,10 +15,15 @@ pub struct Parser {
     var_types: Vec<HashMap<String, Datatype>>,
 }
 
-const VOID: Expr = Expr {
-    contents: ExprContents::Literal(Value::Void),
-    output: Datatype::Void,
-};
+static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
+    contents: ExprContents::Literal(Box::new(Void)),
+    output: Box::new(Void),
+});
+
+static BOOL: LazyLock<Expr> = LazyLock::new(|| Expr {
+    contents: ExprContents::Literal(Box::new(false)),
+    output: Box::new(Bool),
+});
 
 impl Parser {
     pub fn new(tokens: TokenString) -> Self {
@@ -36,7 +41,7 @@ impl Parser {
     fn set_var_type(&mut self, name: String, dtype: Datatype) {
         if let Some(old) = self.get_var_type(&name) {
             assert_eq!(
-                old, dtype,
+                &old, &dtype,
                 "Can't reassign variable {name} of type {old:?} to type {dtype:?}",
             );
         } else {
@@ -50,7 +55,7 @@ impl Parser {
     fn get_var_type(&self, name: &str) -> Option<Datatype> {
         for scope in self.var_types.iter().rev() {
             if let Some(dtype) = scope.get(name) {
-                return Some(*dtype);
+                return Some(dtype.clone());
             }
         }
         None
@@ -63,42 +68,43 @@ impl Parser {
                     .get_var_type(var)
                     .expect(&format!("Unknown variable {var}")),
                 Accessor::Property(base, prop) => {
-                    let ty = self.decide_type(&base.contents);
-                    *PROPERTIES
-                        .get(&(ty, prop.clone()))
+                    let ty = &base.output;
+                    ty.prop_type(&prop)
                         .expect(&format!("Invalid property {prop} for type {ty:?}"))
                 }
             },
             ExprContents::Literal(literal) => literal.get_type(),
-            ExprContents::Binop(binop) => *OPS
-                .get(&(binop.lhs.output, binop.rhs.output, binop.op, OpType::Infix))
+            ExprContents::Binop(binop) => binop
+                .lhs
+                .output
+                .bin_op_result(binop.rhs.output.clone(), binop.op)
                 .expect(&format!(
                     "Invalid binary operation {:?} on {:?}, {:?}",
                     binop.op, binop.lhs.output, binop.rhs.output
                 )),
-            ExprContents::Prefix(prefix) => *OPS
-                .get(&(
-                    Datatype::Void,
-                    prefix.rhs.output,
-                    prefix.prefix,
-                    OpType::Prefix,
+            ExprContents::Prefix(prefix) => {
+                prefix.rhs.output.pre_op_result(prefix.op).expect(&format!(
+                    "Invalid prefix operation {:?} on {:?}",
+                    prefix.op, prefix.rhs.output
                 ))
-                .unwrap(),
-            ExprContents::Postfix(postfix) => *OPS
-                .get(&(
-                    postfix.lhs.output,
-                    Datatype::Void,
-                    postfix.postfix,
-                    OpType::Postfix,
-                ))
-                .unwrap(),
-            ExprContents::Assign(assign) => self.decide_type(&assign.val.contents),
+            }
+            ExprContents::Postfix(postfix) => {
+                postfix
+                    .lhs
+                    .output
+                    .post_op_result(postfix.op)
+                    .expect(&format!(
+                        "Invalid prefix operation {:?} on {:?}",
+                        postfix.op, postfix.lhs.output
+                    ))
+            }
+            ExprContents::Assign(assign) => assign.val.output.clone(),
             ExprContents::Scope(scope) => scope
                 .last()
-                .map(|expr| expr.output)
-                .unwrap_or(Datatype::Void),
-            ExprContents::Conditional(cond) => cond.result.output,
-            ExprContents::While(wh) => wh.result.output, // This is always Void
+                .map(|expr| expr.output.clone())
+                .unwrap_or(VOID.output.clone()),
+            ExprContents::Conditional(cond) => cond.result.output.clone(),
+            ExprContents::While(wh) => wh.result.output.clone(), // This is always Void
         }
     }
 
@@ -135,7 +141,7 @@ impl Parser {
             }
         }
         if !just_parsed {
-            exprs.push(VOID);
+            exprs.push(VOID.clone());
         }
         self.var_types.pop();
         exprs
@@ -152,22 +158,22 @@ impl Parser {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
             Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
-            Token::Float(f) => ExprContents::Literal(Value::Float(f)),
-            Token::Int(i) => ExprContents::Literal(Value::Int(i)),
-            Token::Keyword(Keyword::True) => ExprContents::Literal(Value::Bool(true)),
-            Token::Keyword(Keyword::False) => ExprContents::Literal(Value::Bool(false)),
+            Token::Float(f) => ExprContents::Literal(Box::new(f)),
+            Token::Int(i) => ExprContents::Literal(Box::new(i)),
+            Token::Keyword(Keyword::True) => ExprContents::Literal(Box::new(true)),
+            Token::Keyword(Keyword::False) => ExprContents::Literal(Box::new(false)),
             Token::Op(op) => {
                 let ((), r_bp) = PREFIX_BINDING_POWER
                     .get(&op)
                     .expect(&format!("Invalid prefix operator {op:?}"));
                 let rhs = self.parse_expr(*r_bp, expected_end, false);
-                self.make_expr(VOID.contents, rhs, op, OpType::Prefix)
+                self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix)
             }
             Token::Bracket(Bracket::Left) => {
                 if *self.tokens.peek().unwrap() == Token::Bracket(Bracket::Right) {
                     // ()
                     self.tokens.next();
-                    VOID.contents
+                    VOID.contents.clone()
                 } else {
                     let lhs = self.parse_expr(0, &vec![Token::Bracket(Bracket::Right)], false);
                     let next = self.tokens.next().unwrap();
@@ -219,7 +225,7 @@ impl Parser {
                     break;
                 }
                 self.tokens.next();
-                lhs = self.make_expr(lhs, VOID.contents, op, OpType::Postfix);
+                lhs = self.make_expr(lhs, VOID.contents.clone(), op, OpType::Postfix);
                 continue;
             }
             let (l_bp, r_bp) = INFIX_BINDING_POWER
@@ -263,8 +269,7 @@ impl Parser {
                 )
             } else {
                 assert_eq!(
-                    base_expr.output,
-                    Datatype::Void,
+                    &base_expr.output, &VOID.output,
                     "Conditional statement without an else clause must return Void"
                 );
                 None
@@ -273,7 +278,7 @@ impl Parser {
         let else_expr = if let Some(exc) = else_block {
             let res = self.new_expr(exc);
             assert_eq!(
-                res.output, base_expr.output,
+                &res.output, &base_expr.output,
                 "If statement recieved non-matching types {:?} and {:?}",
                 res.output, base_expr.output
             );
@@ -291,11 +296,7 @@ impl Parser {
 
     fn parse_while(&mut self) -> ExprContents {
         let (clause, result) = self.parse_conditional_clause();
-        assert_eq!(
-            result.output,
-            Datatype::Void,
-            "While loops must return Void"
-        );
+        assert_eq!(&result.output, &VOID.output, "While loops must return Void");
         ExprContents::While(While {
             condition: Box::new(clause),
             result: Box::new(result),
@@ -311,10 +312,9 @@ impl Parser {
             self.tokens.peek()
         );
         assert_eq!(
-            clause.output,
-            Datatype::Bool,
-            "Expected expression returning boolean value, found {:?}",
-            clause.output
+            &clause.output, &BOOL.output,
+            "Expected expression returning boolean value, found {:?} ({:?})",
+            clause.output, clause.contents
         );
         let scope = self.parse_scope(true);
         assert!(
@@ -356,16 +356,16 @@ impl Parser {
                 op: op.try_into().unwrap(),
             }),
             (OpToken::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
-                prefix: op.try_into().unwrap(),
+                op: op.try_into().unwrap(),
                 rhs: Box::new(self.new_expr(rhs)),
             }),
             (OpToken::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
-                prefix: op.try_into().unwrap(),
+                op: op.try_into().unwrap(),
                 rhs: Box::new(self.new_expr(rhs)),
             }),
             // "d6" expands to "1d6"
             (OpToken::D, OpType::Prefix) => ExprContents::Binop(Binop {
-                lhs: Box::new(self.new_expr(ExprContents::Literal(Value::Int(1)))),
+                lhs: Box::new(self.new_expr(ExprContents::Literal(Box::new(1)))),
                 rhs: Box::new(self.new_expr(rhs)),
                 op: op.try_into().unwrap(),
             }),
@@ -377,13 +377,10 @@ impl Parser {
                 };
                 match &assignee {
                     Accessor::Variable(v) => {
-                        self.set_var_type(v.clone(), val.output);
+                        self.set_var_type(v.clone(), val.output.clone());
                     }
                     Accessor::Property(base, prop) => {
-                        assert_eq!(
-                            Some(&val.output),
-                            PROPERTIES.get(&(base.output, prop.clone()))
-                        )
+                        assert_eq!(Some(&val.output), base.output.prop_type(prop).as_ref())
                     }
                 }
                 ExprContents::Assign(Assign { assignee, val })
@@ -444,7 +441,11 @@ static OP_LIST: LazyLock<Vec<(Vec<OpToken>, OpType, bool)>> = LazyLock::new(|| {
             false,
         ),
         (vec![OpToken::Plus, OpToken::Minus], OpType::Infix, false),
-        (vec![OpToken::Times, OpToken::Divided, OpToken::Mod], OpType::Infix, false),
+        (
+            vec![OpToken::Times, OpToken::Divided, OpToken::Mod],
+            OpType::Infix,
+            false,
+        ),
         (vec![OpToken::Access], OpType::Infix, false),
         (vec![OpToken::D], OpType::Infix, false),
         (vec![OpToken::D], OpType::Prefix, false),

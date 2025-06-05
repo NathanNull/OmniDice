@@ -115,8 +115,8 @@ impl Debug for ExprContents {
         match self {
             Self::Literal(num) => write!(f, "{:?}", num),
             Self::Binop(Binop { op, lhs, rhs }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
-            Self::Prefix(Prefix { prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
-            Self::Postfix(Postfix { postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
+            Self::Prefix(Prefix { op: prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
+            Self::Postfix(Postfix { op: postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
             Self::Assign(Assign { assignee, val }) => write!(f, "(set {assignee:?} {val:?})"),
             Self::Accessor(acc) => write!(f, "{acc:?}"),
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
@@ -139,9 +139,9 @@ impl Display for Expr {
             ExprContents::Binop(binop) => {
                 (format!("{:?} b", binop.op), vec![&binop.lhs, &binop.rhs])
             }
-            ExprContents::Prefix(prefix) => (format!("{:?} pre", prefix.prefix), vec![&prefix.rhs]),
+            ExprContents::Prefix(prefix) => (format!("{:?} pre", prefix.op), vec![&prefix.rhs]),
             ExprContents::Postfix(postfix) => {
-                (format!("{:?} post", postfix.postfix), vec![&postfix.lhs])
+                (format!("{:?} post", postfix.op), vec![&postfix.lhs])
             }
             ExprContents::Assign(assign) => {
                 (format!("assign {:?}", assign.assignee), vec![&assign.val])
@@ -188,13 +188,13 @@ pub struct Binop {
 
 #[derive(Debug, Clone)]
 pub struct Prefix {
-    pub prefix: Op,
+    pub op: Op,
     pub rhs: Box<Expr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Postfix {
-    pub postfix: Op,
+    pub op: Op,
     pub lhs: Box<Expr>,
 }
 
