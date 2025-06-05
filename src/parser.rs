@@ -98,7 +98,7 @@ impl Parser {
                 .map(|expr| expr.output)
                 .unwrap_or(Datatype::Void),
             ExprContents::Conditional(cond) => cond.result.output,
-            ExprContents::While(wh) => wh.result.output,
+            ExprContents::While(wh) => wh.result.output, // This is always Void
         }
     }
 
@@ -339,6 +339,7 @@ impl Parser {
                 | OpToken::Minus
                 | OpToken::Times
                 | OpToken::Divided
+                | OpToken::Mod
                 | OpToken::D
                 | OpToken::Equal
                 | OpToken::NotEqual
@@ -402,6 +403,7 @@ impl Parser {
                 OpToken::Plus
                 | OpToken::Times
                 | OpToken::Divided
+                | OpToken::Mod
                 | OpToken::Equal
                 | OpToken::NotEqual
                 | OpToken::Greater
@@ -442,7 +444,7 @@ static OP_LIST: LazyLock<Vec<(Vec<OpToken>, OpType, bool)>> = LazyLock::new(|| {
             false,
         ),
         (vec![OpToken::Plus, OpToken::Minus], OpType::Infix, false),
-        (vec![OpToken::Times, OpToken::Divided], OpType::Infix, false),
+        (vec![OpToken::Times, OpToken::Divided, OpToken::Mod], OpType::Infix, false),
         (vec![OpToken::Access], OpType::Infix, false),
         (vec![OpToken::D], OpType::Infix, false),
         (vec![OpToken::D], OpType::Prefix, false),

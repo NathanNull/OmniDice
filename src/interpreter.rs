@@ -68,6 +68,7 @@ impl Interpreter {
             Op::Minus => lhs.clone() - rhs.clone(),
             Op::Times => lhs.clone() * rhs.clone(),
             Op::Divided => lhs.clone() / rhs.clone(),
+            Op::Mod => lhs.clone() % rhs.clone(),
             Op::Equal => Value::Bool(lhs == rhs),
             Op::NotEqual => Value::Bool(lhs != rhs),
             Op::Greater => Value::Bool(lhs > rhs),

@@ -2,7 +2,7 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
-    ops::{Add, Div, Mul, Neg, Not, Sub},
+    ops::{Add, Div, Mul, Neg, Not, Rem, Sub},
     sync::LazyLock,
 };
 
@@ -64,7 +64,7 @@ impl Datatype {
                 .into_iter()
                 .map(|op| (op, Self::Int))
                 .chain(ORD_OPS.into_iter().map(|op| (op, Self::Bool)))
-                .chain([(Op::D, Self::Dice)])
+                .chain([(Op::D, Self::Dice),(Op::Mod, self)])
                 .collect(),
             (Self::Float, Self::Float) | (Self::Float, Self::Int) | (Self::Int, Self::Float) => {
                 NUM_OPS
@@ -269,6 +269,17 @@ impl Div for Value {
             }
 
             (s, r) => panic!("Can't divide values {s:?} and {r:?}"),
+        }
+    }
+}
+
+impl Rem for Value {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Int(li), Self::Int(ri)) => Self::Int(li%ri),
+            (s, r) => panic!("Can't take the remainder between values {s:?} and {r:?}")
         }
     }
 }
