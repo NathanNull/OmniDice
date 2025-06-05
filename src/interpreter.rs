@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::{
     distribution::Distribution,
-    parser::{Accessor, Assign, Binop, Expr, ExprContents, Op, Postfix, Prefix, Scope},
+    parser::{
+        Accessor, Assign, Binop, Conditional, Expr, ExprContents, Op, Postfix, Prefix, Scope, While,
+    },
     types::Value,
 };
 
@@ -44,6 +46,8 @@ impl Interpreter {
             ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
             ExprContents::Assign(assign) => self.eval_assign(assign),
             ExprContents::Scope(scope) => self.eval_scope(scope),
+            ExprContents::Conditional(cond) => self.eval_conditional(cond),
+            ExprContents::While(wh) => self.eval_while(wh),
         };
         assert_eq!(res.get_type(), expr.output);
         res
@@ -59,19 +63,49 @@ impl Interpreter {
     fn eval_binop(&mut self, binop: &Binop) -> Value {
         let lhs = self.eval_expr(&binop.lhs);
         let rhs = self.eval_expr(&binop.rhs);
-        let res = match binop.op {
+        match binop.op {
             Op::Plus => lhs.clone() + rhs.clone(),
             Op::Minus => lhs.clone() - rhs.clone(),
             Op::Times => lhs.clone() * rhs.clone(),
             Op::Divided => lhs.clone() / rhs.clone(),
+            Op::Equal => Value::Bool(lhs == rhs),
+            Op::NotEqual => Value::Bool(lhs != rhs),
+            Op::Greater => Value::Bool(lhs > rhs),
+            Op::Less => Value::Bool(lhs < rhs),
+            Op::Geq => Value::Bool(lhs >= rhs),
+            Op::Leq => Value::Bool(lhs <= rhs),
+            Op::And => {
+                if let Value::Bool(blhs) = lhs {
+                    if let Value::Bool(brhs) = rhs {
+                        return Value::Bool(blhs && brhs);
+                    }
+                }
+                panic!(
+                    "Can't evaluate {:?} && {:?}",
+                    lhs.get_type(),
+                    rhs.get_type()
+                );
+            }
+            Op::Or => {
+                if let Value::Bool(blhs) = lhs {
+                    if let Value::Bool(brhs) = rhs {
+                        return Value::Bool(blhs || brhs);
+                    }
+                }
+                panic!(
+                    "Can't evaluate {:?} || {:?}",
+                    lhs.get_type(),
+                    rhs.get_type()
+                );
+            }
             Op::D => match (&lhs, &rhs) {
                 (Value::Int(l), Value::Int(r)) if *l >= 0 && *r >= 0 => {
                     Value::Dice(Distribution::n_die_m(*l as usize, *r as usize))
                 }
                 (l, r) => panic!("Can't create dice from values {l:?} and {r:?}"),
             },
-        };
-        res
+            Op::Not => unreachable!("Invalid binary operation {:?}", binop.op),
+        }
     }
 
     fn get_var(&self, var: &String) -> Value {
@@ -88,6 +122,12 @@ impl Interpreter {
             print!("!!!!! tried to set variable while no scope alive");
             self.variables.push(HashMap::new());
         }
+        for scope in &mut self.variables {
+            if scope.contains_key(&var) {
+                scope.insert(var, val);
+                return;
+            }
+        }
         self.variables.last_mut().unwrap().insert(var, val);
     }
 
@@ -95,6 +135,7 @@ impl Interpreter {
         let rhs = self.eval_expr(&prefix.rhs);
         match prefix.prefix {
             Op::Minus => -rhs.clone(),
+            Op::Not => !rhs.clone(),
             p => unreachable!("Invalid prefix operator {p:?}"),
         }
     }
@@ -113,5 +154,34 @@ impl Interpreter {
             Accessor::Property(base, prop) => self.eval_expr(&base).set_property(prop, val.clone()),
         }
         val
+    }
+
+    fn eval_conditional(&mut self, cond: &Conditional) -> Value {
+        if let Value::Bool(condition) = self.eval_expr(&cond.condition) {
+            if condition {
+                self.eval_expr(&cond.result)
+            } else if let Some(otherwise) = cond.otherwise.as_ref() {
+                self.eval_expr(&otherwise)
+            } else {
+                Value::Void
+            }
+        } else {
+            unreachable!("Conditional statements should always return boolean values")
+        }
+    }
+
+    fn eval_while(&mut self, wh: &While) -> Value {
+        loop {
+            if let Value::Bool(condition) = self.eval_expr(&wh.condition) {
+                if condition {
+                    self.eval_expr(&wh.result);
+                } else {
+                    break;
+                }
+            } else {
+                unreachable!("Conditional statements should always return boolean values")
+            }
+        }
+        Value::Void
     }
 }

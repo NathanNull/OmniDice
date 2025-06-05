@@ -2,7 +2,10 @@ use std::fmt::{Debug, Display};
 
 use strum::EnumIter;
 
-use crate::{lexer::OpToken, types::{Datatype, Value}};
+use crate::{
+    lexer::OpToken,
+    types::{Datatype, Value},
+};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, EnumIter)]
 pub enum OpType {
@@ -18,6 +21,15 @@ pub enum Op {
     Times,
     Divided,
     D,
+    Equal,
+    NotEqual,
+    Greater,
+    Less,
+    Geq,
+    Leq,
+    And,
+    Or,
+    Not,
 }
 
 impl Debug for Op {
@@ -28,23 +40,49 @@ impl Debug for Op {
             Self::Times => "*",
             Self::Divided => "/",
             Self::D => "d",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::Greater => ">",
+            Self::Less => "<",
+            Self::Geq => ">=",
+            Self::Leq => "<=",
+            Self::And => "&&",
+            Self::Or => "||",
+            Self::Not => "!",
         };
         write!(f, "{c}")
     }
 }
 
-impl From<OpToken> for Op {
-    fn from(value: OpToken) -> Self {
-        match value {
-            OpToken::Plus => Self::Plus,
-            OpToken::Minus => Self::Minus,
-            OpToken::Times => Self::Times,
-            OpToken::Divided => Self::Divided,
-            OpToken::D => Self::D,
-            OpToken::Assign | OpToken::Access => panic!("Invalid operation {value:?}"),
+// Convenient little macro so I don't have to manually write every conversion between Op and OpToken
+macro_rules! convert_op_tokens {
+    ($($op: ident),+) => {
+        impl TryFrom<OpToken> for Op {
+            type Error = String;
+
+            fn try_from(value: OpToken) -> Result<Self, Self::Error> {
+                Ok(match value {
+                    $(OpToken::$op => Self::$op,)+
+                    _ => {
+                        return Err(format!("Invalid operation {value:?}"));
+                    }
+                })
+            }
         }
-    }
+
+        impl Into<OpToken> for Op {
+            fn into(self) -> OpToken {
+                match self {
+                    $(Self::$op => OpToken::$op,)+
+                }
+            }
+        }
+    };
 }
+
+convert_op_tokens!(
+    Plus, Minus, Times, Divided, D, Equal, NotEqual, Greater, Less, Geq, Leq, And, Or, Not
+);
 
 pub type Scope = Vec<Expr>;
 
@@ -60,6 +98,8 @@ pub enum ExprContents {
     Assign(Assign),
     Accessor(Accessor),
     Scope(Scope),
+    Conditional(Conditional),
+    While(While),
 }
 
 #[derive(Clone)]
@@ -78,6 +118,8 @@ impl Debug for ExprContents {
             Self::Assign(Assign { assignee, val }) => write!(f, "(set {assignee:?} {val:?})"),
             Self::Accessor(acc) => write!(f, "{acc:?}"),
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
+            Self::Conditional(cond) => write!(f, "{cond:?}"),
+            Self::While(wh) => write!(f, "{:?}", wh),
         }
     }
 }
@@ -103,7 +145,15 @@ impl Display for Expr {
                 (format!("assign {:?}", assign.assignee), vec![&assign.val])
             }
             ExprContents::Accessor(accessor) => (format!("{accessor:?}"), vec![]),
-            ExprContents::Scope(exprs) => (format!("scope"), exprs.iter().collect()),
+            ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
+            ExprContents::Conditional(cond) => ("if".to_string(), {
+                let mut children: Vec<&Expr> = vec![&cond.condition, &cond.result];
+                if let Some(otw) = cond.otherwise.as_ref() {
+                    children.push(otw);
+                }
+                children
+            }),
+            ExprContents::While(wh) => ("while".to_string(), vec![&wh.condition, &wh.result]),
         };
         writeln!(f, "{str}")?;
         let num_children = children.len();
@@ -164,5 +214,34 @@ impl Debug for Accessor {
             Self::Variable(name) => write!(f, "{name}"),
             Self::Property(accessor, name) => write!(f, "{accessor:?}.{name}"),
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct Conditional {
+    pub condition: Box<Expr>,
+    pub result: Box<Expr>,
+    pub otherwise: Option<Box<Expr>>,
+}
+
+impl Debug for Conditional {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "if {:?} then {:?}", self.condition, self.result)?;
+        if let Some(otw) = self.otherwise.as_ref() {
+            write!(f, " else {otw:?}")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct While {
+    pub condition: Box<Expr>,
+    pub result: Box<Expr>,
+}
+
+impl Debug for While {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "while {:?} do {:?}", self.condition, self.result)
     }
 }

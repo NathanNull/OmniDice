@@ -1,7 +1,8 @@
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
-    ops::{Add, Div, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg, Not, Sub},
     sync::LazyLock,
 };
 
@@ -57,43 +58,51 @@ impl Datatype {
         // almost certainly there's a better way of doing this, and I'll probably implement something
         // later, but while I have relatively few types this is fine.
         const NUM_OPS: [Op; 4] = [Op::Plus, Op::Minus, Op::Times, Op::Divided];
+        const ORD_OPS: [Op; 6] = [Op::Equal, Op::NotEqual, Op::Greater, Op::Less, Op::Geq, Op::Leq];
         match (self, rhs) {
-            (Self::Int, Self::Int) => Op::iter()
-                .map(|op| (op, if op == Op::D { Self::Dice } else { Self::Int }))
+            (Self::Int, Self::Int) => NUM_OPS
+                .into_iter()
+                .map(|op| (op, Self::Int))
+                .chain(ORD_OPS.into_iter().map(|op| (op, Self::Bool)))
+                .chain([(Op::D, Self::Dice)])
                 .collect(),
             (Self::Float, Self::Float) | (Self::Float, Self::Int) | (Self::Int, Self::Float) => {
-                Op::iter()
-                    .filter(|op| *op != Op::D)
+                NUM_OPS
+                    .into_iter()
                     .map(|op| (op, Self::Float))
+                    .chain(
+                        ORD_OPS
+                            .into_iter()
+                            .map(|op| (op, Self::Bool))
+                            .filter(|_| self == rhs),
+                    )
                     .collect()
             }
-            (Self::Bool, Self::Bool) => vec![], // TODO: implement boolean ops
+            (Self::Bool, Self::Bool) => [Op::Equal, Op::NotEqual, Op::And, Op::Or]
+                .into_iter()
+                .map(|op| (op, self))
+                .collect(),
             (_, Self::Bool) | (Self::Bool, _) => vec![],
             (Self::Dice, Self::Dice) => NUM_OPS.iter().map(|op| (*op, Self::Dice)).collect(),
             (Self::Float, Self::Dice) | (Self::Dice, Self::Float) => vec![],
-            (Self::Int, Self::Dice) | (Self::Dice, Self::Int) => Op::iter()
+            (Self::Int, Self::Dice) | (Self::Dice, Self::Int) => NUM_OPS
+                .into_iter()
                 .filter(|op| *op != Op::D)
                 .map(|op| (op, Self::Dice))
                 .collect(),
-            // (Self::Void, _), _) if op_type == OpType::Prefix => match (rhs, op) {
-            //     (Self::Int | Self::Float | Self::Dice, Op::Minus) => rhs,
-            //     _ => panic!("Invalid prefix operator {op:?} on type {rhs:?}"),
-            // },
-            // ((_, Self::Void), _) if op_type == OpType::Postfix => match (self, op) {
-            //     _ => panic!("Currently no postfixes are valid"),
-            // },
             (Self::Void, _) | (_, Self::Void) => vec![],
         }
     }
 
-    fn get_prefix_ops(&self) -> Vec<(Op, Self)> {
+    fn get_prefix_ops(self) -> Vec<(Op, Self)> {
         match self {
-            Self::Int | Self::Float | Self::Dice => vec![(Op::Minus, *self)],
+            Self::Int | Self::Float | Self::Dice => vec![(Op::Minus, self)],
+            Self::Bool => vec![(Op::Not, self)],
             _ => vec![],
         }
     }
 
-    fn get_postfix_ops(&self) -> Vec<(Op, Self)> {
+    fn get_postfix_ops(self) -> Vec<(Op, Self)> {
         match self {
             _ => vec![],
         }
@@ -273,6 +282,46 @@ impl Neg for Value {
             Value::Float(f) => Value::Float(-f),
             Value::Dice(d) => Value::Dice(Distribution::from_vec(vec![0]) - d),
             _ => panic!("Can't negate the value '{self}'"),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
+            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+            _ => panic!(
+                "Equality not implemented between types {:?} and {:?}",
+                self.get_type(),
+                other.get_type()
+            ),
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Self::Int(l0), Self::Int(r0)) => l0.partial_cmp(r0),
+            (Self::Float(l0), Self::Float(r0)) => l0.partial_cmp(r0),
+            _ => panic!(
+                "Ordering not implemented between types {:?} and {:?}",
+                self.get_type(),
+                other.get_type()
+            ),
+        }
+    }
+}
+
+impl Not for Value {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Value::Bool(b) => Value::Bool(!b),
+            _ => unreachable!("Invalid prefix ! for type {:?}", self.get_type()),
         }
     }
 }

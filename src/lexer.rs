@@ -1,6 +1,6 @@
 use std::{fmt::Debug, str::Chars};
 
-use crate::TokenIter;
+use crate::{TokenIter, parser::Op};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -18,6 +18,9 @@ pub enum Token {
 pub enum Keyword {
     True,
     False,
+    If,
+    Else,
+    While,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +38,17 @@ pub enum OpToken {
     Times,
     Divided,
     D,
+    Equal,
+    NotEqual,
+    Greater,
+    Less,
+    Geq,
+    Leq,
+    And,
+    Or,
+    Not,
     Assign,
+    OpAssign(Op),
     Access,
 }
 
@@ -47,7 +60,17 @@ impl Debug for OpToken {
             Self::Times => "*",
             Self::Divided => "/",
             Self::D => "d",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::Greater => ">",
+            Self::Less => "<",
+            Self::Geq => ">=",
+            Self::Leq => "<=",
+            Self::And => "&&",
+            Self::Or => "||",
+            Self::Not => "!",
             Self::Assign => "=",
+            Self::OpAssign(op) => &format!("{op:?}="),
             Self::Access => ".",
         };
         write!(f, "{c}")
@@ -98,13 +121,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_comment(&mut self) -> bool {
-        if let Some(_) = self.code.eat("//".chars()) {
+        if self.code.eat_str("//") {
             while self.code.peek().is_some_and(|c| *c != '\n') {
                 self.code.next();
             }
             true
-        } else if let Some(_) = self.code.eat("/*".chars()) {
-            while self.code.eat("*/".chars()).is_none() && self.code.peek().is_some() {
+        } else if self.code.eat_str("/*") {
+            while !self.code.eat_str("*/") && self.code.peek().is_some() {
                 self.code.next();
             }
             true
@@ -139,6 +162,9 @@ impl<'a> Lexer<'a> {
             Some(Token::Keyword(match name_str.as_str() {
                 "true" => Keyword::True,
                 "false" => Keyword::False,
+                "if" => Keyword::If,
+                "else" => Keyword::Else,
+                "while" => Keyword::While,
                 _ => return Some(Token::Identifier(name_str)),
             }))
         } else {
@@ -177,26 +203,40 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_special(&mut self) -> Option<Token> {
-        let c = match self.code.peek() {
-            Some(c) => c,
-            None => return None,
-        };
-        let res = match c {
-            '+' => Token::Op(OpToken::Plus),
-            '-' => Token::Op(OpToken::Minus),
-            '*' => Token::Op(OpToken::Times),
-            '/' => Token::Op(OpToken::Divided),
-            'd' => Token::Op(OpToken::D),
-            '(' => Token::Bracket(Bracket::Left),
-            ')' => Token::Bracket(Bracket::Right),
-            '{' => Token::Bracket(Bracket::LCurly),
-            '}' => Token::Bracket(Bracket::RCurly),
-            '=' => Token::Op(OpToken::Assign),
-            '.' => Token::Op(OpToken::Access),
-            ';' => Token::EOL,
-            _ => return None,
-        };
-        self.code.next();
-        Some(res)
+        for (pattern, res) in [
+            ("+", Token::Op(OpToken::Plus)),
+            ("-", Token::Op(OpToken::Minus)),
+            ("*", Token::Op(OpToken::Times)),
+            ("/", Token::Op(OpToken::Divided)),
+            ("d", Token::Op(OpToken::D)),
+            ("==", Token::Op(OpToken::Equal)),
+            ("!=", Token::Op(OpToken::NotEqual)),
+            (">=", Token::Op(OpToken::Geq)),
+            ("<=", Token::Op(OpToken::Leq)),
+            (">", Token::Op(OpToken::Greater)),
+            ("<", Token::Op(OpToken::Less)),
+            ("&&", Token::Op(OpToken::And)),
+            ("||", Token::Op(OpToken::Or)),
+            ("!", Token::Op(OpToken::Not)),
+            ("(", Token::Bracket(Bracket::Left)),
+            (")", Token::Bracket(Bracket::Right)),
+            ("{", Token::Bracket(Bracket::LCurly)),
+            ("}", Token::Bracket(Bracket::RCurly)),
+            ("=", Token::Op(OpToken::Assign)),
+            (".", Token::Op(OpToken::Access)),
+            (";", Token::EOL),
+        ] {
+            if self.code.eat_str(pattern) {
+                if let Token::Op(op) = res {
+                    let as_op = TryInto::<Op>::try_into(op);
+                    // If it's a valid (real) operation and is followed by =, e.g. +=
+                    if as_op.is_ok() && self.code.eat_str("=") {
+                        return Some(Token::Op(OpToken::OpAssign(as_op.unwrap())));
+                    }
+                }
+                return Some(res);
+            }
+        }
+        None
     }
 }

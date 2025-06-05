@@ -21,6 +21,7 @@ fn main() {
     println!("Output: {output}");
 }
 
+#[derive(Clone)]
 pub struct TokenIter<T: Iterator> {
     inner: T,
     peeked: Vec<T::Item>,
@@ -59,7 +60,7 @@ impl<T: Iterator> TokenIter<T> {
         self.peeked.push(itm);
     }
 
-    pub fn eat(&mut self, pattern: impl Iterator<Item = T::Item>) -> Option<Vec<T::Item>>
+    pub fn eat(&mut self, pattern: impl IntoIterator<Item = T::Item>) -> Option<Vec<T::Item>>
     where
         T::Item: PartialEq,
     {
@@ -83,5 +84,11 @@ impl<T: Iterator> TokenIter<T> {
             }
         }
         Some(removed)
+    }
+}
+
+impl<T: Iterator<Item = char>> TokenIter<T> {
+    pub fn eat_str(&mut self, str: &str) -> bool {
+        self.eat(str.chars()).is_some()
     }
 }

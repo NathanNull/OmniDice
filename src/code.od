@@ -1,6 +1,10 @@
-die = 1d6+3 + 2;
+die = d6 + 3;
 res = {
     dice = die + die + die; dice.mean // 3d6
-} // This should be missing a semicolon
-a = true;
-res
+};
+a = 1;
+a += 15;
+while a > 2 {
+    a -= 3;
+}
+a

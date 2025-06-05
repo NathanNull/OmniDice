@@ -1,11 +1,14 @@
-use std::{collections::HashMap, vec::IntoIter};
+use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    lexer::{Bracket, Keyword, OpToken, Token, TokenString}, types::{Datatype, Value, OPS, PROPERTIES}, TokenIter
+    TokenIter,
+    lexer::{Bracket, Keyword, OpToken, Token, TokenString},
+    types::{Datatype, OPS, PROPERTIES, Value},
 };
 
 pub mod expr;
 pub use expr::*;
+use strum::IntoEnumIterator;
 
 pub struct Parser {
     tokens: TokenIter<IntoIter<Token>>,
@@ -31,11 +34,17 @@ impl Parser {
     }
 
     fn set_var_type(&mut self, name: String, dtype: Datatype) {
-        if self.var_types.is_empty() {
-            print!("!!!!! tried to access variable type while no scope alive");
-            self.var_types.push(HashMap::new());
+        if let Some(old) = self.get_var_type(&name) {
+            assert_eq!(
+                old, dtype,
+                "Can't reassign variable {name} of type {old:?} to type {dtype:?}",
+            );
+        } else {
+            if self.var_types.is_empty() {
+                panic!("Tried to access variable type while no scope alive");
+            }
+            self.var_types.last_mut().unwrap().insert(name, dtype);
         }
-        self.var_types.last_mut().unwrap().insert(name, dtype);
     }
 
     fn get_var_type(&self, name: &str) -> Option<Datatype> {
@@ -62,24 +71,22 @@ impl Parser {
             },
             ExprContents::Literal(literal) => literal.get_type(),
             ExprContents::Binop(binop) => *OPS
-                .get(&(
-                    self.decide_type(&binop.lhs.contents),
-                    self.decide_type(&binop.rhs.contents),
-                    binop.op,
-                    OpType::Infix,
-                ))
-                .unwrap(),
+                .get(&(binop.lhs.output, binop.rhs.output, binop.op, OpType::Infix))
+                .expect(&format!(
+                    "Invalid binary operation {:?} on {:?}, {:?}",
+                    binop.op, binop.lhs.output, binop.rhs.output
+                )),
             ExprContents::Prefix(prefix) => *OPS
                 .get(&(
                     Datatype::Void,
-                    self.decide_type(&prefix.rhs.contents),
+                    prefix.rhs.output,
                     prefix.prefix,
                     OpType::Prefix,
                 ))
                 .unwrap(),
             ExprContents::Postfix(postfix) => *OPS
                 .get(&(
-                    self.decide_type(&postfix.lhs.contents),
+                    postfix.lhs.output,
                     Datatype::Void,
                     postfix.postfix,
                     OpType::Postfix,
@@ -90,6 +97,8 @@ impl Parser {
                 .last()
                 .map(|expr| expr.output)
                 .unwrap_or(Datatype::Void),
+            ExprContents::Conditional(cond) => cond.result.output,
+            ExprContents::While(wh) => wh.result.output,
         }
     }
 
@@ -112,7 +121,7 @@ impl Parser {
             },
         ];
         while self.tokens.peek().unwrap() != expected_end.last().unwrap() {
-            let contents = self.parse_expr(0, &expected_end);
+            let contents = self.parse_expr(0, &expected_end, true);
             exprs.push(self.new_expr(contents));
             just_parsed = true;
             assert!(
@@ -132,7 +141,14 @@ impl Parser {
         exprs
     }
 
-    fn parse_expr(&mut self, min_bp: u8, expected_end: &Vec<Token>) -> ExprContents {
+    /// expected_end is what the expression is allowed to stop on, and allow_imply_eol is whether
+    /// the parser can insert semicolons where it sees that they are needed (i.e. after }).
+    fn parse_expr(
+        &mut self,
+        min_bp: u8,
+        expected_end: &Vec<Token>,
+        allow_imply_eol: bool,
+    ) -> ExprContents {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
             Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
@@ -141,8 +157,10 @@ impl Parser {
             Token::Keyword(Keyword::True) => ExprContents::Literal(Value::Bool(true)),
             Token::Keyword(Keyword::False) => ExprContents::Literal(Value::Bool(false)),
             Token::Op(op) => {
-                let ((), r_bp) = prefix_binding_power(op);
-                let rhs = self.parse_expr(r_bp, expected_end);
+                let ((), r_bp) = PREFIX_BINDING_POWER
+                    .get(&op)
+                    .expect(&format!("Invalid prefix operator {op:?}"));
+                let rhs = self.parse_expr(*r_bp, expected_end, false);
                 self.make_expr(VOID.contents, rhs, op, OpType::Prefix)
             }
             Token::Bracket(Bracket::Left) => {
@@ -151,7 +169,7 @@ impl Parser {
                     self.tokens.next();
                     VOID.contents
                 } else {
-                    let lhs = self.parse_expr(0, &vec![Token::Bracket(Bracket::Right)]);
+                    let lhs = self.parse_expr(0, &vec![Token::Bracket(Bracket::Right)], false);
                     let next = self.tokens.next().unwrap();
                     assert_eq!(
                         next,
@@ -169,39 +187,143 @@ impl Parser {
                     Token::Bracket(Bracket::RCurly),
                     "Expected right curly bracket, found {next:?}"
                 );
-                imply_eol = true;
+                imply_eol = allow_imply_eol;
                 scope
+            }
+            Token::Keyword(Keyword::If) => {
+                imply_eol = allow_imply_eol;
+                self.parse_if()
+            }
+            Token::Keyword(Keyword::While) => {
+                imply_eol = allow_imply_eol;
+                self.parse_while()
             }
             tk => panic!("Expected literal or ident, found {tk:?}"),
         };
         loop {
-            let op = match self.tokens.peek().unwrap() {
+            let op = match self.tokens.peek().unwrap().clone() {
                 tk if expected_end.contains(&tk) => break,
-                Token::Op(op) => *op,
+                Token::Op(op) => op,
                 _ if imply_eol && expected_end.contains(&Token::EOL) => {
                     // automatic semicolon insertion :)
                     self.tokens.replace(Token::EOL);
                     break;
                 }
-                tk => panic!("Expected operation or {expected_end:?}, found {tk:?}"),
+                tk => panic!(
+                    "Expected operation or {expected_end:?}, found {tk:?} (tokens left: {:?})",
+                    self.tokens.clone().collect::<Vec<_>>()
+                ),
             };
-            if let Some((l_bp, ())) = postfix_binding_power(op) {
-                if l_bp < min_bp {
+            if let Some((l_bp, ())) = POSTFIX_BINDING_POWER.get(&op) {
+                if *l_bp < min_bp {
                     break;
                 }
                 self.tokens.next();
                 lhs = self.make_expr(lhs, VOID.contents, op, OpType::Postfix);
                 continue;
             }
-            let (l_bp, r_bp) = infix_binding_power(op);
-            if l_bp < min_bp {
+            let (l_bp, r_bp) = INFIX_BINDING_POWER
+                .get(&op)
+                .expect(&format!("Invalid infix operator {op:?}"));
+            if *l_bp < min_bp {
                 break;
             }
             self.tokens.next();
-            let rhs = self.parse_expr(r_bp, expected_end);
+            let rhs = self.parse_expr(*r_bp, expected_end, false);
             lhs = self.make_expr(lhs, rhs, op, OpType::Infix);
         }
         lhs
+    }
+
+    fn parse_if(&mut self) -> ExprContents {
+        let (base_clause, base_expr) = self.parse_conditional_clause();
+        let else_block =
+            if let Some(_) = self.tokens.eat([Token::Keyword(Keyword::Else)].into_iter()) {
+                Some(
+                    if let Some(_) = self.tokens.eat([Token::Keyword(Keyword::If)].into_iter()) {
+                        self.parse_if()
+                    } else {
+                        assert!(
+                            self.tokens
+                                .eat([Token::Bracket(Bracket::LCurly)].into_iter())
+                                .is_some(),
+                            "Expected {{, found {:?}",
+                            self.tokens.peek()
+                        );
+                        let scope = self.parse_scope(true);
+                        assert!(
+                            self.tokens
+                                .eat([Token::Bracket(Bracket::RCurly)].into_iter())
+                                .is_some(),
+                            "Expected {{, found {:?}",
+                            self.tokens.peek()
+                        );
+                        ExprContents::Scope(scope)
+                    },
+                )
+            } else {
+                assert_eq!(
+                    base_expr.output,
+                    Datatype::Void,
+                    "Conditional statement without an else clause must return Void"
+                );
+                None
+            };
+
+        let else_expr = if let Some(exc) = else_block {
+            let res = self.new_expr(exc);
+            assert_eq!(
+                res.output, base_expr.output,
+                "If statement recieved non-matching types {:?} and {:?}",
+                res.output, base_expr.output
+            );
+            Some(Box::new(res))
+        } else {
+            None
+        };
+
+        ExprContents::Conditional(Conditional {
+            condition: Box::new(base_clause),
+            result: Box::new(base_expr),
+            otherwise: else_expr,
+        })
+    }
+
+    fn parse_while(&mut self) -> ExprContents {
+        let (clause, result) = self.parse_conditional_clause();
+        assert_eq!(
+            result.output,
+            Datatype::Void,
+            "While loops must return Void"
+        );
+        ExprContents::While(While {
+            condition: Box::new(clause),
+            result: Box::new(result),
+        })
+    }
+
+    fn parse_conditional_clause(&mut self) -> (Expr, Expr) {
+        let expr = self.parse_expr(0, &vec![Token::Bracket(Bracket::LCurly)], false);
+        let clause = self.new_expr(expr);
+        assert!(
+            self.tokens.eat([Token::Bracket(Bracket::LCurly)]).is_some(),
+            "Expected {{, found {:?}",
+            self.tokens.peek()
+        );
+        assert_eq!(
+            clause.output,
+            Datatype::Bool,
+            "Expected expression returning boolean value, found {:?}",
+            clause.output
+        );
+        let scope = self.parse_scope(true);
+        assert!(
+            self.tokens.eat([Token::Bracket(Bracket::RCurly)]).is_some(),
+            "Expected }}, found {:?}",
+            self.tokens.peek()
+        );
+        let result = self.new_expr(ExprContents::Scope(scope));
+        (clause, result)
     }
 
     fn make_expr(
@@ -213,22 +335,38 @@ impl Parser {
     ) -> ExprContents {
         match (op, op_type) {
             (
-                OpToken::Plus | OpToken::Minus | OpToken::Times | OpToken::Divided | OpToken::D,
+                OpToken::Plus
+                | OpToken::Minus
+                | OpToken::Times
+                | OpToken::Divided
+                | OpToken::D
+                | OpToken::Equal
+                | OpToken::NotEqual
+                | OpToken::Greater
+                | OpToken::Less
+                | OpToken::Geq
+                | OpToken::Leq
+                | OpToken::And
+                | OpToken::Or,
                 OpType::Infix,
             ) => ExprContents::Binop(Binop {
                 lhs: Box::new(self.new_expr(lhs)),
                 rhs: Box::new(self.new_expr(rhs)),
-                op: op.into(),
+                op: op.try_into().unwrap(),
             }),
             (OpToken::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
-                prefix: op.into(),
+                prefix: op.try_into().unwrap(),
+                rhs: Box::new(self.new_expr(rhs)),
+            }),
+            (OpToken::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
+                prefix: op.try_into().unwrap(),
                 rhs: Box::new(self.new_expr(rhs)),
             }),
             // "d6" expands to "1d6"
             (OpToken::D, OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: Box::new(self.new_expr(ExprContents::Literal(Value::Int(1)))),
                 rhs: Box::new(self.new_expr(rhs)),
-                op: op.into(),
+                op: op.try_into().unwrap(),
             }),
             (OpToken::Assign, OpType::Infix) => {
                 let val = Box::new(self.new_expr(rhs));
@@ -238,15 +376,7 @@ impl Parser {
                 };
                 match &assignee {
                     Accessor::Variable(v) => {
-                        if let Some(dt) = self.get_var_type(v) {
-                            assert_eq!(
-                                dt, val.output,
-                                "Can't reassign variable {v} of type {dt:?} to type {:?}",
-                                val.output
-                            );
-                        } else {
-                            self.set_var_type(v.clone(), val.output);
-                        }
+                        self.set_var_type(v.clone(), val.output);
                     }
                     Accessor::Property(base, prop) => {
                         assert_eq!(
@@ -256,6 +386,10 @@ impl Parser {
                     }
                 }
                 ExprContents::Assign(Assign { assignee, val })
+            }
+            (OpToken::OpAssign(op), OpType::Infix) => {
+                let val = self.make_expr(lhs.clone(), rhs, op.into(), op_type);
+                self.make_expr(lhs, val, OpToken::Assign, op_type)
             }
             (OpToken::Access, OpType::Infix) => {
                 let rhs = match rhs {
@@ -268,39 +402,114 @@ impl Parser {
                 OpToken::Plus
                 | OpToken::Times
                 | OpToken::Divided
+                | OpToken::Equal
+                | OpToken::NotEqual
+                | OpToken::Greater
+                | OpToken::Less
+                | OpToken::Geq
+                | OpToken::Leq
+                | OpToken::And
+                | OpToken::Or
                 | OpToken::Assign
+                | OpToken::OpAssign(_)
                 | OpToken::Access,
                 OpType::Prefix,
             ) => {
                 unreachable!("Invalid prefix operation {op:?}")
             }
+            (OpToken::Not, OpType::Infix) => unreachable!("Invalid infix operation {op:?}"),
             (_, OpType::Postfix) => unreachable!("Invalid postfix operation {op:?}"),
         }
     }
 }
 
-fn infix_binding_power(op: OpToken) -> (u8, u8) {
-    match op {
-        OpToken::Assign => (2, 1),
-        OpToken::Plus | OpToken::Minus => (3, 4),
-        OpToken::Times | OpToken::Divided => (5, 6),
-        OpToken::Access => (7, 8),
-        OpToken::D => (9, 10),
-    }
-}
+// Ordered from lowest to highest binding power
+static OP_LIST: LazyLock<Vec<(Vec<OpToken>, OpType, bool)>> = LazyLock::new(|| {
+    vec![
+        (
+            Op::iter()
+                .map(|op| OpToken::OpAssign(op))
+                .chain([OpToken::Assign])
+                .collect(),
+            OpType::Infix,
+            true,
+        ),
+        (vec![OpToken::And, OpToken::Or], OpType::Infix, false),
+        (vec![OpToken::Equal], OpType::Infix, false),
+        (
+            vec![OpToken::Greater, OpToken::Less, OpToken::Geq, OpToken::Leq],
+            OpType::Infix,
+            false,
+        ),
+        (vec![OpToken::Plus, OpToken::Minus], OpType::Infix, false),
+        (vec![OpToken::Times, OpToken::Divided], OpType::Infix, false),
+        (vec![OpToken::Access], OpType::Infix, false),
+        (vec![OpToken::D], OpType::Infix, false),
+        (vec![OpToken::D], OpType::Prefix, false),
+        (vec![OpToken::Not], OpType::Prefix, false),
+        (vec![OpToken::Minus], OpType::Prefix, false),
+    ]
+});
 
-fn prefix_binding_power(op: OpToken) -> ((), u8) {
-    match op {
-        OpToken::Minus => ((), 11),
-        OpToken::D => ((), 10),
-        _ => panic!("Invalid prefix operator: {op:?}"),
-    }
-}
+static INFIX_BINDING_POWER: LazyLock<HashMap<OpToken, (u8, u8)>> = LazyLock::new(|| {
+    HashMap::from_iter(
+        OP_LIST
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (tks, optype, left_higher))| {
+                if *optype != OpType::Infix {
+                    return None;
+                }
+                let base = idx as u8 * 2;
+                let l_prio = if *left_higher { 1 } else { 0 };
+                Some(
+                    tks.iter()
+                        .map(|tk| (*tk, (base + l_prio, base + 1 - l_prio)))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten(),
+    )
+});
 
-// TODO: see if there are even any good postfix operators
-// Decrement/increment maybe, but then those really are just += 1 and -= 1...
-fn postfix_binding_power(op: OpToken) -> Option<(u8, ())> {
-    match op {
-        _ => None,
-    }
-}
+static PREFIX_BINDING_POWER: LazyLock<HashMap<OpToken, ((), u8)>> = LazyLock::new(|| {
+    HashMap::from_iter(
+        OP_LIST
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (tks, optype, left_higher))| {
+                if *optype != OpType::Prefix {
+                    return None;
+                }
+                let base = idx as u8 * 2;
+                let l_prio = if *left_higher { 1 } else { 0 };
+                Some(
+                    tks.iter()
+                        .map(|tk| (*tk, ((), base + 1 - l_prio)))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten(),
+    )
+});
+
+static POSTFIX_BINDING_POWER: LazyLock<HashMap<OpToken, (u8, ())>> = LazyLock::new(|| {
+    HashMap::from_iter(
+        OP_LIST
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (tks, optype, left_higher))| {
+                if *optype != OpType::Postfix {
+                    return None;
+                }
+                let base = idx as u8 * 2;
+                let l_prio = if *left_higher { 1 } else { 0 };
+                Some(
+                    tks.iter()
+                        .map(|tk| (*tk, (base + l_prio, ())))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten(),
+    )
+});
