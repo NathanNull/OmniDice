@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 use crate::{
     TokenIter,
     lexer::{Bracket, Keyword, OpToken, Token, TokenString},
-    types::{Bool, Datatype, Void},
+    types::{ArrT, Bool, Datatype, Void},
 };
 
 pub mod expr;
@@ -79,12 +79,12 @@ impl Parser {
                 .output
                 .bin_op_result(binop.rhs.output.clone(), binop.op)
                 .expect(&format!(
-                    "Invalid binary operation {:?} on {:?}, {:?}",
+                    "Invalid binary operation {:?} on {}, {}",
                     binop.op, binop.lhs.output, binop.rhs.output
                 )),
             ExprContents::Prefix(prefix) => {
                 prefix.rhs.output.pre_op_result(prefix.op).expect(&format!(
-                    "Invalid prefix operation {:?} on {:?}",
+                    "Invalid prefix operation {:?} on {}",
                     prefix.op, prefix.rhs.output
                 ))
             }
@@ -105,6 +105,13 @@ impl Parser {
                 .unwrap_or(VOID.output.clone()),
             ExprContents::Conditional(cond) => cond.result.output.clone(),
             ExprContents::While(wh) => wh.result.output.clone(), // This is always Void
+            ExprContents::Array(arr) => Box::new(ArrT {
+                entry: arr
+                    .elements
+                    .first()
+                    .map(|e| e.output.clone())
+                    .unwrap_or_else(|| VOID.output.clone()),
+            }),
         }
     }
 
@@ -148,7 +155,7 @@ impl Parser {
     }
 
     /// expected_end is what the expression is allowed to stop on, and allow_imply_eol is whether
-    /// the parser can insert semicolons where it sees that they are needed (i.e. after }).
+    /// the parser can insert semicolons where it sees that they are needed (i.e. after RCURLY).
     fn parse_expr(
         &mut self,
         min_bp: u8,
@@ -158,8 +165,7 @@ impl Parser {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
             Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
-            Token::Float(f) => ExprContents::Literal(Box::new(f)),
-            Token::Int(i) => ExprContents::Literal(Box::new(i)),
+            Token::Literal(lit) => ExprContents::Literal(lit),
             Token::Keyword(Keyword::True) => ExprContents::Literal(Box::new(true)),
             Token::Keyword(Keyword::False) => ExprContents::Literal(Box::new(false)),
             Token::Op(op) => {
@@ -195,6 +201,30 @@ impl Parser {
                 );
                 imply_eol = allow_imply_eol;
                 scope
+            }
+            Token::Bracket(Bracket::LSquare) => {
+                let mut elements = vec![];
+                loop {
+                    let expr = self.parse_expr(
+                        0,
+                        &vec![Token::Comma, Token::Bracket(Bracket::RSquare)],
+                        false,
+                    );
+                    elements.push(self.new_expr(expr));
+                    match self.tokens.next() {
+                        Some(Token::Comma) => (),
+                        Some(Token::Bracket(Bracket::RSquare)) => break,
+                        next => panic!("Unexpected token {next:?} in array expression"),
+                    }
+                }
+                let ty = elements.first().map(|e| &e.output);
+                assert!(
+                    elements.iter().all(|e| Some(&e.output) == ty),
+                    "Array elements should all be the same type ({:?}), found {:?}",
+                    ty.unwrap(),
+                    elements.iter().map(|e| &e.output).collect::<Vec<_>>()
+                );
+                ExprContents::Array(Array { elements })
             }
             Token::Keyword(Keyword::If) => {
                 imply_eol = allow_imply_eol;

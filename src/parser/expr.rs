@@ -102,6 +102,7 @@ pub enum ExprContents {
     Scope(Scope),
     Conditional(Conditional),
     While(While),
+    Array(Array),
 }
 
 #[derive(Clone)]
@@ -121,7 +122,8 @@ impl Debug for ExprContents {
             Self::Accessor(acc) => write!(f, "{acc:?}"),
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
             Self::Conditional(cond) => write!(f, "{cond:?}"),
-            Self::While(wh) => write!(f, "{:?}", wh),
+            Self::While(wh) => write!(f, "{wh:?}"),
+            Self::Array(arr) => write!(f, "{arr:?}"),
         }
     }
 }
@@ -135,7 +137,7 @@ impl Debug for Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (str, children): (_, Vec<&Expr>) = match &self.contents {
-            ExprContents::Literal(literal) => (format!("{literal:?}"), vec![]),
+            ExprContents::Literal(literal) => (format!("{} {literal}", literal.get_type()), vec![]),
             ExprContents::Binop(binop) => {
                 (format!("{:?} b", binop.op), vec![&binop.lhs, &binop.rhs])
             }
@@ -144,9 +146,12 @@ impl Display for Expr {
                 (format!("{:?} post", postfix.op), vec![&postfix.lhs])
             }
             ExprContents::Assign(assign) => {
-                (format!("assign {:?}", assign.assignee), vec![&assign.val])
+                (format!("assign {:?} to", assign.assignee), vec![&assign.val])
             }
-            ExprContents::Accessor(accessor) => (format!("{accessor:?}"), vec![]),
+            ExprContents::Accessor(accessor) => match accessor {
+                Accessor::Variable(v) => (format!("{v}"), vec![]),
+                Accessor::Property(base, prop) => (format!("prop {prop} of"), vec![&base])
+            },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
                 let mut children: Vec<&Expr> = vec![&cond.condition, &cond.result];
@@ -156,6 +161,7 @@ impl Display for Expr {
                 children
             }),
             ExprContents::While(wh) => ("while".to_string(), vec![&wh.condition, &wh.result]),
+            ExprContents::Array(arr) => ("array".to_string(), arr.elements.iter().collect())
         };
         writeln!(f, "{str}")?;
         let num_children = children.len();
@@ -245,5 +251,24 @@ pub struct While {
 impl Debug for While {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "while {:?} do {:?}", self.condition, self.result)
+    }
+}
+
+#[derive(Clone)]
+pub struct Array {
+    pub elements: Vec<Expr>,
+}
+
+impl Debug for Array {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let len = self.elements.len();
+        for (i, ele) in self.elements.iter().enumerate() {
+            write!(f, "{ele:?}")?;
+            if i != len - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]")
     }
 }

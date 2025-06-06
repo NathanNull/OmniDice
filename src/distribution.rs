@@ -5,7 +5,7 @@ use std::{
 
 use ordered_float::OrderedFloat;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Distribution {
     values: BTreeMap<i32, f32>,
 }

@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     parser::{
-        Accessor, Assign, Binop, Conditional, Expr, ExprContents, Postfix, Prefix, Scope, While,
+        Accessor, Array, Assign, Binop, Conditional, Expr, ExprContents, Postfix, Prefix, Scope,
+        While,
     },
-    types::{TryDowncast, Value, Void},
+    types::{Arr, TryDowncast, Value, Void},
 };
 
 pub struct Interpreter {
@@ -47,6 +48,7 @@ impl Interpreter {
             ExprContents::Scope(scope) => self.eval_scope(scope),
             ExprContents::Conditional(cond) => self.eval_conditional(cond),
             ExprContents::While(wh) => self.eval_while(wh),
+            ExprContents::Array(arr) => self.eval_array(arr),
         };
         assert_eq!(
             &res.get_type(),
@@ -140,5 +142,20 @@ impl Interpreter {
             }
         }
         Box::new(Void)
+    }
+
+    fn eval_array(&mut self, arr: &Array) -> Value {
+        let mut res = vec![];
+        let mut ty = None;
+        for expr in &arr.elements {
+            res.push(self.eval_expr(expr));
+            let next_type = res.last().unwrap().get_type();
+            if let Some(t) = &mut ty {
+                assert_eq!(t, &next_type, "Array types didn't match");
+            } else {
+                ty = Some(next_type);
+            }
+        }
+        Box::new(Arr::new(res))
     }
 }

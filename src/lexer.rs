@@ -1,15 +1,15 @@
 use std::{fmt::Debug, str::Chars};
 
-use crate::{TokenIter, parser::Op};
+use crate::{TokenIter, parser::Op, types::Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Identifier(String),
     Keyword(Keyword),
-    Int(i32),
-    Float(f32),
+    Literal(Value),
     Bracket(Bracket),
     Op(OpToken),
+    Comma,
     EOL,
     EOF,
 }
@@ -29,6 +29,8 @@ pub enum Bracket {
     Right,
     LCurly,
     RCurly,
+    LSquare,
+    RSquare,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -103,11 +105,11 @@ impl<'a> Lexer<'a> {
         {
             if self.lex_comment() {
                 // it's a comment, carry on
-            } else if let Some(tk) = self.lex_identifier() {
-                tokens.push(tk)
-            } else if let Some(tk) = self.lex_number() {
-                tokens.push(tk)
-            } else if let Some(tk) = self.lex_special() {
+            } else if let Some(tk) = self
+                .lex_identifier()
+                .or_else(|| self.lex_literal())
+                .or_else(|| self.lex_special())
+            {
                 tokens.push(tk)
             } else {
                 let str = self.code.inner.as_str();
@@ -179,6 +181,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn lex_literal(&mut self) -> Option<Token> {
+        self.lex_number().or_else(|| self.lex_string())
+    }
+
     fn lex_number(&mut self) -> Option<Token> {
         if self.code.peek().is_none_or(|c| !c.is_numeric()) {
             return None;
@@ -199,10 +205,36 @@ impl<'a> Lexer<'a> {
             .concat();
         if num_str.contains('.') {
             // The parse will error if there's more than 1 dot so we don't need to check for that.
-            num_str.parse::<f32>().ok().map(|f| Token::Float(f))
+            num_str
+                .parse::<f32>()
+                .ok()
+                .map(|f| Token::Literal(Box::new(f)))
         } else {
-            num_str.parse::<i32>().ok().map(|i| Token::Int(i))
+            num_str
+                .parse::<i32>()
+                .ok()
+                .map(|i| Token::Literal(Box::new(i)))
         }
+    }
+
+    fn lex_string(&mut self) -> Option<Token> {
+        if !self.code.eat_str("\"") {
+            return None;
+        }
+        let mut string_chars = vec![];
+        while !self.code.eat_str("\"") {
+            string_chars.push(if self.code.eat_str("\\") {
+                match self.code.next().expect("Expected escape character") {
+                    '\\' => '\\',
+                    '"' => '"',
+                    'n' => '\n',
+                    c => panic!("Expected escape character, found '{c}'")
+                }
+            } else {
+                self.code.next().expect("Expected end of string literal")
+            });
+        }
+        Some(Token::Literal(Box::new(String::from_iter(string_chars))))
     }
 
     fn lex_special(&mut self) -> Option<Token> {
@@ -226,8 +258,11 @@ impl<'a> Lexer<'a> {
             (")", Token::Bracket(Bracket::Right)),
             ("{", Token::Bracket(Bracket::LCurly)),
             ("}", Token::Bracket(Bracket::RCurly)),
+            ("[", Token::Bracket(Bracket::LSquare)),
+            ("]", Token::Bracket(Bracket::RSquare)),
             ("=", Token::Op(OpToken::Assign)),
             (".", Token::Op(OpToken::Access)),
+            (",", Token::Comma),
             (";", Token::EOL),
         ] {
             if self.code.eat_str(pattern) {
