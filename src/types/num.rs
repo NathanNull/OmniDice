@@ -3,10 +3,10 @@ use super::*;
 
 type_init!(Float, f32, "float");
 impl Type for Float {
-    fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
-        if (other == Float || other == Int) && NUM_OPS.contains(&op) {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if (other == &Float || other == &Int) && NUM_OPS.contains(&op) {
             Some(Box::new(Float))
-        } else if other == Float && ORD_OPS.contains(&op) {
+        } else if other == &Float && ORD_OPS.contains(&op) {
             Some(Box::new(Bool))
         } else {
             None
@@ -57,13 +57,13 @@ impl Val for f32 {
 
 type_init!(Int, i32, "int");
 impl Type for Int {
-    fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
-        if other == Int {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if other == &Int {
             if NUM_OPS.contains(&op) || op == Op::Mod {
                 Some(Box::new(Int))
             } else if ORD_OPS.contains(&op) {
                 Some(Box::new(Bool))
-            } else if other == Int && op == Op::D {
+            } else if other == &Int && op == Op::D {
                 Some(Box::new(Dice))
             } else {
                 None

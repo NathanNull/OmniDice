@@ -2,7 +2,8 @@ use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
     TokenIter,
-    lexer::{Bracket, Keyword, OpToken, Token, TokenString},
+    interpreter::CONST_VARIABLES,
+    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
     types::{ArrT, Bool, Datatype, TupT, Void},
 };
 
@@ -29,7 +30,11 @@ impl Parser {
     pub fn new(tokens: TokenString) -> Self {
         Self {
             tokens: TokenIter::new(tokens.into_iter()),
-            var_types: vec![],
+            var_types: vec![HashMap::from_iter(
+                CONST_VARIABLES
+                    .iter()
+                    .map(|(name, var)| (name.clone(), (var.get_type(), false))),
+            )],
         }
     }
 
@@ -84,12 +89,17 @@ impl Parser {
                     ty.prop_type(&prop)
                         .expect(&format!("Invalid property {prop} for type {ty:?}"))
                 }
+                Accessor::Index(indexed, index) => {
+                    let ty = &indexed.output;
+                    ty.index_type(&index.output)
+                        .expect(&format!("Invalid index {:?} for type {ty:?}", index.output))
+                }
             },
             ExprContents::Literal(literal) => literal.get_type(),
             ExprContents::Binop(binop) => binop
                 .lhs
                 .output
-                .bin_op_result(binop.rhs.output.clone(), binop.op)
+                .bin_op_result(&binop.rhs.output, binop.op)
                 .expect(&format!(
                     "Invalid binary operation {:?} on {}, {}",
                     binop.op, binop.lhs.output, binop.rhs.output
@@ -143,7 +153,7 @@ impl Parser {
         let expected_end = vec![
             Token::EOL,
             if is_inner {
-                Token::Bracket(Bracket::RCurly)
+                Token::OpLike(OpLike::Bracket(Bracket::RCurly))
             } else {
                 Token::EOF
             },
@@ -184,54 +194,55 @@ impl Parser {
             Token::Literal(lit) => ExprContents::Literal(lit),
             Token::Keyword(Keyword::True) => ExprContents::Literal(Box::new(true)),
             Token::Keyword(Keyword::False) => ExprContents::Literal(Box::new(false)),
-            Token::Op(op) => {
-                let ((), r_bp) = PREFIX_BINDING_POWER
-                    .get(&op)
-                    .expect(&format!("Invalid prefix operator {op:?}"));
-                let rhs = self.parse_expr(*r_bp, expected_end, false, false);
-                self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix)
-            }
-            Token::Bracket(Bracket::Left) => {
-                if *self.tokens.peek().unwrap() == Token::Bracket(Bracket::Right) {
+            Token::OpLike(OpLike::Bracket(Bracket::LBracket)) => {
+                if *self.tokens.peek().unwrap() == Token::OpLike(OpLike::Bracket(Bracket::RBracket))
+                {
                     // ()
                     self.tokens.next();
                     VOID.contents.clone()
                 } else {
-                    let lhs =
-                        self.parse_expr(0, &vec![Token::Bracket(Bracket::Right)], false, true);
+                    let lhs = self.parse_expr(
+                        0,
+                        &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
+                        false,
+                        true,
+                    );
                     let next = self.tokens.next().unwrap();
                     assert_eq!(
                         next,
-                        Token::Bracket(Bracket::Right),
+                        Token::OpLike(OpLike::Bracket(Bracket::RBracket)),
                         "Expected right bracket, found {next:?}"
                     );
                     lhs
                 }
             }
-            Token::Bracket(Bracket::LCurly) => {
+            Token::OpLike(OpLike::Bracket(Bracket::LCurly)) => {
                 let scope = ExprContents::Scope(self.parse_scope(true));
                 let next = self.tokens.next().unwrap();
                 assert_eq!(
                     next,
-                    Token::Bracket(Bracket::RCurly),
+                    Token::OpLike(OpLike::Bracket(Bracket::RCurly)),
                     "Expected right curly bracket, found {next:?}"
                 );
                 imply_eol = allow_imply_eol;
                 scope
             }
-            Token::Bracket(Bracket::LSquare) => {
+            Token::OpLike(OpLike::Bracket(Bracket::LSquare)) => {
                 let mut elements = vec![];
                 loop {
                     let expr = self.parse_expr(
                         0,
-                        &vec![Token::Op(OpToken::Comma), Token::Bracket(Bracket::RSquare)],
+                        &vec![
+                            Token::OpLike(OpLike::Comma),
+                            Token::OpLike(OpLike::Bracket(Bracket::RSquare)),
+                        ],
                         false,
                         false,
                     );
                     elements.push(*self.new_expr(expr));
                     match self.tokens.next() {
-                        Some(Token::Op(OpToken::Comma)) => (),
-                        Some(Token::Bracket(Bracket::RSquare)) => break,
+                        Some(Token::OpLike(OpLike::Comma)) => (),
+                        Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
                         next => panic!("Unexpected token {next:?} in array expression"),
                     }
                 }
@@ -243,6 +254,13 @@ impl Parser {
                     elements.iter().map(|e| &e.output).collect::<Vec<_>>()
                 );
                 ExprContents::Array(Array { elements })
+            }
+            Token::OpLike(op) => {
+                let ((), r_bp) = PREFIX_BINDING_POWER
+                    .get(&op)
+                    .expect(&format!("Invalid prefix operator {op:?}"));
+                let rhs = self.parse_expr(*r_bp, expected_end, false, false);
+                self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix)
             }
             Token::Keyword(Keyword::If) => {
                 imply_eol = allow_imply_eol;
@@ -259,12 +277,12 @@ impl Parser {
                     tk => panic!("Expected literal or ident, found {tk:?}"),
                 };
                 assert!(
-                    self.tokens.eat([Token::Op(OpToken::Assign)]).is_some(),
+                    self.tokens.eat([Token::OpLike(OpLike::Assign)]).is_some(),
                     "Expected =, found {:?}",
                     self.tokens.next()
                 );
                 let rhs = self.parse_expr(
-                    INFIX_BINDING_POWER[&OpToken::Assign].1,
+                    INFIX_BINDING_POWER[&OpLike::Assign].1,
                     expected_end,
                     false,
                     false,
@@ -285,14 +303,40 @@ impl Parser {
         loop {
             let op = match self.tokens.peek().unwrap().clone() {
                 tk if expected_end.contains(&tk) => break,
-                Token::Op(op) => op,
+                Token::OpLike(OpLike::Bracket(Bracket::LSquare)) => {
+                    // acting like [ is a postfix operator, but parsing it completely differently because it contains an inner section
+                    let (bp, _) = POSTFIX_BINDING_POWER
+                        .get(&OpLike::Bracket(Bracket::LSquare))
+                        .unwrap();
+                    if *bp < min_bp {
+                        break;
+                    }
+                    self.tokens.next(); // Remove the [
+                    let index = self.parse_expr(
+                        0,
+                        &vec![Token::OpLike(OpLike::Bracket(Bracket::RSquare))],
+                        false,
+                        true,
+                    );
+                    assert_eq!(
+                        self.tokens.next(),
+                        Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))),
+                        "Expected ]"
+                    );
+                    lhs = ExprContents::Accessor(Accessor::Index(
+                        self.new_expr(lhs),
+                        self.new_expr(index),
+                    ));
+                    continue;
+                }
+                Token::OpLike(op) => op,
                 _ if imply_eol && expected_end.contains(&Token::EOL) => {
                     // automatic semicolon insertion :)
                     self.tokens.replace(Token::EOL);
                     break;
                 }
                 tk => panic!(
-                    "Expected operation or {expected_end:?}, found {tk:?} (tokens left: {:?})",
+                    "Expected operation or {expected_end:?}, found {tk:?} (tokens left: {:?}, lhs: {lhs:?})",
                     self.tokens.clone().collect::<Vec<_>>()
                 ),
             };
@@ -327,7 +371,7 @@ impl Parser {
                     } else {
                         assert!(
                             self.tokens
-                                .eat([Token::Bracket(Bracket::LCurly)].into_iter())
+                                .eat([Token::OpLike(OpLike::Bracket(Bracket::LCurly))].into_iter())
                                 .is_some(),
                             "Expected {{, found {:?}",
                             self.tokens.peek()
@@ -335,7 +379,7 @@ impl Parser {
                         let scope = self.parse_scope(true);
                         assert!(
                             self.tokens
-                                .eat([Token::Bracket(Bracket::RCurly)].into_iter())
+                                .eat([Token::OpLike(OpLike::Bracket(Bracket::RCurly))].into_iter())
                                 .is_some(),
                             "Expected {{, found {:?}",
                             self.tokens.peek()
@@ -380,10 +424,17 @@ impl Parser {
     }
 
     fn parse_conditional_clause(&mut self) -> (Box<Expr>, Box<Expr>) {
-        let expr = self.parse_expr(0, &vec![Token::Bracket(Bracket::LCurly)], false, false);
+        let expr = self.parse_expr(
+            0,
+            &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
+            false,
+            false,
+        );
         let clause = self.new_expr(expr);
         assert!(
-            self.tokens.eat([Token::Bracket(Bracket::LCurly)]).is_some(),
+            self.tokens
+                .eat([Token::OpLike(OpLike::Bracket(Bracket::LCurly))])
+                .is_some(),
             "Expected {{, found {:?}",
             self.tokens.peek()
         );
@@ -394,7 +445,9 @@ impl Parser {
         );
         let scope = self.parse_scope(true);
         assert!(
-            self.tokens.eat([Token::Bracket(Bracket::RCurly)]).is_some(),
+            self.tokens
+                .eat([Token::OpLike(OpLike::Bracket(Bracket::RCurly))])
+                .is_some(),
             "Expected }}, found {:?}",
             self.tokens.peek()
         );
@@ -442,16 +495,24 @@ impl Parser {
                                 base.output
                             ))
                         }
+                        Accessor::Index(indexed, index) => {
+                            indexed.output.index_type(&index.output).expect(&format!(
+                                "Unknown property type {} for base {}",
+                                index.output, indexed.output
+                            ))
+                        }
                     },
                     val.output
                 );
                 fn is_assignable(me: &mut Parser, assignee: &Accessor) -> bool {
                     match &assignee {
                         Accessor::Variable(v) => me.var_is_mutable(v),
-                        Accessor::Property(base, _) => match &base.contents {
-                            ExprContents::Accessor(accessor) => is_assignable(me, accessor),
-                            _ => false,
-                        },
+                        Accessor::Property(base, _) | Accessor::Index(base, _) => {
+                            match &base.contents {
+                                ExprContents::Accessor(accessor) => is_assignable(me, accessor),
+                                _ => false,
+                            }
+                        }
                     }
                 }
                 assert!(
@@ -480,58 +541,58 @@ impl Parser {
         &mut self,
         lhs: ExprContents,
         rhs: ExprContents,
-        op: OpToken,
+        op: OpLike,
         op_type: OpType,
     ) -> ExprContents {
         match (op, op_type) {
             (
-                OpToken::Plus
-                | OpToken::Minus
-                | OpToken::Times
-                | OpToken::Divided
-                | OpToken::Mod
-                | OpToken::D
-                | OpToken::Equal
-                | OpToken::NotEqual
-                | OpToken::Greater
-                | OpToken::Less
-                | OpToken::Geq
-                | OpToken::Leq
-                | OpToken::And
-                | OpToken::Or,
+                OpLike::Plus
+                | OpLike::Minus
+                | OpLike::Times
+                | OpLike::Divided
+                | OpLike::Mod
+                | OpLike::D
+                | OpLike::Equal
+                | OpLike::NotEqual
+                | OpLike::Greater
+                | OpLike::Less
+                | OpLike::Geq
+                | OpLike::Leq
+                | OpLike::And
+                | OpLike::Or,
                 OpType::Infix,
             ) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(lhs),
                 rhs: self.new_expr(rhs),
                 op: op.try_into().unwrap(),
             }),
-            (OpToken::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
+            (OpLike::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: op.try_into().unwrap(),
                 rhs: self.new_expr(rhs),
             }),
-            (OpToken::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
+            (OpLike::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: op.try_into().unwrap(),
                 rhs: self.new_expr(rhs),
             }),
             // "d6" expands to "1d6"
-            (OpToken::D, OpType::Prefix) => ExprContents::Binop(Binop {
+            (OpLike::D, OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(ExprContents::Literal(Box::new(1))),
                 rhs: self.new_expr(rhs),
                 op: op.try_into().unwrap(),
             }),
-            (OpToken::Assign, OpType::Infix) => self.parse_assign(AssignType::Reassign, lhs, rhs),
-            (OpToken::OpAssign(op), OpType::Infix) => {
+            (OpLike::Assign, OpType::Infix) => self.parse_assign(AssignType::Reassign, lhs, rhs),
+            (OpLike::OpAssign(op), OpType::Infix) => {
                 let val = self.make_expr(lhs.clone(), rhs, op.into(), op_type);
-                self.make_expr(lhs, val, OpToken::Assign, op_type)
+                self.make_expr(lhs, val, OpLike::Assign, op_type)
             }
-            (OpToken::Access, OpType::Infix) => {
+            (OpLike::Access, OpType::Infix) => {
                 let rhs = match rhs {
                     ExprContents::Accessor(Accessor::Variable(var)) => var,
                     _ => panic!("Expected property, found {rhs:?}"),
                 };
                 ExprContents::Accessor(Accessor::Property(self.new_expr(lhs), rhs))
             }
-            (OpToken::Comma, OpType::Infix) => ExprContents::Tuple(Tuple {
+            (OpLike::Comma, OpType::Infix) => ExprContents::Tuple(Tuple {
                 elements: match (lhs, rhs) {
                     (ExprContents::Tuple(l), ExprContents::Tuple(r)) => l
                         .elements
@@ -550,67 +611,75 @@ impl Parser {
                     (l, r) => vec![*self.new_expr(l), *self.new_expr(r)],
                 },
             }),
+            (OpLike::Bracket(_), _) => {
+                unreachable!("Brackets are not valid operations and should not parse as such")
+            }
             (
-                OpToken::Plus
-                | OpToken::Times
-                | OpToken::Divided
-                | OpToken::Mod
-                | OpToken::Equal
-                | OpToken::NotEqual
-                | OpToken::Greater
-                | OpToken::Less
-                | OpToken::Geq
-                | OpToken::Leq
-                | OpToken::And
-                | OpToken::Or
-                | OpToken::Assign
-                | OpToken::OpAssign(_)
-                | OpToken::Access
-                | OpToken::Comma,
+                OpLike::Plus
+                | OpLike::Times
+                | OpLike::Divided
+                | OpLike::Mod
+                | OpLike::Equal
+                | OpLike::NotEqual
+                | OpLike::Greater
+                | OpLike::Less
+                | OpLike::Geq
+                | OpLike::Leq
+                | OpLike::And
+                | OpLike::Or
+                | OpLike::Assign
+                | OpLike::OpAssign(_)
+                | OpLike::Access
+                | OpLike::Comma,
                 OpType::Prefix,
             ) => {
                 unreachable!("Invalid prefix operation {op:?}")
             }
-            (OpToken::Not, OpType::Infix) => unreachable!("Invalid infix operation {op:?}"),
+            (OpLike::Not, OpType::Infix) => unreachable!("Invalid infix operation {op:?}"),
             (_, OpType::Postfix) => unreachable!("Invalid postfix operation {op:?}"),
         }
     }
 }
 
 // Ordered from lowest to highest binding power
-static OP_LIST: LazyLock<Vec<(Vec<OpToken>, OpType, bool)>> = LazyLock::new(|| {
+static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
     vec![
-        (vec![OpToken::Comma], OpType::Infix, false),
+        (vec![OpLike::Comma], OpType::Infix, false),
         (
             Op::iter()
-                .map(|op| OpToken::OpAssign(op))
-                .chain([OpToken::Assign])
+                .map(|op| OpLike::OpAssign(op))
+                .chain([OpLike::Assign])
                 .collect(),
             OpType::Infix,
             true,
         ),
-        (vec![OpToken::And, OpToken::Or], OpType::Infix, false),
-        (vec![OpToken::Equal], OpType::Infix, false),
+        (vec![OpLike::And, OpLike::Or], OpType::Infix, false),
+        (vec![OpLike::Equal], OpType::Infix, false),
         (
-            vec![OpToken::Greater, OpToken::Less, OpToken::Geq, OpToken::Leq],
+            vec![OpLike::Greater, OpLike::Less, OpLike::Geq, OpLike::Leq],
             OpType::Infix,
             false,
         ),
-        (vec![OpToken::Plus, OpToken::Minus], OpType::Infix, false),
+        (vec![OpLike::Plus, OpLike::Minus], OpType::Infix, false),
         (
-            vec![OpToken::Times, OpToken::Divided, OpToken::Mod],
+            vec![OpLike::Times, OpLike::Divided, OpLike::Mod],
             OpType::Infix,
             false,
         ),
-        (vec![OpToken::Access], OpType::Infix, false),
-        (vec![OpToken::D], OpType::Infix, false),
-        (vec![OpToken::D], OpType::Prefix, false),
-        (vec![OpToken::Not], OpType::Prefix, false),
-        (vec![OpToken::Minus], OpType::Prefix, false),
+        (
+            vec![OpLike::Bracket(Bracket::LSquare)],
+            OpType::Postfix,
+            false,
+        ),
+        (vec![OpLike::Access], OpType::Infix, false),
+        (vec![OpLike::D], OpType::Infix, false),
+        (vec![OpLike::D], OpType::Prefix, false),
+        (vec![OpLike::Not], OpType::Prefix, false),
+        (vec![OpLike::Minus], OpType::Prefix, false),
     ]
 });
 
-static INFIX_BINDING_POWER: LazyLock<HashMap<OpToken, (u8, u8)>> = LazyLock::new(|| {
+static INFIX_BINDING_POWER: LazyLock<HashMap<OpLike, (u8, u8)>> = LazyLock::new(|| {
     HashMap::from_iter(
         OP_LIST
             .iter()
@@ -631,7 +700,7 @@ static INFIX_BINDING_POWER: LazyLock<HashMap<OpToken, (u8, u8)>> = LazyLock::new
     )
 });
 
-static PREFIX_BINDING_POWER: LazyLock<HashMap<OpToken, ((), u8)>> = LazyLock::new(|| {
+static PREFIX_BINDING_POWER: LazyLock<HashMap<OpLike, ((), u8)>> = LazyLock::new(|| {
     HashMap::from_iter(
         OP_LIST
             .iter()
@@ -652,7 +721,7 @@ static PREFIX_BINDING_POWER: LazyLock<HashMap<OpToken, ((), u8)>> = LazyLock::ne
     )
 });
 
-static POSTFIX_BINDING_POWER: LazyLock<HashMap<OpToken, (u8, ())>> = LazyLock::new(|| {
+static POSTFIX_BINDING_POWER: LazyLock<HashMap<OpLike, (u8, ())>> = LazyLock::new(|| {
     HashMap::from_iter(
         OP_LIST
             .iter()

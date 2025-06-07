@@ -1,12 +1,19 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{
     parser::{
         Accessor, Array, Assign, AssignType, Binop, Conditional, Expr, ExprContents, Postfix,
-        Prefix, Scope, While, Tuple as TupleExpr
+        Prefix, Scope, Tuple as TupleExpr, While,
     },
-    types::{Arr, Downcast, Tuple, Value, Void},
+    types::{Arr, Downcast, Ref, Tuple, Value, Void},
 };
+
+pub static CONST_VARIABLES: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
+    HashMap::from_iter([(
+        "Ref".to_string(),
+        Box::new(Ref::new(Box::new(Void))) as Value,
+    )])
+});
 
 pub struct Interpreter {
     ast: Expr,
@@ -17,7 +24,7 @@ impl Interpreter {
     pub fn new(ast: Expr) -> Self {
         Self {
             ast,
-            variables: vec![],
+            variables: vec![CONST_VARIABLES.clone()],
         }
     }
 
@@ -65,6 +72,9 @@ impl Interpreter {
         match acc {
             Accessor::Variable(ident) => self.get_var(ident).clone(),
             Accessor::Property(base, property) => self.eval_expr(&base).get_prop(property),
+            Accessor::Index(indexed, index) => {
+                self.eval_expr(&indexed).get_index(self.eval_expr(&index))
+            }
         }
     }
 
@@ -129,6 +139,16 @@ impl Interpreter {
                     assign.assignee
                 );
                 base_val.set_prop(prop, val.dup());
+            }
+            Accessor::Index(indexed, index) => {
+                let base_val = self.eval_expr(&indexed);
+                assert_eq!(
+                    val.get_type(),
+                    base_val.get_type().index_type(&index.output).unwrap(),
+                    "Tried to reassign property {:?} to a different type",
+                    assign.assignee
+                );
+                base_val.set_index(self.eval_expr(&index), val.dup());
             }
         }
         val

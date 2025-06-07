@@ -23,6 +23,9 @@ pub use arr::{Arr, ArrT};
 pub mod tup;
 pub use tup::{TupT, Tuple};
 
+pub mod ref_t;
+pub use ref_t::Ref;
+
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;
 }
@@ -39,11 +42,14 @@ trait BaseType {
 }
 
 #[allow(private_bounds)]
-pub trait Type: Send + Sync + Debug + Display + BaseType {
+pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn prop_type(&self, _name: &str) -> Option<Datatype> {
         None
     }
-    fn bin_op_result(&self, _other: Datatype, _op: Op) -> Option<Datatype> {
+    fn index_type(&self, _index: &Datatype) -> Option<Datatype> {
+        None
+    }
+    fn bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<Datatype> {
         None
     }
     fn pre_op_result(&self, _op: Op) -> Option<Datatype> {
@@ -61,9 +67,6 @@ trait BaseVal {
         self.base_get_type().name()
     }
     fn eq(&self, other: &Value) -> bool;
-    fn inner(&self) -> Option<Value> {
-        None
-    }
 }
 
 #[allow(private_bounds)]
@@ -73,6 +76,12 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     }
     fn set_prop(&self, _prop: &str, _value: Value) {
         unreachable!("Type '{}' has no properties.", self.get_name())
+    }
+    fn get_index(&self, _index: Value) -> Value {
+        unreachable!("Type '{}' can't be indexed.", self.get_name())
+    }
+    fn set_index(&self, _index: Value, _value: Value) {
+        unreachable!("Type '{}' can't be indexed.", self.get_name())
     }
     fn bin_op(&self, _other: &Value, _op: Op) -> Value {
         unreachable!("Type '{}' has no binary operations.", self.get_name())
@@ -135,13 +144,13 @@ macro_rules! mut_type_init {
         }
 
         impl $name {
-            fn inner(&self) -> MutexGuard<$inner> {
+            pub fn inner(&self) -> ::std::sync::MutexGuard<$inner> {
                 self.0.try_lock().unwrap()
             }
         }
 
-        impl<'a> GetRef<'a, MutexGuard<'a, $inner>> for $name {
-            fn get_ref(&self) -> MutexGuard<$inner> {
+        impl<'a> GetRef<'a, ::std::sync::MutexGuard<'a, $inner>> for $name {
+            fn get_ref(&self) -> ::std::sync::MutexGuard<$inner> {
                 self.inner()
             }
         }
@@ -278,14 +287,7 @@ pub trait Downcast {
 #[allow(unused, private_bounds)]
 impl Downcast for Value {
     fn downcast<T: Val + Clone + 'static>(&self) -> Option<T> {
-        if let Some(inner) = self.inner() {
-            inner as Box<dyn Any>
-        } else {
-            self.dup() as Box<dyn Any>
-        }
-        .downcast()
-        .ok()
-        .map(|b| *b)
+        (self.dup() as Box<dyn Any>).downcast().ok().map(|b| *b)
     }
 }
 

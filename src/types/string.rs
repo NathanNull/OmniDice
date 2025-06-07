@@ -3,8 +3,8 @@ use super::*;
 
 type_init!(VString, String, "string");
 impl Type for VString {
-    fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
-        if other == VString {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if other == &VString {
             match op {
                 Op::Plus => Some(Box::new(VString)),
                 Op::Equal => Some(Box::new(Bool)),

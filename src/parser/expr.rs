@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use strum::EnumIter;
 
 use crate::{
-    lexer::OpToken,
+    lexer::OpLike,
     types::{Datatype, Value},
 };
 
@@ -56,15 +56,15 @@ impl Debug for Op {
     }
 }
 
-// Convenient little macro so I don't have to manually write every conversion between Op and OpToken
+// Convenient little macro so I don't have to manually write every conversion between Op and OpLike
 macro_rules! convert_op_tokens {
     ($($op: ident),+) => {
-        impl TryFrom<OpToken> for Op {
+        impl TryFrom<OpLike> for Op {
             type Error = String;
 
-            fn try_from(value: OpToken) -> Result<Self, Self::Error> {
+            fn try_from(value: OpLike) -> Result<Self, Self::Error> {
                 Ok(match value {
-                    $(OpToken::$op => Self::$op,)+
+                    $(OpLike::$op => Self::$op,)+
                     _ => {
                         return Err(format!("Invalid operation {value:?}"));
                     }
@@ -72,10 +72,10 @@ macro_rules! convert_op_tokens {
             }
         }
 
-        impl Into<OpToken> for Op {
-            fn into(self) -> OpToken {
+        impl Into<OpLike> for Op {
+            fn into(self) -> OpLike {
                 match self {
-                    $(Self::$op => OpToken::$op,)+
+                    $(Self::$op => OpLike::$op,)+
                 }
             }
         }
@@ -160,6 +160,7 @@ impl Display for Expr {
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(v) => (format!("{v}"), vec![]),
                 Accessor::Property(base, prop) => (format!("prop {prop} of"), vec![&base]),
+                Accessor::Index(indexed, index) => (format!("index"), vec![&indexed, &index]),
             },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
@@ -246,6 +247,7 @@ pub struct Assign {
 pub enum Accessor {
     Variable(String),
     Property(Box<Expr>, String),
+    Index(Box<Expr>, Box<Expr>),
 }
 
 impl Debug for Accessor {
@@ -253,6 +255,7 @@ impl Debug for Accessor {
         match self {
             Self::Variable(name) => write!(f, "{name}"),
             Self::Property(accessor, name) => write!(f, "{accessor:?}.{name}"),
+            Self::Index(indexed, index) => write!(f, "{indexed:?}[{index:?}]"),
         }
     }
 }

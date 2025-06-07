@@ -7,7 +7,7 @@ use super::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct _InnerTuple {
     entries: TypeList,
-    elements: Vec<Value>,
+    pub elements: Vec<Value>,
 }
 
 impl Display for _InnerTuple {

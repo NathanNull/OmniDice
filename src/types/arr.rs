@@ -46,8 +46,8 @@ impl Arr {
 type_init!(ArrT, Arr, "array", (MutexGuard<_InnerArr>), entry: Datatype);
 
 impl Type for ArrT {
-    fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
-        if &other == self {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if other == self {
             match op {
                 Op::Plus => Some(self.dup()),
                 _ => None,
@@ -61,6 +61,20 @@ impl Type for ArrT {
         match name {
             "length" => Some(Box::new(Int)),
             _ => None,
+        }
+    }
+
+    fn index_type(&self, index: &Datatype) -> Option<Datatype> {
+        if index == &Int {
+            Some(self.entry.clone())
+        } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
+            if tup.entries.0.iter().all(|e| e == &Int) {
+                Some(self.dup())
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 }
@@ -91,6 +105,61 @@ impl Val for Arr {
         match name {
             "length" => Box::new(self.inner().elements.len() as i32),
             _ => invalid!("Prop", self, name),
+        }
+    }
+
+    fn get_index(&self, index: Value) -> Value {
+        if let Some(idx) = index.downcast::<i32>() {
+            self.inner()
+                .elements
+                .get(idx as usize)
+                .expect("Invalid index")
+                .dup()
+        } else if let Some(idxs) = index.downcast::<Tuple>() {
+            let eles = &self.inner().elements;
+            Box::new(Self::new(
+                idxs.inner()
+                    .elements
+                    .iter()
+                    .map(|idx| {
+                        if let Some(i) = idx.downcast::<i32>() {
+                            eles.get(i as usize).expect("Invalid index").dup()
+                        } else {
+                            invalid!("Index", self, idx.get_type())
+                        }
+                    })
+                    .collect(),
+            ))
+        } else {
+            invalid!("Index", self, index.get_type())
+        }
+    }
+
+    fn set_index(&self, index: Value, value: Value) {
+        if let Some(idx) = index.downcast::<i32>() {
+            assert_eq!(value.get_type(), self.inner().entry);
+            *self
+                .inner()
+                .elements
+                .get_mut(idx as usize)
+                .expect("Invalid index") = value;
+        } else if let Some(idxs) = index.downcast::<Tuple>() {
+            let entry = self.inner().entry.clone();
+            let vals = value.downcast::<Arr>().unwrap();
+            assert_eq!(vals.inner().entry, entry);
+            idxs.inner().elements.iter().zip(vals.inner().elements.iter()).for_each(|(idx, val)| {
+                if let Some(i) = idx.downcast::<i32>() {
+                    *self
+                        .inner()
+                        .elements
+                        .get_mut(i as usize)
+                        .expect("Invalid index") = val.dup();
+                } else {
+                    invalid!("Index", self, idx.get_type())
+                }
+            });
+        } else {
+            invalid!("Index", self, index.get_type())
         }
     }
 }

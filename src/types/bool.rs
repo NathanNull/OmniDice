@@ -3,8 +3,8 @@ use super::*;
 
 type_init!(Bool, bool, "bool");
 impl Type for Bool {
-    fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
-        if other == Bool {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if other == &Bool {
             match op {
                 Op::And | Op::Or | Op::Equal | Op::NotEqual => Some(self.dup()),
                 _ => None,

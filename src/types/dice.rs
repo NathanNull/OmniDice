@@ -3,8 +3,8 @@ use super::*;
 
 type_init!(Dice, Distribution, "dice");
 impl Type for Dice {
-    fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
-        if (other == Int || other == Dice) && NUM_OPS.contains(&op) {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if (other == &Int || other == &Dice) && NUM_OPS.contains(&op) {
             Some(Box::new(Dice))
         } else {
             None
