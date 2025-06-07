@@ -180,15 +180,9 @@ impl Interpreter {
 
     fn eval_tuple(&mut self, tup: &TupleExpr) -> Value {
         let mut res = vec![];
-        let mut ty = None;
         for expr in &tup.elements {
             res.push(self.eval_expr(expr));
-            let next_type = res.last().unwrap().get_type();
-            if let Some(t) = &mut ty {
-                assert_eq!(t, &next_type, "Array types didn't match");
-            } else {
-                ty = Some(next_type);
-            }
+            // TODO: maybe add type checking here, if I feel I need it for some reason
         }
         Box::new(Tuple::new(res))
     }
