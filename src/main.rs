@@ -18,7 +18,7 @@ fn main() {
     let ast = Parser::new(tokens).parse();
     println!("AST: {ast}");
     let output = Interpreter::new(ast).run();
-    println!("Output ({}): {output}", output.get_type());
+    println!("Output ({}): {}", output.get_type(), output);
 }
 
 #[derive(Clone)]

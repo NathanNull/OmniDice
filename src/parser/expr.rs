@@ -118,7 +118,7 @@ impl Debug for ExprContents {
             Self::Binop(Binop { op, lhs, rhs }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
             Self::Prefix(Prefix { op: prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
             Self::Postfix(Postfix { op: postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
-            Self::Assign(Assign { assignee, val }) => write!(f, "(set {assignee:?} {val:?})"),
+            Self::Assign(Assign { assignee, val, a_type}) => write!(f, "({a_type} {assignee:?} {val:?})"),
             Self::Accessor(acc) => write!(f, "{acc:?}"),
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
             Self::Conditional(cond) => write!(f, "{cond:?}"),
@@ -137,7 +137,7 @@ impl Debug for Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (str, children): (_, Vec<&Expr>) = match &self.contents {
-            ExprContents::Literal(literal) => (format!("{} {literal}", literal.get_type()), vec![]),
+            ExprContents::Literal(literal) => (format!("{} {}", literal.get_type(), literal), vec![]),
             ExprContents::Binop(binop) => {
                 (format!("{:?} b", binop.op), vec![&binop.lhs, &binop.rhs])
             }
@@ -146,7 +146,7 @@ impl Display for Expr {
                 (format!("{:?} post", postfix.op), vec![&postfix.lhs])
             }
             ExprContents::Assign(assign) => {
-                (format!("assign {:?} to", assign.assignee), vec![&assign.val])
+                (format!("assign ({}) {:?} to", assign.a_type, assign.assignee), vec![&assign.val])
             }
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(v) => (format!("{v}"), vec![]),
@@ -204,10 +204,28 @@ pub struct Postfix {
     pub lhs: Box<Expr>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AssignType {
+    Immut,
+    Mut,
+    Reassign,
+}
+
+impl Display for AssignType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            AssignType::Immut => "let",
+            AssignType::Mut => "mut",
+            AssignType::Reassign => "re",
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
+    pub a_type: AssignType
 }
 
 #[derive(Clone)]

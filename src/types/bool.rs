@@ -23,12 +23,12 @@ impl Type for Bool {
 }
 impl Val for bool {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
-        if let Some(rhs) = other.try_downcast_ref::<Self>() {
+        if let Some(rhs) = other.downcast::<bool>() {
             Box::new(match op {
-                Op::And => *self && *rhs,
-                Op::Or => *self || *rhs,
-                Op::Equal => self == rhs,
-                Op::NotEqual => self != rhs,
+                Op::And => *self && rhs,
+                Op::Or => *self || rhs,
+                Op::Equal => self == &rhs,
+                Op::NotEqual => self != &rhs,
                 _ => invalid!(op, self, other),
             })
         } else {

@@ -182,8 +182,8 @@ impl Div for Distribution {
     }
 }
 
-impl From<&i32> for Distribution {
-    fn from(value: &i32) -> Self {
-        Self::from_vec(vec![*value])
+impl From<i32> for Distribution {
+    fn from(value: i32) -> Self {
+        Self::from_vec(vec![value])
     }
 }

@@ -21,6 +21,8 @@ pub enum Keyword {
     If,
     Else,
     While,
+    Let,
+    Mut,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -169,6 +171,8 @@ impl<'a> Lexer<'a> {
                 "if" => Keyword::If,
                 "else" => Keyword::Else,
                 "while" => Keyword::While,
+                "let" => Keyword::Let,
+                "mut" => Keyword::Mut,
                 _ => return Some(Token::Identifier(name_str)),
             }))
         } else {

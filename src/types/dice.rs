@@ -26,7 +26,7 @@ impl Type for Dice {
 }
 impl Val for Distribution {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
-        if let Some(rhs) = other.try_downcast_ref::<i32>() {
+        if let Some(rhs) = other.downcast::<i32>() {
             match op {
                 Op::Plus => Box::new(self.clone() + rhs.into()),
                 Op::Minus => Box::new(self.clone() - rhs.into()),
@@ -34,7 +34,7 @@ impl Val for Distribution {
                 Op::Divided => Box::new(self.clone() / rhs.into()),
                 _ => invalid!(op, self, other),
             }
-        } else if let Some(rhs) = other.try_downcast_ref::<Distribution>() {
+        } else if let Some(rhs) = other.downcast::<Distribution>() {
             match op {
                 Op::Plus => Box::new(self.clone() + rhs.clone()),
                 Op::Minus => Box::new(self.clone() - rhs.clone()),
@@ -49,7 +49,7 @@ impl Val for Distribution {
 
     fn pre_op(&self, op: Op) -> Value {
         match op {
-            Op::Minus => Box::new(self.clone() * (&-1).into()),
+            Op::Minus => Box::new(self.clone() * Into::<_>::into(-1)),
             _ => invalid!(op, self, ()),
         }
     }

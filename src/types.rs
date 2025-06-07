@@ -1,24 +1,24 @@
 use std::{
     any::Any,
     fmt::{Debug, Display},
+    sync::{Arc, Mutex},
 };
 
 use crate::{distribution::Distribution, parser::Op};
 
 pub mod num;
-pub use num::*;
+pub use num::{Float, Int};
 
 pub mod bool;
-pub use bool::*;
+pub use bool::Bool;
 
 pub mod string;
-pub use string::*;
 
 pub mod dice;
-pub use dice::*;
+pub use dice::Dice;
 
 pub mod arr;
-pub use arr::*;
+pub use arr::{Arr, ArrT};
 
 trait BaseType {
     fn name(&self) -> String;
@@ -48,14 +48,17 @@ trait BaseVal {
         self.base_get_type().name()
     }
     fn eq(&self, other: &Value) -> bool;
+    fn inner(&self) -> Option<Value> {
+        None
+    }
 }
 
 #[allow(private_bounds)]
-pub trait Val: Display + Debug + Send + Sync + Any + BaseVal {
+pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn get_prop(&self, _name: &str) -> Value {
         unreachable!("Type '{}' has no properties.", self.get_name())
     }
-    fn set_prop(&mut self, _prop: &str, _value: Value) {
+    fn set_prop(&self, _prop: &str, _value: Value) {
         unreachable!("Type '{}' has no properties.", self.get_name())
     }
     fn bin_op(&self, _other: &Value, _op: Op) -> Value {
@@ -121,8 +124,8 @@ macro_rules! type_init {
                 })?)
             }
             fn eq(&self, other: &Value) -> bool {
-                if let Some(rhs) = other.try_downcast_ref::<$val>() {
-                    rhs == self
+                if let Some(rhs) = other.downcast::<$val>() {
+                    self == &rhs
                 } else {
                     false
                 }
@@ -138,6 +141,78 @@ macro_rules! type_init {
 
 pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
+
+#[derive(Clone)]
+pub struct DisplayMutex<T>(Arc<Mutex<T>>);
+
+impl<T> DisplayMutex<T> {
+    pub fn make(inner: T) -> Self {
+        Self(Arc::new(Mutex::new(inner)))
+    }
+}
+impl<T: Display> Display for DisplayMutex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.try_lock() {
+            Ok(guard) => write!(f, "{}", *guard),
+            Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
+        }
+    }
+}
+impl<T: Debug> Debug for DisplayMutex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.try_lock() {
+            Ok(guard) => write!(f, "{:?}", *guard),
+            Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
+        }
+    }
+}
+
+trait MutVal: Val {
+    fn set_prop(&mut self, _prop: &str, _value: Value) {
+        unreachable!("Type '{}' has no properties.", self.get_name())
+    }
+}
+
+impl<T: MutVal + PartialEq + Clone> BaseVal for DisplayMutex<T> {
+    fn base_dup(&self) -> Value {
+        Box::new(Self(self.0.clone()))
+    }
+    fn base_get_type(&self) -> Datatype {
+        self.0.try_lock().unwrap().base_get_type()
+    }
+    fn eq(&self, other: &Value) -> bool {
+        if let Some(rhs) = other.downcast::<Self>() {
+            *self.0.try_lock().unwrap() == *rhs.0.try_lock().unwrap()
+        } else {
+            false
+        }
+    }
+    fn inner(&self) -> Option<Value> {
+        Some(self.0.try_lock().unwrap().dup())
+    }
+}
+
+impl<T: MutVal + PartialEq + Clone> Val for DisplayMutex<T> {
+    fn get_prop(&self, name: &str) -> Value {
+        self.0.try_lock().unwrap().get_prop(name)
+    }
+
+    fn set_prop(&self, prop: &str, value: Value) {
+        MutVal::set_prop(&mut *self.0.try_lock().unwrap(), prop, value);
+    }
+
+    fn bin_op(&self, other: &Value, op: Op) -> Value {
+        self.0.try_lock().unwrap().bin_op(other, op)
+    }
+
+    fn pre_op(&self, op: Op) -> Value {
+        self.0.try_lock().unwrap().pre_op(op)
+    }
+
+    fn post_op(&self, op: Op) -> Value {
+        self.0.try_lock().unwrap().post_op(op)
+    }
+}
 
 impl PartialEq<dyn Type> for Datatype {
     fn eq(&self, other: &dyn Type) -> bool {
@@ -175,19 +250,20 @@ impl Clone for Value {
     }
 }
 
-#[allow(unused)]
-pub trait TryDowncast {
-    fn try_downcast_ref<T: Val + 'static>(&self) -> Option<&T>;
-    fn try_downcast_mut<T: Val + 'static>(&mut self) -> Option<&mut T>;
+#[allow(unused, private_bounds)]
+pub trait Downcast {
+    fn downcast<T: Val + Clone + 'static>(&self) -> Option<T>;
 }
 
-impl TryDowncast for Value {
-    fn try_downcast_ref<T: 'static>(&self) -> Option<&T> {
-        (self.as_ref() as &dyn Any).downcast_ref()
-    }
-
-    fn try_downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        (self.as_mut() as &mut dyn Any).downcast_mut()
+#[allow(unused, private_bounds)]
+impl Downcast for Value {
+    fn downcast<T: Val + Clone + 'static>(&self) -> Option<T> {
+        if let Some(inner) = self.inner() {
+            println!("using inner, new inner is {:?}", inner.inner());
+            inner as Box<dyn Any>
+        } else {
+            self.dup() as Box<dyn Any>
+        }.downcast().ok().map(|b|*b)
     }
 }
 

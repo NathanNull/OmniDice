@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap};
 
 use crate::{
     parser::{
-        Accessor, Array, Assign, Binop, Conditional, Expr, ExprContents, Postfix, Prefix, Scope,
-        While,
+        Accessor, Array, Assign, AssignType, Binop, Conditional, Expr, ExprContents, Postfix,
+        Prefix, Scope, While,
     },
-    types::{Arr, TryDowncast, Value, Void},
+    types::{Arr, Downcast, Value, Void},
 };
 
 pub struct Interpreter {
@@ -62,7 +62,7 @@ impl Interpreter {
 
     fn eval_accessor(&mut self, acc: &Accessor) -> Value {
         match acc {
-            Accessor::Variable(ident) => self.get_var(ident),
+            Accessor::Variable(ident) => self.get_var(ident).clone(),
             Accessor::Property(base, property) => self.eval_expr(&base).get_prop(property),
         }
     }
@@ -73,10 +73,10 @@ impl Interpreter {
         lhs.bin_op(&rhs, binop.op)
     }
 
-    fn get_var(&self, var: &String) -> Value {
-        for scope in self.variables.iter().rev() {
-            if let Some(val) = scope.get(var) {
-                return val.clone();
+    fn get_var(&mut self, var: &str) -> &mut Value {
+        for scope in self.variables.iter_mut().rev() {
+            if let Some(val) = scope.get_mut(var) {
+                return val;
             }
         }
         panic!("Attempted to access nonexistent variable {var}");
@@ -109,15 +109,33 @@ impl Interpreter {
     fn eval_assign(&mut self, assign: &Assign) -> Value {
         let val = self.eval_expr(&assign.val);
         match &assign.assignee {
-            Accessor::Variable(name) => self.set_var(name.clone(), val.dup()),
-            Accessor::Property(base, prop) => self.eval_expr(&base).set_prop(prop, val.dup()),
+            Accessor::Variable(name) => {
+                if assign.a_type == AssignType::Reassign {
+                    assert_eq!(
+                        val.get_type(),
+                        self.get_var(name).get_type(),
+                        "Tried to reassign variable {name} to a different type"
+                    );
+                }
+                self.set_var(name.clone(), val.dup());
+            }
+            Accessor::Property(base, prop) => {
+                let base_val = self.eval_expr(&base);
+                assert_eq!(
+                    val.get_type(),
+                    base_val.get_type().prop_type(prop).unwrap(),
+                    "Tried to reassign property {:?} to a different type",
+                    assign.assignee
+                );
+                base_val.set_prop(prop, val.dup());
+            }
         }
         val
     }
 
     fn eval_conditional(&mut self, cond: &Conditional) -> Value {
-        if let Some(condition) = self.eval_expr(&cond.condition).try_downcast_ref() {
-            if *condition {
+        if let Some(condition) = self.eval_expr(&cond.condition).downcast::<bool>() {
+            if condition {
                 self.eval_expr(&cond.result)
             } else if let Some(otherwise) = cond.otherwise.as_ref() {
                 self.eval_expr(&otherwise)
@@ -131,8 +149,8 @@ impl Interpreter {
 
     fn eval_while(&mut self, wh: &While) -> Value {
         loop {
-            if let Some(condition) = self.eval_expr(&wh.condition).try_downcast_ref() {
-                if *condition {
+            if let Some(condition) = self.eval_expr(&wh.condition).downcast::<bool>() {
+                if condition {
                     self.eval_expr(&wh.result);
                 } else {
                     break;

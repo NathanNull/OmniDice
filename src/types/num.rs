@@ -21,21 +21,21 @@ impl Type for Float {
 }
 impl Val for f32 {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
-        if let Some(rhs) = other.try_downcast_ref::<f32>() {
+        if let Some(rhs) = other.downcast::<f32>() {
             match op {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
                 Op::Times => Box::new(self * rhs),
                 Op::Divided => Box::new(self / rhs),
-                Op::Equal => Box::new(self == rhs),
-                Op::NotEqual => Box::new(self != rhs),
-                Op::Greater => Box::new(self > rhs),
-                Op::Less => Box::new(self < rhs),
-                Op::Geq => Box::new(self >= rhs),
-                Op::Leq => Box::new(self <= rhs),
+                Op::Equal => Box::new(self == &rhs),
+                Op::NotEqual => Box::new(self != &rhs),
+                Op::Greater => Box::new(self > &rhs),
+                Op::Less => Box::new(self < &rhs),
+                Op::Geq => Box::new(self >= &rhs),
+                Op::Leq => Box::new(self <= &rhs),
                 _ => invalid!(op, self, other),
             }
-        } else if let Some(rhs) = other.try_downcast_ref::<i32>().map(|i| *i as f32) {
+        } else if let Some(rhs) = other.downcast::<i32>().map(|i| i as f32) {
             match op {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
@@ -81,20 +81,20 @@ impl Type for Int {
 }
 impl Val for i32 {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
-        if let Some(rhs) = other.try_downcast_ref::<i32>() {
+        if let Some(rhs) = other.downcast::<i32>() {
             match op {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
                 Op::Times => Box::new(self * rhs),
                 Op::Divided => Box::new(self / rhs),
-                Op::Equal => Box::new(self == rhs),
-                Op::NotEqual => Box::new(self != rhs),
-                Op::Greater => Box::new(self > rhs),
-                Op::Less => Box::new(self < rhs),
-                Op::Geq => Box::new(self >= rhs),
-                Op::Leq => Box::new(self <= rhs),
+                Op::Equal => Box::new(self == &rhs),
+                Op::NotEqual => Box::new(self != &rhs),
+                Op::Greater => Box::new(self > &rhs),
+                Op::Less => Box::new(self < &rhs),
+                Op::Geq => Box::new(self >= &rhs),
+                Op::Leq => Box::new(self <= &rhs),
                 Op::Mod => Box::new(self % rhs),
-                Op::D => Box::new(Distribution::n_die_m(*self as usize, *rhs as usize)),
+                Op::D => Box::new(Distribution::n_die_m(*self as usize, rhs as usize)),
                 _ => invalid!(op, self, other),
             }
         } else {

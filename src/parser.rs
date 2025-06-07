@@ -12,7 +12,7 @@ use strum::IntoEnumIterator;
 
 pub struct Parser {
     tokens: TokenIter<IntoIter<Token>>,
-    var_types: Vec<HashMap<String, Datatype>>,
+    var_types: Vec<HashMap<String, (Datatype, bool)>>,
 }
 
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
@@ -33,12 +33,12 @@ impl Parser {
         }
     }
 
-    fn new_expr(&mut self, contents: ExprContents) -> Expr {
+    fn new_expr(&mut self, contents: ExprContents) -> Box<Expr> {
         let output = self.decide_type(&contents);
-        Expr { output, contents }
+        Box::new(Expr { output, contents })
     }
 
-    fn set_var_type(&mut self, name: String, dtype: Datatype) {
+    fn set_var_type(&mut self, name: String, dtype: Datatype, mutable: bool) {
         if let Some(old) = self.get_var_type(&name) {
             assert_eq!(
                 &old, &dtype,
@@ -48,17 +48,29 @@ impl Parser {
             if self.var_types.is_empty() {
                 panic!("Tried to access variable type while no scope alive");
             }
-            self.var_types.last_mut().unwrap().insert(name, dtype);
+            self.var_types
+                .last_mut()
+                .unwrap()
+                .insert(name, (dtype, mutable));
         }
     }
 
     fn get_var_type(&self, name: &str) -> Option<Datatype> {
         for scope in self.var_types.iter().rev() {
-            if let Some(dtype) = scope.get(name) {
+            if let Some((dtype, _)) = scope.get(name) {
                 return Some(dtype.clone());
             }
         }
         None
+    }
+
+    fn var_is_mutable(&self, name: &str) -> bool {
+        for scope in self.var_types.iter().rev() {
+            if let Some((_, mutable)) = scope.get(name) {
+                return *mutable;
+            }
+        }
+        false
     }
 
     fn decide_type(&self, contents: &ExprContents) -> Datatype {
@@ -117,7 +129,7 @@ impl Parser {
 
     pub fn parse(&mut self) -> Expr {
         let scope = ExprContents::Scope(self.parse_scope(false));
-        self.new_expr(scope)
+        *self.new_expr(scope)
     }
 
     fn parse_scope(&mut self, is_inner: bool) -> Scope {
@@ -135,7 +147,7 @@ impl Parser {
         ];
         while self.tokens.peek().unwrap() != expected_end.last().unwrap() {
             let contents = self.parse_expr(0, &expected_end, true);
-            exprs.push(self.new_expr(contents));
+            exprs.push(*self.new_expr(contents));
             just_parsed = true;
             assert!(
                 expected_end.contains(self.tokens.peek().unwrap()),
@@ -210,7 +222,7 @@ impl Parser {
                         &vec![Token::Comma, Token::Bracket(Bracket::RSquare)],
                         false,
                     );
-                    elements.push(self.new_expr(expr));
+                    elements.push(*self.new_expr(expr));
                     match self.tokens.next() {
                         Some(Token::Comma) => (),
                         Some(Token::Bracket(Bracket::RSquare)) => break,
@@ -234,7 +246,31 @@ impl Parser {
                 imply_eol = allow_imply_eol;
                 self.parse_while()
             }
-            tk => panic!("Expected literal or ident, found {tk:?}"),
+            Token::Keyword(Keyword::Let) => {
+                let is_mut = self.tokens.eat([Token::Keyword(Keyword::Mut)]).is_some();
+                let ident = match self.tokens.next().expect("Unexpected EOF") {
+                    Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
+                    tk => panic!("Expected literal or ident, found {tk:?}"),
+                };
+                assert!(
+                    self.tokens.eat([Token::Op(OpToken::Assign)]).is_some(),
+                    "Expected =, found {:?}",
+                    self.tokens.next()
+                );
+                let rhs =
+                    self.parse_expr(INFIX_BINDING_POWER[&OpToken::Assign].1, expected_end, false);
+
+                self.parse_assign(
+                    if is_mut {
+                        AssignType::Mut
+                    } else {
+                        AssignType::Immut
+                    },
+                    ident,
+                    rhs,
+                )
+            }
+            tk => panic!("Expected expression, found {tk:?}"),
         };
         loop {
             let op = match self.tokens.peek().unwrap().clone() {
@@ -312,14 +348,14 @@ impl Parser {
                 "If statement recieved non-matching types {:?} and {:?}",
                 res.output, base_expr.output
             );
-            Some(Box::new(res))
+            Some(res)
         } else {
             None
         };
 
         ExprContents::Conditional(Conditional {
-            condition: Box::new(base_clause),
-            result: Box::new(base_expr),
+            condition: base_clause,
+            result: base_expr,
             otherwise: else_expr,
         })
     }
@@ -328,12 +364,12 @@ impl Parser {
         let (clause, result) = self.parse_conditional_clause();
         assert_eq!(&result.output, &VOID.output, "While loops must return Void");
         ExprContents::While(While {
-            condition: Box::new(clause),
-            result: Box::new(result),
+            condition: clause,
+            result: result,
         })
     }
 
-    fn parse_conditional_clause(&mut self) -> (Expr, Expr) {
+    fn parse_conditional_clause(&mut self) -> (Box<Expr>, Box<Expr>) {
         let expr = self.parse_expr(0, &vec![Token::Bracket(Bracket::LCurly)], false);
         let clause = self.new_expr(expr);
         assert!(
@@ -354,6 +390,75 @@ impl Parser {
         );
         let result = self.new_expr(ExprContents::Scope(scope));
         (clause, result)
+    }
+
+    fn parse_assign(
+        &mut self,
+        assign_type: AssignType,
+        lhs: ExprContents,
+        rhs: ExprContents,
+    ) -> ExprContents {
+        /*let val = self.new_expr(rhs);
+        let ty = val.output.clone();
+        let res = ExprContents::Assign(Assign {
+            assignee: Accessor::Variable(ident.clone()),
+            val,
+            a_type: if is_mut {
+                AssignType::Mut
+            } else {
+                AssignType::Immut
+            },
+        });
+        self.set_var_type(ident, ty, is_mut);
+        res */
+        let val = self.new_expr(rhs);
+        let ty = val.output.clone();
+        let assignee = match lhs {
+            ExprContents::Accessor(acc) => acc,
+            _ => panic!("Expected accessor, found {lhs:?}"),
+        };
+        match assign_type {
+            AssignType::Reassign => {
+                assert_eq!(
+                    match &assignee {
+                        Accessor::Variable(v) => {
+                            self.get_var_type(v).expect(&format!(
+                                "Unknown variable {v}, consider adding 'let' before this assignment"
+                            ))
+                        }
+                        Accessor::Property(base, prop) => {
+                            base.output.prop_type(prop).expect(&format!(
+                                "Unknown property type {prop} for base {}",
+                                base.output
+                            ))
+                        }
+                    },
+                    val.output
+                );
+                fn is_assignable(me: &mut Parser, assignee: &Accessor) -> bool {
+                    match &assignee {
+                        Accessor::Variable(v) => me.var_is_mutable(v),
+                        Accessor::Property(base, _) => match &base.contents {
+                            ExprContents::Accessor(accessor) => is_assignable(me, accessor),
+                            _ => false,
+                        },
+                    }
+                }
+                assert!(is_assignable(self, &assignee), "{assignee:?} is not reassignable");
+            }
+            AssignType::Immut | AssignType::Mut => match &assignee {
+                Accessor::Variable(v) => {
+                    self.set_var_type(v.clone(), ty, assign_type == AssignType::Mut)
+                }
+                _ => unreachable!("Let assignments should only be able to parse lhs as a single variable"),
+            },
+        }
+
+        ExprContents::Assign(Assign {
+            assignee,
+            val,
+            a_type: assign_type,
+        })
     }
 
     fn make_expr(
@@ -381,40 +486,25 @@ impl Parser {
                 | OpToken::Or,
                 OpType::Infix,
             ) => ExprContents::Binop(Binop {
-                lhs: Box::new(self.new_expr(lhs)),
-                rhs: Box::new(self.new_expr(rhs)),
+                lhs: self.new_expr(lhs),
+                rhs: self.new_expr(rhs),
                 op: op.try_into().unwrap(),
             }),
             (OpToken::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: op.try_into().unwrap(),
-                rhs: Box::new(self.new_expr(rhs)),
+                rhs: self.new_expr(rhs),
             }),
             (OpToken::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: op.try_into().unwrap(),
-                rhs: Box::new(self.new_expr(rhs)),
+                rhs: self.new_expr(rhs),
             }),
             // "d6" expands to "1d6"
             (OpToken::D, OpType::Prefix) => ExprContents::Binop(Binop {
-                lhs: Box::new(self.new_expr(ExprContents::Literal(Box::new(1)))),
-                rhs: Box::new(self.new_expr(rhs)),
+                lhs: self.new_expr(ExprContents::Literal(Box::new(1))),
+                rhs: self.new_expr(rhs),
                 op: op.try_into().unwrap(),
             }),
-            (OpToken::Assign, OpType::Infix) => {
-                let val = Box::new(self.new_expr(rhs));
-                let assignee = match lhs {
-                    ExprContents::Accessor(acc) => acc,
-                    _ => panic!("Expected accessor, found {lhs:?}"),
-                };
-                match &assignee {
-                    Accessor::Variable(v) => {
-                        self.set_var_type(v.clone(), val.output.clone());
-                    }
-                    Accessor::Property(base, prop) => {
-                        assert_eq!(Some(&val.output), base.output.prop_type(prop).as_ref())
-                    }
-                }
-                ExprContents::Assign(Assign { assignee, val })
-            }
+            (OpToken::Assign, OpType::Infix) => self.parse_assign(AssignType::Reassign, lhs, rhs),
             (OpToken::OpAssign(op), OpType::Infix) => {
                 let val = self.make_expr(lhs.clone(), rhs, op.into(), op_type);
                 self.make_expr(lhs, val, OpToken::Assign, op_type)
@@ -424,7 +514,7 @@ impl Parser {
                     ExprContents::Accessor(Accessor::Variable(var)) => var,
                     _ => panic!("Expected property, found {rhs:?}"),
                 };
-                ExprContents::Accessor(Accessor::Property(Box::new(self.new_expr(lhs)), rhs))
+                ExprContents::Accessor(Accessor::Property(self.new_expr(lhs), rhs))
             }
             (
                 OpToken::Plus
