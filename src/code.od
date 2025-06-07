@@ -13,5 +13,4 @@ a*/
 
 let mut amogus = [2];
 amogus += [1];
-amogus.squingus += 145;
-amogus.squingus
+amogus

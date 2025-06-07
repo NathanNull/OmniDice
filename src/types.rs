@@ -259,7 +259,6 @@ pub trait Downcast {
 impl Downcast for Value {
     fn downcast<T: Val + Clone + 'static>(&self) -> Option<T> {
         if let Some(inner) = self.inner() {
-            println!("using inner, new inner is {:?}", inner.inner());
             inner as Box<dyn Any>
         } else {
             self.dup() as Box<dyn Any>
