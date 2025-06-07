@@ -20,6 +20,19 @@ pub use dice::Dice;
 pub mod arr;
 pub use arr::{Arr, ArrT};
 
+pub mod tup;
+pub use tup::{TupT, Tuple};
+
+trait GetRef<'a, T> {
+    fn get_ref(&'a self) -> T;
+}
+
+impl<'a, T> GetRef<'a, &'a T> for T {
+    fn get_ref(&'a self) -> &'a T {
+        self
+    }
+}
+
 trait BaseType {
     fn name(&self) -> String;
     fn dup(&self) -> Datatype;
@@ -89,12 +102,59 @@ macro_rules! invalid {
 }
 
 #[macro_export]
+macro_rules! mut_type_init {
+    ($name: ident, $inner: ident) => {
+        #[derive(Clone)]
+        pub struct $name(Arc<Mutex<$inner>>);
+
+        impl $name {
+            fn make(inner: $inner) -> Self {
+                Self(Arc::new(Mutex::new(inner)))
+            }
+        }
+        impl Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0.try_lock() {
+                    Ok(guard) => write!(f, "{}", *guard),
+                    Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
+                }
+            }
+        }
+        impl Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0.try_lock() {
+                    Ok(guard) => write!(f, "{:?}", *guard),
+                    Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
+                }
+            }
+        }
+        impl PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                self.0.try_lock().unwrap().eq(&other.0.try_lock().unwrap())
+            }
+        }
+
+        impl $name {
+            fn inner(&self) -> MutexGuard<$inner> {
+                self.0.try_lock().unwrap()
+            }
+        }
+
+        impl<'a> GetRef<'a, MutexGuard<'a, $inner>> for $name {
+            fn get_ref(&self) -> MutexGuard<$inner> {
+                self.inner()
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! _make_type {
     ($ty: ident) => {
         #[derive(Debug, Clone, PartialEq)]
         pub struct $ty;
     };
-    ($ty: ident, [$($tvar: ident, $tty: ident),*]) => {
+    ($ty: ident, [$($tvar: ident, $tty: ty),*]) => {
         #[derive(Debug, Clone, PartialEq)]
         pub struct $ty {
             $(pub $tvar: $tty),*
@@ -104,11 +164,18 @@ macro_rules! _make_type {
 
 #[macro_export]
 macro_rules! type_init {
-    ($ty: ident, $val: ident, $repr: expr $(, $($tvar: ident : $tty: ident),*)?) => {
+    ($ty: ident, $val: ident, $repr: expr $(, $(($ref_t: ty), )? $($tvar: ident : $tty: ty),*)?) => {
         crate::_make_type!($ty $(, [$($tvar, $tty),*])?);
         impl BaseType for $ty {
             fn name(&self) -> String {
-                $repr.to_string()$(+format!("<{}>", vec![$(&self.$tvar),*].into_iter().map(|v|format!("{v}")).collect::<Vec<_>>().join(", ")).as_str())?
+                $repr.to_string()$(+format!(
+                    "<{}>",
+                    vec![$(&self.$tvar),*]
+                        .into_iter()
+                        .map(|v|format!("{v}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ).as_str())?
             }
             fn dup(&self) -> Datatype {
                 Box::new(self.clone())
@@ -119,8 +186,9 @@ macro_rules! type_init {
                 Box::new(self.clone())
             }
             fn base_get_type(&self) -> Datatype {
+                $(let r = GetRef$(::<$ref_t>)?::get_ref(self);)?
                 Box::new($ty $({
-                    $($tvar: self.$tvar.clone()),*
+                    $($tvar: r.$tvar.clone()),*
                 })?)
             }
             fn eq(&self, other: &Value) -> bool {
@@ -142,75 +210,27 @@ macro_rules! type_init {
 pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
 
-#[derive(Clone)]
-pub struct DisplayMutex<T>(Arc<Mutex<T>>);
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypeList(Vec<Datatype>);
 
-impl<T> DisplayMutex<T> {
-    pub fn make(inner: T) -> Self {
-        Self(Arc::new(Mutex::new(inner)))
-    }
-}
-impl<T: Display> Display for DisplayMutex<T> {
+impl Display for TypeList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0.try_lock() {
-            Ok(guard) => write!(f, "{}", *guard),
-            Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
+        //write!(f, "[")?;
+        let len = self.0.len();
+        for (i, ele) in self.0.iter().enumerate() {
+            write!(f, "{}", ele)?;
+            if i != len - 1 {
+                write!(f, ", ")?;
+            }
         }
-    }
-}
-impl<T: Debug> Debug for DisplayMutex<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0.try_lock() {
-            Ok(guard) => write!(f, "{:?}", *guard),
-            Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
-        }
+        Ok(())
+        //write!(f, "]")
     }
 }
 
-trait MutVal: Val {
-    fn set_prop(&mut self, _prop: &str, _value: Value) {
-        unreachable!("Type '{}' has no properties.", self.get_name())
-    }
-}
-
-impl<T: MutVal + PartialEq + Clone> BaseVal for DisplayMutex<T> {
-    fn base_dup(&self) -> Value {
-        Box::new(Self(self.0.clone()))
-    }
-    fn base_get_type(&self) -> Datatype {
-        self.0.try_lock().unwrap().base_get_type()
-    }
-    fn eq(&self, other: &Value) -> bool {
-        if let Some(rhs) = other.downcast::<Self>() {
-            *self.0.try_lock().unwrap() == *rhs.0.try_lock().unwrap()
-        } else {
-            false
-        }
-    }
-    fn inner(&self) -> Option<Value> {
-        Some(self.0.try_lock().unwrap().dup())
-    }
-}
-
-impl<T: MutVal + PartialEq + Clone> Val for DisplayMutex<T> {
-    fn get_prop(&self, name: &str) -> Value {
-        self.0.try_lock().unwrap().get_prop(name)
-    }
-
-    fn set_prop(&self, prop: &str, value: Value) {
-        MutVal::set_prop(&mut *self.0.try_lock().unwrap(), prop, value);
-    }
-
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
-        self.0.try_lock().unwrap().bin_op(other, op)
-    }
-
-    fn pre_op(&self, op: Op) -> Value {
-        self.0.try_lock().unwrap().pre_op(op)
-    }
-
-    fn post_op(&self, op: Op) -> Value {
-        self.0.try_lock().unwrap().post_op(op)
+impl FromIterator<Datatype> for TypeList {
+    fn from_iter<T: IntoIterator<Item = Datatype>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
     }
 }
 
@@ -262,7 +282,10 @@ impl Downcast for Value {
             inner as Box<dyn Any>
         } else {
             self.dup() as Box<dyn Any>
-        }.downcast().ok().map(|b|*b)
+        }
+        .downcast()
+        .ok()
+        .map(|b| *b)
     }
 }
 

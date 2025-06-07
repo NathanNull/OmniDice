@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 use crate::{
     TokenIter,
     lexer::{Bracket, Keyword, OpToken, Token, TokenString},
-    types::{ArrT, Bool, Datatype, Void},
+    types::{ArrT, Bool, Datatype, TupT, Void},
 };
 
 pub mod expr;
@@ -124,6 +124,9 @@ impl Parser {
                     .map(|e| e.output.clone())
                     .unwrap_or_else(|| VOID.output.clone()),
             }),
+            ExprContents::Tuple(tup) => Box::new(TupT {
+                entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
+            }),
         }
     }
 
@@ -146,7 +149,7 @@ impl Parser {
             },
         ];
         while self.tokens.peek().unwrap() != expected_end.last().unwrap() {
-            let contents = self.parse_expr(0, &expected_end, true);
+            let contents = self.parse_expr(0, &expected_end, true, false);
             exprs.push(*self.new_expr(contents));
             just_parsed = true;
             assert!(
@@ -173,6 +176,7 @@ impl Parser {
         min_bp: u8,
         expected_end: &Vec<Token>,
         allow_imply_eol: bool,
+        allow_join: bool,
     ) -> ExprContents {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
@@ -184,7 +188,7 @@ impl Parser {
                 let ((), r_bp) = PREFIX_BINDING_POWER
                     .get(&op)
                     .expect(&format!("Invalid prefix operator {op:?}"));
-                let rhs = self.parse_expr(*r_bp, expected_end, false);
+                let rhs = self.parse_expr(*r_bp, expected_end, false, false);
                 self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix)
             }
             Token::Bracket(Bracket::Left) => {
@@ -193,7 +197,8 @@ impl Parser {
                     self.tokens.next();
                     VOID.contents.clone()
                 } else {
-                    let lhs = self.parse_expr(0, &vec![Token::Bracket(Bracket::Right)], false);
+                    let lhs =
+                        self.parse_expr(0, &vec![Token::Bracket(Bracket::Right)], false, true);
                     let next = self.tokens.next().unwrap();
                     assert_eq!(
                         next,
@@ -219,12 +224,13 @@ impl Parser {
                 loop {
                     let expr = self.parse_expr(
                         0,
-                        &vec![Token::Comma, Token::Bracket(Bracket::RSquare)],
+                        &vec![Token::Op(OpToken::Comma), Token::Bracket(Bracket::RSquare)],
+                        false,
                         false,
                     );
                     elements.push(*self.new_expr(expr));
                     match self.tokens.next() {
-                        Some(Token::Comma) => (),
+                        Some(Token::Op(OpToken::Comma)) => (),
                         Some(Token::Bracket(Bracket::RSquare)) => break,
                         next => panic!("Unexpected token {next:?} in array expression"),
                     }
@@ -257,8 +263,12 @@ impl Parser {
                     "Expected =, found {:?}",
                     self.tokens.next()
                 );
-                let rhs =
-                    self.parse_expr(INFIX_BINDING_POWER[&OpToken::Assign].1, expected_end, false);
+                let rhs = self.parse_expr(
+                    INFIX_BINDING_POWER[&OpToken::Assign].1,
+                    expected_end,
+                    false,
+                    false,
+                );
 
                 self.parse_assign(
                     if is_mut {
@@ -301,7 +311,7 @@ impl Parser {
                 break;
             }
             self.tokens.next();
-            let rhs = self.parse_expr(*r_bp, expected_end, false);
+            let rhs = self.parse_expr(*r_bp, expected_end, false, allow_join);
             lhs = self.make_expr(lhs, rhs, op, OpType::Infix);
         }
         lhs
@@ -370,7 +380,7 @@ impl Parser {
     }
 
     fn parse_conditional_clause(&mut self) -> (Box<Expr>, Box<Expr>) {
-        let expr = self.parse_expr(0, &vec![Token::Bracket(Bracket::LCurly)], false);
+        let expr = self.parse_expr(0, &vec![Token::Bracket(Bracket::LCurly)], false, false);
         let clause = self.new_expr(expr);
         assert!(
             self.tokens.eat([Token::Bracket(Bracket::LCurly)]).is_some(),
@@ -444,13 +454,18 @@ impl Parser {
                         },
                     }
                 }
-                assert!(is_assignable(self, &assignee), "{assignee:?} is not reassignable");
+                assert!(
+                    is_assignable(self, &assignee),
+                    "{assignee:?} is not reassignable"
+                );
             }
             AssignType::Immut | AssignType::Mut => match &assignee {
                 Accessor::Variable(v) => {
                     self.set_var_type(v.clone(), ty, assign_type == AssignType::Mut)
                 }
-                _ => unreachable!("Let assignments should only be able to parse lhs as a single variable"),
+                _ => unreachable!(
+                    "Let assignments should only be able to parse lhs as a single variable"
+                ),
             },
         }
 
@@ -516,6 +531,25 @@ impl Parser {
                 };
                 ExprContents::Accessor(Accessor::Property(self.new_expr(lhs), rhs))
             }
+            (OpToken::Comma, OpType::Infix) => ExprContents::Tuple(Tuple {
+                elements: match (lhs, rhs) {
+                    (ExprContents::Tuple(l), ExprContents::Tuple(r)) => l
+                        .elements
+                        .into_iter()
+                        .chain(r.elements.into_iter())
+                        .collect(),
+                    (ExprContents::Tuple(l), r) => l
+                        .elements
+                        .into_iter()
+                        .chain([*self.new_expr(r)].into_iter())
+                        .collect(),
+                    (l, ExprContents::Tuple(r)) => [*self.new_expr(l)]
+                        .into_iter()
+                        .chain(r.elements.into_iter())
+                        .collect(),
+                    (l, r) => vec![*self.new_expr(l), *self.new_expr(r)],
+                },
+            }),
             (
                 OpToken::Plus
                 | OpToken::Times
@@ -531,7 +565,8 @@ impl Parser {
                 | OpToken::Or
                 | OpToken::Assign
                 | OpToken::OpAssign(_)
-                | OpToken::Access,
+                | OpToken::Access
+                | OpToken::Comma,
                 OpType::Prefix,
             ) => {
                 unreachable!("Invalid prefix operation {op:?}")
@@ -545,6 +580,7 @@ impl Parser {
 // Ordered from lowest to highest binding power
 static OP_LIST: LazyLock<Vec<(Vec<OpToken>, OpType, bool)>> = LazyLock::new(|| {
     vec![
+        (vec![OpToken::Comma], OpType::Infix, false),
         (
             Op::iter()
                 .map(|op| OpToken::OpAssign(op))

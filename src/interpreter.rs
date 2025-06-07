@@ -3,9 +3,9 @@ use std::{collections::HashMap};
 use crate::{
     parser::{
         Accessor, Array, Assign, AssignType, Binop, Conditional, Expr, ExprContents, Postfix,
-        Prefix, Scope, While,
+        Prefix, Scope, While, Tuple as TupleExpr
     },
-    types::{Arr, Downcast, Value, Void},
+    types::{Arr, Downcast, Tuple, Value, Void},
 };
 
 pub struct Interpreter {
@@ -49,6 +49,7 @@ impl Interpreter {
             ExprContents::Conditional(cond) => self.eval_conditional(cond),
             ExprContents::While(wh) => self.eval_while(wh),
             ExprContents::Array(arr) => self.eval_array(arr),
+            ExprContents::Tuple(tup) => self.eval_tuple(tup),
         };
         assert_eq!(
             &res.get_type(),
@@ -175,5 +176,20 @@ impl Interpreter {
             }
         }
         Box::new(Arr::new(res))
+    }
+
+    fn eval_tuple(&mut self, tup: &TupleExpr) -> Value {
+        let mut res = vec![];
+        let mut ty = None;
+        for expr in &tup.elements {
+            res.push(self.eval_expr(expr));
+            let next_type = res.last().unwrap().get_type();
+            if let Some(t) = &mut ty {
+                assert_eq!(t, &next_type, "Array types didn't match");
+            } else {
+                ty = Some(next_type);
+            }
+        }
+        Box::new(Tuple::new(res))
     }
 }

@@ -1,5 +1,7 @@
+use std::sync::MutexGuard;
+
 use super::*;
-use crate::{invalid, type_init};
+use crate::{invalid, mut_type_init, type_init};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct _InnerArr {
@@ -20,6 +22,7 @@ impl Display for _InnerArr {
         write!(f, "]")
     }
 }
+
 impl _InnerArr {
     fn new(elements: Vec<Value>) -> Self {
         Self {
@@ -32,14 +35,15 @@ impl _InnerArr {
     }
 }
 
-pub type Arr = DisplayMutex<_InnerArr>;
+mut_type_init!(Arr, _InnerArr);
+
 impl Arr {
     pub fn new(elements: Vec<Value>) -> Self {
         Self::make(_InnerArr::new(elements))
     }
 }
 
-type_init!(ArrT, _InnerArr, "array", entry: Datatype);
+type_init!(ArrT, Arr, "array", (MutexGuard<_InnerArr>), entry: Datatype);
 
 impl Type for ArrT {
     fn bin_op_result(&self, other: Datatype, op: Op) -> Option<Datatype> {
@@ -56,13 +60,12 @@ impl Type for ArrT {
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(Int)),
-            "squingus" => Some(Box::new(Int)),
             _ => None,
         }
     }
 }
 
-impl Val for _InnerArr {
+impl Val for Arr {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
         if other.get_type() == self.get_type() {
             let rhs = other
@@ -70,9 +73,10 @@ impl Val for _InnerArr {
                 .expect("Just checked if it was the right type");
             match op {
                 Op::Plus => Box::new(Arr::new(
-                    self.elements
+                    self.inner()
+                        .elements
                         .iter()
-                        .chain(rhs.elements.iter())
+                        .chain(rhs.inner().elements.iter())
                         .cloned()
                         .collect(),
                 )),
@@ -85,16 +89,8 @@ impl Val for _InnerArr {
 
     fn get_prop(&self, name: &str) -> Value {
         match name {
-            "length" => Box::new(self.elements.len() as i32),
+            "length" => Box::new(self.inner().elements.len() as i32),
             _ => invalid!("Prop", self, name),
-        }
-    }
-}
-
-impl MutVal for _InnerArr {
-    fn set_prop(&mut self, prop: &str, _value: Value) {
-        match prop {
-            _ => invalid!("Prop(assign)", self, prop),
         }
     }
 }

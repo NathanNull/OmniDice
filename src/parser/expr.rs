@@ -103,6 +103,7 @@ pub enum ExprContents {
     Conditional(Conditional),
     While(While),
     Array(Array),
+    Tuple(Tuple),
 }
 
 #[derive(Clone)]
@@ -118,12 +119,17 @@ impl Debug for ExprContents {
             Self::Binop(Binop { op, lhs, rhs }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
             Self::Prefix(Prefix { op: prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
             Self::Postfix(Postfix { op: postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
-            Self::Assign(Assign { assignee, val, a_type}) => write!(f, "({a_type} {assignee:?} {val:?})"),
+            Self::Assign(Assign {
+                assignee,
+                val,
+                a_type,
+            }) => write!(f, "({a_type} {assignee:?} {val:?})"),
             Self::Accessor(acc) => write!(f, "{acc:?}"),
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
             Self::Conditional(cond) => write!(f, "{cond:?}"),
             Self::While(wh) => write!(f, "{wh:?}"),
             Self::Array(arr) => write!(f, "{arr:?}"),
+            Self::Tuple(tup) => write!(f, "{tup:?}"),
         }
     }
 }
@@ -137,7 +143,9 @@ impl Debug for Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (str, children): (_, Vec<&Expr>) = match &self.contents {
-            ExprContents::Literal(literal) => (format!("{} {}", literal.get_type(), literal), vec![]),
+            ExprContents::Literal(literal) => {
+                (format!("{} {}", literal.get_type(), literal), vec![])
+            }
             ExprContents::Binop(binop) => {
                 (format!("{:?} b", binop.op), vec![&binop.lhs, &binop.rhs])
             }
@@ -145,12 +153,13 @@ impl Display for Expr {
             ExprContents::Postfix(postfix) => {
                 (format!("{:?} post", postfix.op), vec![&postfix.lhs])
             }
-            ExprContents::Assign(assign) => {
-                (format!("assign ({}) {:?} to", assign.a_type, assign.assignee), vec![&assign.val])
-            }
+            ExprContents::Assign(assign) => (
+                format!("assign ({}) {:?} to", assign.a_type, assign.assignee),
+                vec![&assign.val],
+            ),
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(v) => (format!("{v}"), vec![]),
-                Accessor::Property(base, prop) => (format!("prop {prop} of"), vec![&base])
+                Accessor::Property(base, prop) => (format!("prop {prop} of"), vec![&base]),
             },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
@@ -161,7 +170,8 @@ impl Display for Expr {
                 children
             }),
             ExprContents::While(wh) => ("while".to_string(), vec![&wh.condition, &wh.result]),
-            ExprContents::Array(arr) => ("array".to_string(), arr.elements.iter().collect())
+            ExprContents::Array(arr) => ("array".to_string(), arr.elements.iter().collect()),
+            ExprContents::Tuple(tup) => ("tuple".to_string(), tup.elements.iter().collect()),
         };
         writeln!(f, "{str}")?;
         let num_children = children.len();
@@ -213,11 +223,15 @@ pub enum AssignType {
 
 impl Display for AssignType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            AssignType::Immut => "let",
-            AssignType::Mut => "mut",
-            AssignType::Reassign => "re",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                AssignType::Immut => "let",
+                AssignType::Mut => "mut",
+                AssignType::Reassign => "re",
+            }
+        )
     }
 }
 
@@ -225,7 +239,7 @@ impl Display for AssignType {
 pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
-    pub a_type: AssignType
+    pub a_type: AssignType,
 }
 
 #[derive(Clone)]
@@ -288,5 +302,24 @@ impl Debug for Array {
             }
         }
         write!(f, "]")
+    }
+}
+
+#[derive(Clone)]
+pub struct Tuple {
+    pub elements: Vec<Expr>,
+}
+
+impl Debug for Tuple {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        let len = self.elements.len();
+        for (i, ele) in self.elements.iter().enumerate() {
+            write!(f, "{ele:?}")?;
+            if i != len - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ")")
     }
 }

@@ -9,7 +9,6 @@ pub enum Token {
     Literal(Value),
     Bracket(Bracket),
     Op(OpToken),
-    Comma,
     EOL,
     EOF,
 }
@@ -55,6 +54,7 @@ pub enum OpToken {
     Assign,
     OpAssign(Op),
     Access,
+    Comma,
 }
 
 impl Debug for OpToken {
@@ -78,6 +78,7 @@ impl Debug for OpToken {
             Self::Assign => "=",
             Self::OpAssign(op) => &format!("{op:?}="),
             Self::Access => ".",
+            Self::Comma => ",",
         };
         write!(f, "{c}")
     }
@@ -266,7 +267,7 @@ impl<'a> Lexer<'a> {
             ("]", Token::Bracket(Bracket::RSquare)),
             ("=", Token::Op(OpToken::Assign)),
             (".", Token::Op(OpToken::Access)),
-            (",", Token::Comma),
+            (",", Token::Op(OpToken::Comma)),
             (";", Token::EOL),
         ] {
             if self.code.eat_str(pattern) {

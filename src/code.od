@@ -11,6 +11,6 @@ while a > 2 {
 }
 a*/
 
-let mut amogus = [2];
-amogus += [1];
+let mut amogus = (1,3,5);
+amogus.i0 += 4;
 amogus
