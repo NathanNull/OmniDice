@@ -1,4 +1,4 @@
-use std::sync::{MutexGuard, RwLockReadGuard};
+use std::sync::RwLockReadGuard;
 
 use super::*;
 use crate::{invalid, mut_type_init, type_init};
@@ -147,17 +147,21 @@ impl Val for Arr {
             let entry = self.inner().entry.clone();
             let vals = value.downcast::<Arr>().unwrap();
             assert_eq!(vals.inner().entry, entry);
-            idxs.inner().elements.iter().zip(vals.inner().elements.iter()).for_each(|(idx, val)| {
-                if let Some(i) = idx.downcast::<i32>() {
-                    *self
-                        .inner_mut()
-                        .elements
-                        .get_mut(i as usize)
-                        .expect("Invalid index") = val.dup();
-                } else {
-                    invalid!("Index", self, idx.get_type())
-                }
-            });
+            idxs.inner()
+                .elements
+                .iter()
+                .zip(vals.inner().elements.iter())
+                .for_each(|(idx, val)| {
+                    if let Some(i) = idx.downcast::<i32>() {
+                        *self
+                            .inner_mut()
+                            .elements
+                            .get_mut(i as usize)
+                            .expect("Invalid index") = val.dup();
+                    } else {
+                        invalid!("Index", self, idx.get_type())
+                    }
+                });
         } else {
             invalid!("Index", self, index.get_type())
         }

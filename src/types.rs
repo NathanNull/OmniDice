@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     fmt::{Debug, Display},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op};

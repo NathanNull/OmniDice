@@ -1,4 +1,4 @@
-use std::sync::{MutexGuard, RwLockReadGuard};
+use std::sync::RwLockReadGuard;
 
 use crate::{invalid, mut_type_init, type_init};
 
@@ -27,8 +27,8 @@ impl Display for _InnerTuple {
 impl _InnerTuple {
     fn new(elements: Vec<Value>) -> Self {
         Self {
-            entries: elements.iter().map(|e|e.get_type()).collect(),
-            elements
+            entries: elements.iter().map(|e| e.get_type()).collect(),
+            elements,
         }
     }
 }
@@ -44,7 +44,7 @@ impl Tuple {
 type_init!(TupT, Tuple, "tuple", (RwLockReadGuard<_InnerTuple>), entries: TypeList);
 
 fn as_idx(prop: &str) -> Option<usize> {
-    prop.strip_prefix('i').and_then(|n|n.parse::<usize>().ok())
+    prop.strip_prefix('i').and_then(|n| n.parse::<usize>().ok())
 }
 
 impl Type for TupT {
