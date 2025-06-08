@@ -626,6 +626,14 @@ impl Parser {
         let output = self.parse_type();
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)));
+        self.var_types.push(VarScope {
+            vars: HashMap::from_iter(
+                params
+                    .iter()
+                    .map(|(name, ty)| (name.clone(), (ty.clone(), false))),
+            ),
+            blocking: false,
+        });
         let sc = ExprContents::Scope(self.parse_scope(true));
         let contents = self.new_expr(sc);
         assert_eq!(

@@ -1,4 +1,4 @@
-use std::sync::MutexGuard;
+use std::sync::{MutexGuard, RwLockReadGuard};
 
 use super::*;
 use crate::{invalid, mut_type_init, type_init};
@@ -43,7 +43,7 @@ impl Arr {
     }
 }
 
-type_init!(ArrT, Arr, "array", (MutexGuard<_InnerArr>), entry: Datatype);
+type_init!(ArrT, Arr, "array", (RwLockReadGuard<_InnerArr>), entry: Datatype);
 
 impl Type for ArrT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
@@ -139,7 +139,7 @@ impl Val for Arr {
         if let Some(idx) = index.downcast::<i32>() {
             assert_eq!(value.get_type(), self.inner().entry);
             *self
-                .inner()
+                .inner_mut()
                 .elements
                 .get_mut(idx as usize)
                 .expect("Invalid index") = value;
@@ -150,7 +150,7 @@ impl Val for Arr {
             idxs.inner().elements.iter().zip(vals.inner().elements.iter()).for_each(|(idx, val)| {
                 if let Some(i) = idx.downcast::<i32>() {
                     *self
-                        .inner()
+                        .inner_mut()
                         .elements
                         .get_mut(i as usize)
                         .expect("Invalid index") = val.dup();

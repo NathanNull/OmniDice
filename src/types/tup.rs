@@ -1,4 +1,4 @@
-use std::sync::MutexGuard;
+use std::sync::{MutexGuard, RwLockReadGuard};
 
 use crate::{invalid, mut_type_init, type_init};
 
@@ -41,7 +41,7 @@ impl Tuple {
     }
 }
 
-type_init!(TupT, Tuple, "tuple", (MutexGuard<_InnerTuple>), entries: TypeList);
+type_init!(TupT, Tuple, "tuple", (RwLockReadGuard<_InnerTuple>), entries: TypeList);
 
 fn as_idx(prop: &str) -> Option<usize> {
     prop.strip_prefix('i').and_then(|n|n.parse::<usize>().ok())
@@ -67,7 +67,7 @@ impl Val for Tuple {
 
     fn set_prop(&self, prop: &str, value: Value) {
         if let Some(idx) = as_idx(prop) {
-            self.inner().elements[idx] = value
+            self.inner_mut().elements[idx] = value
         } else {
             invalid!("Prop", self, ());
         }

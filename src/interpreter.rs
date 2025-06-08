@@ -1,13 +1,16 @@
-use std::{collections::HashMap};
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
-    builtins::BUILTINS, parser::{
+    builtins::BUILTINS,
+    parser::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents,
         Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
-    }, types::{Arr, Downcast, Func, Tuple, Value, Void}
+    },
+    types::{Arr, Downcast, Func, Tuple, Value, Void},
 };
 
-pub struct VarScope<T> {
+#[derive(Debug)]
+pub struct VarScope<T: Debug> {
     pub vars: HashMap<String, T>,
     pub blocking: bool,
 }
@@ -89,16 +92,19 @@ impl Interpreter {
         lhs.bin_op(&rhs, binop.op)
     }
 
-    fn get_var(&mut self, var: &str) -> &mut Value {
-        for scope in self.variables.iter_mut().rev() {
-            if let Some(val) = scope.vars.get_mut(var) {
+    fn get_var(&mut self, var: &str) -> &Value {
+        for scope in self.variables.iter().rev() {
+            if let Some(val) = scope.vars.get(var) {
                 return val;
             }
             if scope.blocking {
                 break;
             }
         }
-        panic!("Attempted to access nonexistent variable {var}");
+        panic!(
+            "Attempted to access nonexistent variable {var}, vars: {:?}",
+            self.variables
+        );
     }
 
     fn set_var(&mut self, var: String, val: Value) {
@@ -222,10 +228,15 @@ impl Interpreter {
             params: func.params.iter().map(|(_, t)| t.clone()).collect(),
             param_names: func.params.iter().map(|(n, _)| n.clone()).collect(),
             output: func.contents.output.clone(),
-            captured_scope: HashMap::from_iter(func.contents.used_variables().map(|v| {
-                let val = self.get_var(&v).clone();
-                (v, val)
-            })),
+            captured_scope: HashMap::from_iter(
+                func.contents
+                    .used_variables()
+                    .filter(|v| !func.params.iter().any(|(n, _)| v == n))
+                    .map(|v| {
+                        let val = self.get_var(&v).clone();
+                        (v, val)
+                    }),
+            ),
             contents: *func.contents.clone(),
         })
     }
@@ -241,7 +252,10 @@ impl Interpreter {
     }
 
     pub fn call_function(&mut self, preset_vals: HashMap<String, Value>, func: &Expr) -> Value {
-        self.variables.push(VarScope { vars: preset_vals, blocking: true });
+        self.variables.push(VarScope {
+            vars: preset_vals,
+            blocking: true,
+        });
         let res = self.eval_expr(func);
         self.variables.pop();
         res

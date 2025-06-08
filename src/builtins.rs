@@ -9,6 +9,9 @@ pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     ), (
         "println".to_string(),
         Box::new(RustFunc::new(println_ptoo, println_fn))
+    ), (
+        "error".to_string(),
+        Box::new(RustFunc::new(error_ptoo, error_fn))
     )])
 });
 
@@ -35,4 +38,12 @@ fn println_ptoo(_params: Vec<Datatype>) -> Option<Datatype> {
 fn println_fn(params: Vec<Value>) -> Value {
     println!("{}", params.into_iter().map(|p|format!("{p}")).collect::<Vec<_>>().join(" "));
     Box::new(Void)
+}
+
+fn error_ptoo(_params: Vec<Datatype>) -> Option<Datatype> {
+    Some(Box::new(Void))
+}
+
+fn error_fn(params: Vec<Value>) -> Value {
+    panic!("{}", params.into_iter().map(|p|format!("{p}")).collect::<Vec<_>>().join(" "));
 }

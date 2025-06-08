@@ -11,10 +11,16 @@ impl<I, O> Display for FuncPointer<I, O> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RustFunc {
     pub params_to_output: FuncPointer<Vec<Datatype>, Option<Datatype>>,
     pub contents: fn(Vec<Value>) -> Value,
+}
+
+impl Debug for RustFunc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RustFunc({:?})",self.contents)
+    }
 }
 
 impl Display for RustFunc {

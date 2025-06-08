@@ -23,7 +23,7 @@ let mut arr = [int];
 arr[0].inner += 1;
 (int.inner, arr)*/
 
-let mut i = ref(1);
+/*let mut i = ref(1);
 let a = func (p1: bool, p2: int, p3: [float]) -> void {
     i.inner += 1;
     println("amogus");
@@ -32,4 +32,14 @@ let a = func (p1: bool, p2: int, p3: [float]) -> void {
 };
 a(false, 5, [2.6]);
 a(0);
-i
+println("Value of i:", i.inner);*/
+
+let mut factorial = ref(func(param: int) -> int{error("did not, in fact, do the thing."); param});
+factorial.inner = func(param: int) -> int {
+    if param <= 1 {
+        1
+    } else {
+        factorial(param-1)*param
+    }
+};
+factorial(5)

@@ -132,24 +132,24 @@ macro_rules! invalid {
 macro_rules! mut_type_init {
     ($name: ident, $inner: ident) => {
         #[derive(Clone)]
-        pub struct $name(Arc<Mutex<$inner>>);
+        pub struct $name(Arc<::std::sync::RwLock<$inner>>);
 
         impl $name {
             fn make(inner: $inner) -> Self {
-                Self(Arc::new(Mutex::new(inner)))
+                Self(Arc::new(::std::sync::RwLock::new(inner)))
             }
         }
         impl Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self.0.try_lock() {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                match self.0.try_read() {
                     Ok(guard) => write!(f, "{}", *guard),
                     Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
                 }
             }
         }
         impl Debug for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self.0.try_lock() {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                match self.0.try_read() {
                     Ok(guard) => write!(f, "{:?}", *guard),
                     Err(poisoned) => write!(f, "Poisoned: {}", poisoned),
                 }
@@ -157,18 +157,21 @@ macro_rules! mut_type_init {
         }
         impl PartialEq for $name {
             fn eq(&self, other: &Self) -> bool {
-                self.0.try_lock().unwrap().eq(&other.0.try_lock().unwrap())
+                self.0.try_read().unwrap().eq(&other.0.try_read().unwrap())
             }
         }
 
         impl $name {
-            pub fn inner(&self) -> ::std::sync::MutexGuard<$inner> {
-                self.0.try_lock().unwrap()
+            pub fn inner(&self) -> ::std::sync::RwLockReadGuard<$inner> {
+                self.0.try_read().unwrap()
+            }
+            pub fn inner_mut(&self) -> ::std::sync::RwLockWriteGuard<$inner> {
+                self.0.try_write().unwrap()
             }
         }
 
-        impl<'a> GetRef<'a, ::std::sync::MutexGuard<'a, $inner>> for $name {
-            fn get_ref(&self) -> ::std::sync::MutexGuard<$inner> {
+        impl<'a> GetRef<'a, ::std::sync::RwLockReadGuard<'a, $inner>> for $name {
+            fn get_ref(&self) -> ::std::sync::RwLockReadGuard<$inner> {
                 self.inner()
             }
         }
