@@ -24,10 +24,13 @@ mod tup;
 pub use tup::{TupT, Tuple};
 
 mod ref_t;
-pub use ref_t::{RefT, Ref};
+pub use ref_t::{Ref, RefT};
 
 mod function;
-pub use function::{FuncT, Func};
+pub use function::{Func, FuncT};
+
+mod rust_function;
+pub use rust_function::RustFunc;
 
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;

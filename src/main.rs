@@ -4,6 +4,7 @@ use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
 
+mod builtins;
 mod distribution;
 mod interpreter;
 mod lexer;
@@ -22,12 +23,18 @@ fn main() {
 }
 
 #[derive(Clone)]
-pub struct TokenIter<T: Iterator> where T::Item: std::fmt::Debug {
+pub struct TokenIter<T: Iterator>
+where
+    T::Item: std::fmt::Debug,
+{
     inner: T,
     peeked: Vec<T::Item>,
 }
 
-impl<T: Iterator> Iterator for TokenIter<T> where T::Item: std::fmt::Debug {
+impl<T: Iterator> Iterator for TokenIter<T>
+where
+    T::Item: std::fmt::Debug,
+{
     type Item = T::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -39,7 +46,10 @@ impl<T: Iterator> Iterator for TokenIter<T> where T::Item: std::fmt::Debug {
     }
 }
 
-impl<T: Iterator> TokenIter<T> where T::Item: std::fmt::Debug {
+impl<T: Iterator> TokenIter<T>
+where
+    T::Item: std::fmt::Debug,
+{
     pub fn new(inner: T) -> Self {
         Self {
             inner,
@@ -86,7 +96,10 @@ impl<T: Iterator> TokenIter<T> where T::Item: std::fmt::Debug {
         Some(removed)
     }
 
-    pub fn expect(&mut self, ele: T::Item) where T::Item: PartialEq {
+    pub fn expect(&mut self, ele: T::Item)
+    where
+        T::Item: PartialEq,
+    {
         match self.next() {
             Some(next) if next == ele => (),
             Some(next) => panic!("Expected {ele:?}, found {next:?}"),

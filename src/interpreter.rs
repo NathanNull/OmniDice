@@ -1,19 +1,11 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap};
 
 use crate::{
-    parser::{
+    builtins::BUILTINS, parser::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents,
         Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
-    },
-    types::{Arr, Downcast, Func, Ref, Tuple, Value, Void},
+    }, types::{Arr, Downcast, Func, Tuple, Value, Void}
 };
-
-pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
-    HashMap::from_iter([(
-        "Ref".to_string(),
-        Box::new(Ref::new(Box::new(Void))) as Value,
-    )])
-});
 
 pub struct VarScope<T> {
     pub vars: HashMap<String, T>,
@@ -250,6 +242,8 @@ impl Interpreter {
 
     pub fn call_function(&mut self, preset_vals: HashMap<String, Value>, func: &Expr) -> Value {
         self.variables.push(VarScope { vars: preset_vals, blocking: true });
-        self.eval_expr(func)
+        let res = self.eval_expr(func);
+        self.variables.pop();
+        res
     }
 }

@@ -2,7 +2,8 @@ use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
     TokenIter,
-    interpreter::{BUILTINS, VarScope},
+    builtins::BUILTINS,
+    interpreter::VarScope,
     lexer::{Bracket, Keyword, OpLike, Token, TokenString},
     types::{ArrT, Bool, Datatype, Float, FuncT, Int, RefT, TupT, TypeList, Void},
 };
@@ -834,7 +835,10 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             false,
         ),
         (
-            vec![OpLike::Bracket(Bracket::LSquare), OpLike::Bracket(Bracket::LBracket)],
+            vec![
+                OpLike::Bracket(Bracket::LSquare),
+                OpLike::Bracket(Bracket::LBracket),
+            ],
             OpType::Postfix,
             false,
         ),

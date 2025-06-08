@@ -17,7 +17,7 @@ impl Display for Func {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "func ({})->{} (captured: {:?})",
+            "func ({})->{}",
             self.params
                 .0
                 .iter()
@@ -25,7 +25,6 @@ impl Display for Func {
                 .collect::<Vec<_>>()
                 .join(", "),
             self.contents.output,
-            self.captured_scope
         )
     }
 }
