@@ -9,10 +9,15 @@ use crate::{
     types::{Arr, Downcast, Func, Tuple, Value, Void},
 };
 
-#[derive(Debug)]
 pub struct VarScope<T: Debug> {
     pub vars: HashMap<String, T>,
     pub blocking: bool,
+}
+
+impl<T: Debug> Debug for VarScope<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "VarScope([{}], blocking? {})", self.vars.iter().map(|(v,_)|v.clone()).collect::<Vec<_>>().join(", "), self.blocking)
+    }
 }
 
 pub struct Interpreter {
@@ -111,7 +116,14 @@ impl Interpreter {
         if self.variables.is_empty() {
             panic!("Tried to set variable while no scope alive");
         }
-        for scope in &mut self.variables {
+        self.variables.last_mut().unwrap().vars.insert(var, val);
+    }
+
+    fn update_var(&mut self, var: String, val: Value) {
+        if self.variables.is_empty() {
+            panic!("Tried to set variable while no scope alive");
+        }
+        for scope in self.variables.iter_mut().rev() {
             if scope.vars.contains_key(&var) {
                 scope.vars.insert(var, val);
                 return;
@@ -120,7 +132,7 @@ impl Interpreter {
                 break;
             }
         }
-        self.variables.last_mut().unwrap().vars.insert(var, val);
+        panic!("Tried to update unknown variable {var}, (vars: {:?})", self.variables);
     }
 
     fn eval_prefix(&mut self, prefix: &Prefix) -> Value {
@@ -136,16 +148,17 @@ impl Interpreter {
     fn eval_assign(&mut self, assign: &Assign) -> Value {
         let val = self.eval_expr(&assign.val);
         match &assign.assignee {
-            Accessor::Variable(name) => {
-                if assign.a_type == AssignType::Reassign {
+            Accessor::Variable(name) => match assign.a_type {
+                AssignType::Reassign => {
                     assert_eq!(
                         val.get_type(),
                         self.get_var(name).get_type(),
                         "Tried to reassign variable {name} to a different type"
                     );
+                    self.update_var(name.clone(), val.dup());
                 }
-                self.set_var(name.clone(), val.dup());
-            }
+                AssignType::Mut | AssignType::Immut => self.set_var(name.clone(), val.dup()),
+            },
             Accessor::Property(base, prop) => {
                 let base_val = self.eval_expr(&base);
                 assert_eq!(
