@@ -1,4 +1,4 @@
-use crate::type_init;
+use crate::{type_init, invalid};
 
 use super::*;
 
@@ -48,9 +48,29 @@ impl Type for RustFuncT {
     fn call_result(&self, params: Vec<Datatype>) -> Option<Datatype> {
         (self.params_to_output.0)(params)
     }
+    fn possible_call(&self) -> bool {
+        true
+    }
+
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if op == Op::Plus && other.possible_call() {
+            Some(Box::new(FuncSumT {
+                f_types: TypeList(vec![self.dup(), other.dup()])
+            }))
+        } else {
+            None
+        }
+    }
 }
 impl Val for RustFunc {
     fn call(&self, params: Vec<Value>, _interpreter: &mut Interpreter) -> Value {
         (self.contents)(params)
+    }
+    fn bin_op(&self, other: &Value, op: Op) -> Value {
+        if op == Op::Plus && other.get_type().possible_call() {
+            Box::new(FuncSum::new(vec![self.dup(), other.dup()]))
+        } else {
+            invalid!(op, self, other);
+        }
     }
 }

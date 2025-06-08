@@ -32,6 +32,9 @@ pub use function::{Func, FuncT};
 mod rust_function;
 pub use rust_function::RustFunc;
 
+mod func_sum;
+pub use func_sum::{FuncSum, FuncSumT};
+
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;
 }
@@ -66,6 +69,9 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     }
     fn call_result(&self, _params: Vec<Datatype>) -> Option<Datatype> {
         None
+    }
+    fn possible_call(&self) -> bool {
+        false
     }
 }
 

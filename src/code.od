@@ -27,6 +27,9 @@ let mut i = ref(1);
 let a = func (p1: bool, p2: int, p3: [float]) -> void {
     i.inner += 1;
     println("amogus");
+} + func(p1: int) -> void {
+    println("function overloading woooo");
 };
 a(false, 5, [2.6]);
+a(0);
 i
