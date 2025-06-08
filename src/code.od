@@ -35,7 +35,7 @@ a(0);
 println("Value of i:", i.inner);*/
 
 // Recursion baybeeee
-let mut factorial = ref(func(param: int) -> int{error("did not, in fact, do the thing."); param});
+let mut factorial = ref(func(param: int) -> int{error("did not, in fact, do the thing.");7});
 factorial.inner = func(param: int) -> int {
     if param <= 1 {
         1
@@ -45,6 +45,6 @@ factorial.inner = func(param: int) -> int {
 };
 let mut i = 0;
 while true {
-    println(factorial(i));
+    println("{}! = {}", i, factorial(i));
     i += 1;
 }

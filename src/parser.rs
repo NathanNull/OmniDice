@@ -611,6 +611,7 @@ impl Parser {
         loop {
             let name = match self.tokens.next() {
                 Some(Token::Identifier(name)) => name,
+                Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                 tk => panic!("Expected identifier, found {tk:?}"),
             };
             self.tokens.expect(Token::OpLike(OpLike::Colon));
