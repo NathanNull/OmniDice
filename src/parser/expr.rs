@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 
 use strum::EnumIter;
 
@@ -7,7 +10,7 @@ use crate::{
     types::{Datatype, Value},
 };
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, EnumIter)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum OpType {
     Infix,
     Prefix,
@@ -95,7 +98,7 @@ pub enum ExprContents {
     Prefix(Prefix),
     Postfix(Postfix),
     // TODO: potential postfix ideas:
-    // An operator that makes dice crit or explode (!)
+    // An operator that makes dice explode (!)
     // (write more as I think of them)
     Assign(Assign),
     Accessor(Accessor),
@@ -104,6 +107,8 @@ pub enum ExprContents {
     While(While),
     Array(Array),
     Tuple(Tuple),
+    Function(Function),
+    Call(Call),
 }
 
 #[derive(Clone)]
@@ -130,6 +135,19 @@ impl Debug for ExprContents {
             Self::While(wh) => write!(f, "{wh:?}"),
             Self::Array(arr) => write!(f, "{arr:?}"),
             Self::Tuple(tup) => write!(f, "{tup:?}"),
+            Self::Function(func) => {
+                write!(f, "func {:?} -> {:?}", func.params, func.contents.output)
+            }
+            Self::Call(call) => write!(
+                f,
+                "{:?}({})",
+                call.base,
+                call.params
+                    .iter()
+                    .map(|p| format!("{p:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -160,7 +178,7 @@ impl Display for Expr {
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(v) => (format!("{v}"), vec![]),
                 Accessor::Property(base, prop) => (format!("prop {prop} of"), vec![&base]),
-                Accessor::Index(indexed, index) => (format!("index"), vec![&indexed, &index]),
+                Accessor::Index(indexed, index) => ("index".to_string(), vec![&indexed, &index]),
             },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
@@ -173,6 +191,24 @@ impl Display for Expr {
             ExprContents::While(wh) => ("while".to_string(), vec![&wh.condition, &wh.result]),
             ExprContents::Array(arr) => ("array".to_string(), arr.elements.iter().collect()),
             ExprContents::Tuple(tup) => ("tuple".to_string(), tup.elements.iter().collect()),
+            ExprContents::Function(func) => (
+                format!(
+                    "func ({})",
+                    func.params
+                        .iter()
+                        .map(|(n, t)| format!("{n}: {t}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                vec![&func.contents],
+            ),
+            ExprContents::Call(call) => (
+                "call".to_string(),
+                vec![call.base.deref()]
+                    .into_iter()
+                    .chain(call.params.iter().map(|p| &*p))
+                    .collect(),
+            ),
         };
         writeln!(f, "{str}")?;
         let num_children = children.len();
@@ -193,6 +229,75 @@ impl Display for Expr {
             }
         }
         Ok(())
+    }
+}
+
+impl Expr {
+    pub fn used_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        match &self.contents {
+            ExprContents::Literal(_) => Box::new(vec![].into_iter()),
+            ExprContents::Binop(binop) => {
+                Box::new(binop.lhs.used_variables().chain(binop.rhs.used_variables()))
+            }
+            ExprContents::Prefix(prefix) => prefix.rhs.used_variables(),
+            ExprContents::Postfix(postfix) => postfix.lhs.used_variables(),
+            ExprContents::Assign(assign) => Box::new(
+                match &assign.a_type {
+                    AssignType::Reassign => accessor_vars(&assign.assignee),
+                    AssignType::Immut | AssignType::Mut => Box::new([].into_iter()),
+                }
+                .chain(assign.val.used_variables()),
+            ),
+            ExprContents::Accessor(accessor) => accessor_vars(accessor),
+            ExprContents::Scope(exprs) => {
+                Box::new(exprs.iter().map(|e| e.used_variables()).flatten())
+            }
+            ExprContents::Conditional(conditional) => Box::new(
+                conditional
+                    .condition
+                    .used_variables()
+                    .chain(conditional.result.used_variables())
+                    .chain(if let Some(otw) = &conditional.otherwise {
+                        otw.used_variables()
+                    } else {
+                        Box::new([].into_iter())
+                    }),
+            ),
+            ExprContents::While(wh) => Box::new(
+                wh.condition
+                    .used_variables()
+                    .chain(wh.result.used_variables()),
+            ),
+            ExprContents::Array(array) => {
+                Box::new(array.elements.iter().map(|e| e.used_variables()).flatten())
+            }
+            ExprContents::Tuple(tuple) => {
+                Box::new(tuple.elements.iter().map(|e| e.used_variables()).flatten())
+            }
+            ExprContents::Function(function) => Box::new(
+                function
+                    .contents
+                    .used_variables()
+                    .filter(|v| !function.params.iter().any(|(p, _)| p == v)),
+            ),
+            ExprContents::Call(call) => Box::new(
+                call.params
+                    .iter()
+                    .map(|p| p.used_variables())
+                    .flatten()
+                    .chain(call.base.used_variables()),
+            ),
+        }
+    }
+}
+
+fn accessor_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
+    match accessor {
+        Accessor::Variable(v) => Box::new([v.clone()].into_iter()),
+        Accessor::Property(base, _) => base.used_variables(),
+        Accessor::Index(indexed, index) => {
+            Box::new(indexed.used_variables().chain(index.used_variables()))
+        }
     }
 }
 
@@ -325,4 +430,16 @@ impl Debug for Tuple {
         }
         write!(f, ")")
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub params: Vec<(String, Datatype)>,
+    pub contents: Box<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Call {
+    pub base: Box<Expr>,
+    pub params: Vec<Expr>,
 }

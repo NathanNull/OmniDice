@@ -85,6 +85,14 @@ impl<T: Iterator> TokenIter<T> where T::Item: std::fmt::Debug {
         }
         Some(removed)
     }
+
+    pub fn expect(&mut self, ele: T::Item) where T::Item: PartialEq {
+        match self.next() {
+            Some(next) if next == ele => (),
+            Some(next) => panic!("Expected {ele:?}, found {next:?}"),
+            None => panic!("Unexpected EOF"),
+        }
+    }
 }
 
 impl<T: Iterator<Item = char>> TokenIter<T> {

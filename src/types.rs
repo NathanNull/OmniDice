@@ -4,27 +4,30 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{distribution::Distribution, parser::Op};
+use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op};
 
-pub mod num;
+mod num;
 pub use num::{Float, Int};
 
-pub mod bool;
+mod bool;
 pub use bool::Bool;
 
 pub mod string;
 
-pub mod dice;
+mod dice;
 pub use dice::Dice;
 
-pub mod arr;
+mod arr;
 pub use arr::{Arr, ArrT};
 
-pub mod tup;
+mod tup;
 pub use tup::{TupT, Tuple};
 
-pub mod ref_t;
-pub use ref_t::Ref;
+mod ref_t;
+pub use ref_t::{RefT, Ref};
+
+mod function;
+pub use function::{FuncT, Func};
 
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;
@@ -56,6 +59,9 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
         None
     }
     fn post_op_result(&self, _op: Op) -> Option<Datatype> {
+        None
+    }
+    fn call_result(&self, _params: Vec<Datatype>) -> Option<Datatype> {
         None
     }
 }
@@ -91,6 +97,9 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     }
     fn post_op(&self, _op: Op) -> Value {
         unreachable!("Type '{}' has no postfix operations.", self.get_name())
+    }
+    fn call(&self, _params: Vec<Value>, _interpreter: &mut Interpreter) -> Value {
+        unreachable!("Type '{}' cannot be called.", self.get_name())
     }
     fn get_type(&self) -> Datatype {
         self.base_get_type()
@@ -179,9 +188,8 @@ macro_rules! type_init {
             fn name(&self) -> String {
                 $repr.to_string()$(+format!(
                     "<{}>",
-                    vec![$(&self.$tvar),*]
+                    vec![$(format!("{}", &self.$tvar)),*]
                         .into_iter()
-                        .map(|v|format!("{v}"))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ).as_str())?
@@ -220,7 +228,7 @@ pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct TypeList(Vec<Datatype>);
+pub struct TypeList(pub Vec<Datatype>);
 
 impl Display for TypeList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

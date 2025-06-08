@@ -10,6 +10,7 @@ pub enum Token {
     OpLike(OpLike),
     EOL,
     EOF,
+    Arrow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +22,7 @@ pub enum Keyword {
     While,
     Let,
     Mut,
+    Func,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -55,6 +57,7 @@ pub enum OpLike {
     Access,
     Comma,
     Bracket(Bracket),
+    Colon,
 }
 
 impl Debug for OpLike {
@@ -79,7 +82,8 @@ impl Debug for OpLike {
             Self::OpAssign(op) => &format!("{op:?}="),
             Self::Access => ".",
             Self::Comma => ",",
-            Self::Bracket(b) => &format!("{b:?}")
+            Self::Bracket(b) => &format!("{b:?}"),
+            Self::Colon => ":",
         };
         write!(f, "{c}")
     }
@@ -175,6 +179,7 @@ impl<'a> Lexer<'a> {
                 "while" => Keyword::While,
                 "let" => Keyword::Let,
                 "mut" => Keyword::Mut,
+                "func" => Keyword::Func,
                 _ => return Some(Token::Identifier(name_str)),
             }))
         } else {
@@ -245,6 +250,7 @@ impl<'a> Lexer<'a> {
 
     fn lex_special(&mut self) -> Option<Token> {
         for (pattern, res) in [
+            ("->", Token::Arrow),
             ("+", Token::OpLike(OpLike::Plus)),
             ("-", Token::OpLike(OpLike::Minus)),
             ("*", Token::OpLike(OpLike::Times)),
@@ -269,6 +275,7 @@ impl<'a> Lexer<'a> {
             ("=", Token::OpLike(OpLike::Assign)),
             (".", Token::OpLike(OpLike::Access)),
             (",", Token::OpLike(OpLike::Comma)),
+            (":", Token::OpLike(OpLike::Colon)),
             (";", Token::EOL),
         ] {
             if self.code.eat_str(pattern) {

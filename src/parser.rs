@@ -2,9 +2,9 @@ use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
     TokenIter,
-    interpreter::CONST_VARIABLES,
+    interpreter::{BUILTINS, VarScope},
     lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{ArrT, Bool, Datatype, TupT, Void},
+    types::{ArrT, Bool, Datatype, Float, FuncT, Int, RefT, TupT, TypeList, Void},
 };
 
 pub mod expr;
@@ -13,7 +13,7 @@ use strum::IntoEnumIterator;
 
 pub struct Parser {
     tokens: TokenIter<IntoIter<Token>>,
-    var_types: Vec<HashMap<String, (Datatype, bool)>>,
+    var_types: Vec<VarScope<(Datatype, bool)>>,
 }
 
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
@@ -30,11 +30,14 @@ impl Parser {
     pub fn new(tokens: TokenString) -> Self {
         Self {
             tokens: TokenIter::new(tokens.into_iter()),
-            var_types: vec![HashMap::from_iter(
-                CONST_VARIABLES
-                    .iter()
-                    .map(|(name, var)| (name.clone(), (var.get_type(), false))),
-            )],
+            var_types: vec![VarScope {
+                vars: HashMap::from_iter(
+                    BUILTINS
+                        .iter()
+                        .map(|(name, var)| (name.clone(), (var.get_type(), false))),
+                ),
+                blocking: true,
+            }],
         }
     }
 
@@ -56,14 +59,18 @@ impl Parser {
             self.var_types
                 .last_mut()
                 .unwrap()
+                .vars
                 .insert(name, (dtype, mutable));
         }
     }
 
     fn get_var_type(&self, name: &str) -> Option<Datatype> {
         for scope in self.var_types.iter().rev() {
-            if let Some((dtype, _)) = scope.get(name) {
+            if let Some((dtype, _)) = scope.vars.get(name) {
                 return Some(dtype.clone());
+            }
+            if scope.blocking {
+                break;
             }
         }
         None
@@ -71,8 +78,11 @@ impl Parser {
 
     fn var_is_mutable(&self, name: &str) -> bool {
         for scope in self.var_types.iter().rev() {
-            if let Some((_, mutable)) = scope.get(name) {
+            if let Some((_, mutable)) = scope.vars.get(name) {
                 return *mutable;
+            }
+            if scope.blocking {
+                break;
             }
         }
         false
@@ -137,6 +147,21 @@ impl Parser {
             ExprContents::Tuple(tup) => Box::new(TupT {
                 entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
             }),
+            ExprContents::Function(func) => Box::new(FuncT {
+                params: func.params.iter().map(|(_, t)| t.clone()).collect(),
+                output: func.contents.output.clone(),
+            }),
+            ExprContents::Call(call) => {
+                let params: Vec<Datatype> = call.params.iter().map(|p| p.output.clone()).collect();
+                call.base
+                    .output
+                    .call_result(params.clone())
+                    .expect(&format!(
+                        "Can't call {} with params {}",
+                        call.base.output,
+                        TypeList(params)
+                    ))
+            }
         }
     }
 
@@ -149,7 +174,10 @@ impl Parser {
         let mut exprs = vec![];
         let mut just_parsed = false;
         // Variables created in scope should only live while it does
-        self.var_types.push(HashMap::new());
+        self.var_types.push(VarScope {
+            vars: HashMap::new(),
+            blocking: false,
+        });
         let expected_end = vec![
             Token::EOL,
             if is_inner {
@@ -181,6 +209,8 @@ impl Parser {
 
     /// expected_end is what the expression is allowed to stop on, and allow_imply_eol is whether
     /// the parser can insert semicolons where it sees that they are needed (i.e. after RCURLY).
+    /// allow_join is whether the resulting expression can be an exposed (no brackets) tuple, and
+    /// should generally be false.
     fn parse_expr(
         &mut self,
         min_bp: u8,
@@ -227,34 +257,7 @@ impl Parser {
                 imply_eol = allow_imply_eol;
                 scope
             }
-            Token::OpLike(OpLike::Bracket(Bracket::LSquare)) => {
-                let mut elements = vec![];
-                loop {
-                    let expr = self.parse_expr(
-                        0,
-                        &vec![
-                            Token::OpLike(OpLike::Comma),
-                            Token::OpLike(OpLike::Bracket(Bracket::RSquare)),
-                        ],
-                        false,
-                        false,
-                    );
-                    elements.push(*self.new_expr(expr));
-                    match self.tokens.next() {
-                        Some(Token::OpLike(OpLike::Comma)) => (),
-                        Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
-                        next => panic!("Unexpected token {next:?} in array expression"),
-                    }
-                }
-                let ty = elements.first().map(|e| &e.output);
-                assert!(
-                    elements.iter().all(|e| Some(&e.output) == ty),
-                    "Array elements should all be the same type ({:?}), found {:?}",
-                    ty.unwrap(),
-                    elements.iter().map(|e| &e.output).collect::<Vec<_>>()
-                );
-                ExprContents::Array(Array { elements })
-            }
+            Token::OpLike(OpLike::Bracket(Bracket::LSquare)) => self.parse_array(),
             Token::OpLike(op) => {
                 let ((), r_bp) = PREFIX_BINDING_POWER
                     .get(&op)
@@ -298,6 +301,10 @@ impl Parser {
                     rhs,
                 )
             }
+            Token::Keyword(Keyword::Func) => {
+                imply_eol = allow_imply_eol;
+                self.parse_func()
+            }
             tk => panic!("Expected expression, found {tk:?}"),
         };
         loop {
@@ -329,6 +336,35 @@ impl Parser {
                     ));
                     continue;
                 }
+                Token::OpLike(OpLike::Bracket(Bracket::LBracket)) => {
+                    // acting like ( is a postfix operator, but parsing it completely differently because it contains an inner section
+                    let (bp, _) = POSTFIX_BINDING_POWER
+                        .get(&OpLike::Bracket(Bracket::LBracket))
+                        .unwrap();
+                    if *bp < min_bp {
+                        break;
+                    }
+                    self.tokens.next(); // Remove the (
+                    let params = match self.parse_expr(
+                        0,
+                        &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
+                        false,
+                        true,
+                    ) {
+                        ExprContents::Tuple(tup) => tup.elements,
+                        expr => vec![*self.new_expr(expr)],
+                    };
+                    assert_eq!(
+                        self.tokens.next(),
+                        Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))),
+                        "Expected ]"
+                    );
+                    lhs = ExprContents::Call(Call {
+                        base: self.new_expr(lhs),
+                        params,
+                    });
+                    continue;
+                }
                 Token::OpLike(op) => op,
                 _ if imply_eol && expected_end.contains(&Token::EOL) => {
                     // automatic semicolon insertion :)
@@ -348,9 +384,10 @@ impl Parser {
                 lhs = self.make_expr(lhs, VOID.contents.clone(), op, OpType::Postfix);
                 continue;
             }
-            let (l_bp, r_bp) = INFIX_BINDING_POWER
-                .get(&op)
-                .expect(&format!("Invalid infix operator {op:?}"));
+            let (l_bp, r_bp) = INFIX_BINDING_POWER.get(&op).expect(&format!(
+                "Invalid infix operator {op:?}, rest is {:?}",
+                self.tokens.clone().collect::<Vec<_>>()
+            ));
             if *l_bp < min_bp {
                 break;
             }
@@ -537,6 +574,133 @@ impl Parser {
         })
     }
 
+    fn parse_array(&mut self) -> ExprContents {
+        let mut elements = vec![];
+        loop {
+            let expr = self.parse_expr(
+                0,
+                &vec![
+                    Token::OpLike(OpLike::Comma),
+                    Token::OpLike(OpLike::Bracket(Bracket::RSquare)),
+                ],
+                false,
+                false,
+            );
+            elements.push(*self.new_expr(expr));
+            match self.tokens.next() {
+                Some(Token::OpLike(OpLike::Comma)) => (),
+                Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
+                next => panic!("Unexpected token {next:?} in array expression"),
+            }
+        }
+        let ty = elements.first().map(|e| &e.output);
+        assert!(
+            elements.iter().all(|e| Some(&e.output) == ty),
+            "Array elements should all be the same type ({:?}), found {:?}",
+            ty.unwrap(),
+            elements.iter().map(|e| &e.output).collect::<Vec<_>>()
+        );
+        ExprContents::Array(Array { elements })
+    }
+
+    fn parse_func(&mut self) -> ExprContents {
+        self.tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)));
+        let mut params = vec![];
+        loop {
+            let name = match self.tokens.next() {
+                Some(Token::Identifier(name)) => name,
+                tk => panic!("Expected identifier, found {tk:?}"),
+            };
+            self.tokens.expect(Token::OpLike(OpLike::Colon));
+            let ty = self.parse_type();
+            params.push((name, ty));
+            match self.tokens.next() {
+                Some(Token::OpLike(OpLike::Comma)) => (),
+                Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                tk => panic!("Unexpected token {tk:?}"),
+            }
+        }
+        self.tokens.expect(Token::Arrow);
+        let output = self.parse_type();
+        self.tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)));
+        let sc = ExprContents::Scope(self.parse_scope(true));
+        let contents = self.new_expr(sc);
+        assert_eq!(
+            contents.output, output,
+            "Expected function to return {:?}, instead found {:?}",
+            output, contents.output
+        );
+        self.tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)));
+        ExprContents::Function(Function { params, contents })
+    }
+
+    fn parse_type(&mut self) -> Datatype {
+        match self.tokens.next() {
+            Some(Token::Identifier(name)) => match name.as_str() {
+                "int" => Box::new(Int),
+                "bool" => Box::new(Bool),
+                "float" => Box::new(Float),
+                "void" => Box::new(Void),
+                "ref" => {
+                    self.tokens.expect(Token::OpLike(OpLike::Less));
+                    let referenced = self.parse_type();
+                    self.tokens.expect(Token::OpLike(OpLike::Greater));
+                    Box::new(RefT { ty: referenced })
+                }
+                "func" => {
+                    self.tokens
+                        .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)));
+                    let mut params = vec![];
+                    loop {
+                        params.push(self.parse_type());
+                        match self.tokens.next() {
+                            Some(Token::OpLike(OpLike::Comma)) => (),
+                            Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                            Some(tk) => panic!("Unexpected token {tk:?} in function type"),
+                            None => panic!("Unexpected EOF"),
+                        }
+                    }
+                    self.tokens.expect(Token::Arrow);
+                    let output = self.parse_type();
+                    Box::new(FuncT {
+                        params: TypeList(params),
+                        output,
+                    })
+                }
+                n => panic!("Unexpected token {n} in type"),
+            },
+            Some(Token::OpLike(OpLike::Bracket(b))) => match b {
+                Bracket::LBracket => {
+                    let mut entries = vec![];
+                    loop {
+                        entries.push(self.parse_type());
+                        match self.tokens.next() {
+                            Some(Token::OpLike(OpLike::Comma)) => (),
+                            Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                            Some(tk) => panic!("Unexpected token {tk:?} in function type"),
+                            None => panic!("Unexpected EOF"),
+                        }
+                    }
+                    Box::new(TupT {
+                        entries: TypeList(entries),
+                    })
+                }
+                Bracket::LSquare => {
+                    let entry = self.parse_type();
+                    self.tokens
+                        .expect(Token::OpLike(OpLike::Bracket(Bracket::RSquare)));
+                    Box::new(ArrT { entry })
+                }
+                tk => panic!("Expected type, found {tk:?}"),
+            },
+            Some(tk) => panic!("Expected type, found {tk:?}"),
+            None => panic!("Unexpected EOF"),
+        }
+    }
+
     fn make_expr(
         &mut self,
         lhs: ExprContents,
@@ -611,8 +775,11 @@ impl Parser {
                     (l, r) => vec![*self.new_expr(l), *self.new_expr(r)],
                 },
             }),
-            (OpLike::Bracket(_), _) => {
-                unreachable!("Brackets are not valid operations and should not parse as such")
+            (OpLike::Bracket(_) | OpLike::Colon, _) => {
+                unreachable!(
+                    "{:?} is not a valid operation and should not parse as such",
+                    op
+                )
             }
             (
                 OpLike::Plus
@@ -667,7 +834,7 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             false,
         ),
         (
-            vec![OpLike::Bracket(Bracket::LSquare)],
+            vec![OpLike::Bracket(Bracket::LSquare), OpLike::Bracket(Bracket::LBracket)],
             OpType::Postfix,
             false,
         ),

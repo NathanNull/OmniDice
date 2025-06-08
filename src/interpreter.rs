@@ -2,29 +2,37 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{
     parser::{
-        Accessor, Array, Assign, AssignType, Binop, Conditional, Expr, ExprContents, Postfix,
-        Prefix, Scope, Tuple as TupleExpr, While,
+        Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents,
+        Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
     },
-    types::{Arr, Downcast, Ref, Tuple, Value, Void},
+    types::{Arr, Downcast, Func, Ref, Tuple, Value, Void},
 };
 
-pub static CONST_VARIABLES: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
+pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     HashMap::from_iter([(
         "Ref".to_string(),
         Box::new(Ref::new(Box::new(Void))) as Value,
     )])
 });
 
+pub struct VarScope<T> {
+    pub vars: HashMap<String, T>,
+    pub blocking: bool,
+}
+
 pub struct Interpreter {
     ast: Expr,
-    variables: Vec<HashMap<String, Value>>,
+    variables: Vec<VarScope<Value>>,
 }
 
 impl Interpreter {
     pub fn new(ast: Expr) -> Self {
         Self {
             ast,
-            variables: vec![CONST_VARIABLES.clone()],
+            variables: vec![VarScope {
+                vars: BUILTINS.clone(),
+                blocking: true,
+            }],
         }
     }
 
@@ -36,7 +44,10 @@ impl Interpreter {
     fn eval_scope(&mut self, scope: &Scope) -> Value {
         let mut last: Value = Box::new(Void);
         // Variables created in scope die when it ends
-        self.variables.push(HashMap::new());
+        self.variables.push(VarScope {
+            vars: HashMap::new(),
+            blocking: false,
+        });
         for expr in scope {
             last = self.eval_expr(&expr);
         }
@@ -57,6 +68,8 @@ impl Interpreter {
             ExprContents::While(wh) => self.eval_while(wh),
             ExprContents::Array(arr) => self.eval_array(arr),
             ExprContents::Tuple(tup) => self.eval_tuple(tup),
+            ExprContents::Function(func) => self.eval_function(func),
+            ExprContents::Call(call) => self.eval_call(call),
         };
         assert_eq!(
             &res.get_type(),
@@ -86,8 +99,11 @@ impl Interpreter {
 
     fn get_var(&mut self, var: &str) -> &mut Value {
         for scope in self.variables.iter_mut().rev() {
-            if let Some(val) = scope.get_mut(var) {
+            if let Some(val) = scope.vars.get_mut(var) {
                 return val;
+            }
+            if scope.blocking {
+                break;
             }
         }
         panic!("Attempted to access nonexistent variable {var}");
@@ -95,16 +111,18 @@ impl Interpreter {
 
     fn set_var(&mut self, var: String, val: Value) {
         if self.variables.is_empty() {
-            print!("!!!!! tried to set variable while no scope alive");
-            self.variables.push(HashMap::new());
+            panic!("Tried to set variable while no scope alive");
         }
         for scope in &mut self.variables {
-            if scope.contains_key(&var) {
-                scope.insert(var, val);
+            if scope.vars.contains_key(&var) {
+                scope.vars.insert(var, val);
                 return;
             }
+            if scope.blocking {
+                break;
+            }
         }
-        self.variables.last_mut().unwrap().insert(var, val);
+        self.variables.last_mut().unwrap().vars.insert(var, val);
     }
 
     fn eval_prefix(&mut self, prefix: &Prefix) -> Value {
@@ -205,5 +223,33 @@ impl Interpreter {
             // TODO: maybe add type checking here, if I feel I need it for some reason
         }
         Box::new(Tuple::new(res))
+    }
+
+    fn eval_function(&mut self, func: &Function) -> Value {
+        Box::new(Func {
+            params: func.params.iter().map(|(_, t)| t.clone()).collect(),
+            param_names: func.params.iter().map(|(n, _)| n.clone()).collect(),
+            output: func.contents.output.clone(),
+            captured_scope: HashMap::from_iter(func.contents.used_variables().map(|v| {
+                let val = self.get_var(&v).clone();
+                (v, val)
+            })),
+            contents: *func.contents.clone(),
+        })
+    }
+
+    fn eval_call(&mut self, call: &Call) -> Value {
+        let base = self.eval_expr(&call.base);
+        let params = call
+            .params
+            .iter()
+            .map(|p| self.eval_expr(p))
+            .collect::<Vec<_>>();
+        base.call(params, self)
+    }
+
+    pub fn call_function(&mut self, preset_vals: HashMap<String, Value>, func: &Expr) -> Value {
+        self.variables.push(VarScope { vars: preset_vals, blocking: true });
+        self.eval_expr(func)
     }
 }
