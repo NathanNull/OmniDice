@@ -47,6 +47,7 @@ impl Type for MaybeT {
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "unwrap" => Some(Box::new(RustFuncT::new_member(unwrap_sig, self.dup()))),
+            "filled" => Some(Box::new(Bool)),
             _ => None,
         }
     }
@@ -55,6 +56,7 @@ impl Val for Maybe {
     fn get_prop(&self, name: &str) -> Value {
         match name {
             "unwrap" => Box::new(RustFunc::new_member(unwrap_sig, unwrap_fn, self.dup())),
+            "filled" => Box::new(self.contents.is_some()),
             _ => invalid!("Prop", self, name),
         }
     }

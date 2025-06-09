@@ -43,6 +43,7 @@ pub enum OpLike {
     Divided,
     Mod,
     D,
+    Range,
     Equal,
     NotEqual,
     Greater,
@@ -69,6 +70,7 @@ impl Debug for OpLike {
             Self::Divided => "/",
             Self::Mod => "%",
             Self::D => "d",
+            Self::Range => "..",
             Self::Equal => "==",
             Self::NotEqual => "!=",
             Self::Greater => ">",
@@ -201,11 +203,18 @@ impl<'a> Lexer<'a> {
             return None;
         }
         let mut num = vec![];
+        let mut last_was_dot = false;
         while self
             .code
             .peek()
             .is_some_and(|c| c.is_numeric() || *c == '.' || *c == '_')
         {
+            let is_dot = self.code.peek() == Some(&'.');
+            if last_was_dot && is_dot {
+                self.code.replace(num.pop().unwrap());
+                break;
+            }
+            last_was_dot = is_dot;
             num.push(self.code.next().unwrap());
         }
         let num_str = num
@@ -239,7 +248,7 @@ impl<'a> Lexer<'a> {
                     '\\' => '\\',
                     '"' => '"',
                     'n' => '\n',
-                    c => panic!("Expected escape character, found '{c}'")
+                    c => panic!("Expected escape character, found '{c}'"),
                 }
             } else {
                 self.code.next().expect("Expected end of string literal")
@@ -257,6 +266,7 @@ impl<'a> Lexer<'a> {
             ("/", Token::OpLike(OpLike::Divided)),
             ("d", Token::OpLike(OpLike::D)),
             ("%", Token::OpLike(OpLike::Mod)),
+            ("..", Token::OpLike(OpLike::Range)),
             ("==", Token::OpLike(OpLike::Equal)),
             ("!=", Token::OpLike(OpLike::NotEqual)),
             (">=", Token::OpLike(OpLike::Geq)),

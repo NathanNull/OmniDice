@@ -35,11 +35,14 @@ pub use rust_function::{RustFunc, RustFuncT};
 mod func_sum;
 pub use func_sum::{FuncSum, FuncSumT};
 
-pub mod iter;
+mod iter;
 pub use iter::{Iter, IterT};
 
-pub mod maybe;
+mod maybe;
 pub use maybe::{Maybe, MaybeT};
+
+mod range;
+pub use range::{Range, RangeT};
 
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;

@@ -49,9 +49,11 @@ while true {
     i += 1;
 }*/
 
-let arr = [1,2,3];
-let it = arr.iter();
-println("{}", it.next());
-println("{}", it.next());
-println("{}", it.next());
-println("{}", it.next());
+let arr = 1..45;
+let it = arr.iter().map(func(param: int) -> int {
+    param * param
+});
+// guess I have while let loops lol
+while (let next = it.next()).filled {
+    println("{}", next.unwrap());
+}

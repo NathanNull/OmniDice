@@ -743,6 +743,7 @@ impl Parser {
                 | OpLike::Divided
                 | OpLike::Mod
                 | OpLike::D
+                | OpLike::Range
                 | OpLike::Equal
                 | OpLike::NotEqual
                 | OpLike::Greater
@@ -813,6 +814,7 @@ impl Parser {
                 | OpLike::Times
                 | OpLike::Divided
                 | OpLike::Mod
+                | OpLike::Range
                 | OpLike::Equal
                 | OpLike::NotEqual
                 | OpLike::Greater
@@ -847,6 +849,7 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             OpType::Infix,
             true,
         ),
+        (vec![OpLike::Range], OpType::Infix, false),
         (vec![OpLike::And, OpLike::Or], OpType::Infix, false),
         (vec![OpLike::Equal], OpType::Infix, false),
         (

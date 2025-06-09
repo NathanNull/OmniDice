@@ -1,5 +1,5 @@
-use crate::{invalid, type_init};
 use super::*;
+use crate::{invalid, type_init};
 
 type_init!(Float, f32, "float");
 impl Type for Float {
@@ -65,6 +65,8 @@ impl Type for Int {
                 Some(Box::new(Bool))
             } else if other == &Int && op == Op::D {
                 Some(Box::new(Dice))
+            } else if other == &Int && op == Op::Range {
+                Some(Box::new(RangeT))
             } else {
                 None
             }
@@ -95,6 +97,7 @@ impl Val for i32 {
                 Op::Leq => Box::new(self <= &rhs),
                 Op::Mod => Box::new(self % rhs),
                 Op::D => Box::new(Distribution::n_die_m(*self as usize, rhs as usize)),
+                Op::Range => Box::new(Range::new(*self, rhs)),
                 _ => invalid!(op, self, other),
             }
         } else {

@@ -25,6 +25,7 @@ pub enum Op {
     Divided,
     Mod,
     D,
+    Range,
     Equal,
     NotEqual,
     Greater,
@@ -45,6 +46,7 @@ impl Debug for Op {
             Self::Divided => "/",
             Self::Mod => "%",
             Self::D => "d",
+            Self::Range => "..",
             Self::Equal => "==",
             Self::NotEqual => "!=",
             Self::Greater => ">",
@@ -86,7 +88,8 @@ macro_rules! convert_op_tokens {
 }
 
 convert_op_tokens!(
-    Plus, Minus, Times, Divided, Mod, D, Equal, NotEqual, Greater, Less, Geq, Leq, And, Or, Not
+    Plus, Minus, Times, Divided, Mod, D, Range, Equal, NotEqual, Greater, Less, Geq, Leq, And, Or,
+    Not
 );
 
 pub type Scope = Vec<Expr>;
