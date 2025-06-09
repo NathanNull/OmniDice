@@ -5,7 +5,9 @@ use crate::{
     builtins::BUILTINS,
     interpreter::VarScope,
     lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{ArrT, Bool, Datatype, Float, FuncT, Int, RefT, TupT, TypeList, Void},
+    types::{
+        ArrT, Bool, Datatype, Downcast, Float, FuncT, Int, Iter, IterT, RefT, TupT, TypeList, Void,
+    },
 };
 
 pub mod expr;
@@ -137,7 +139,7 @@ impl Parser {
                 .map(|expr| expr.output.clone())
                 .unwrap_or(VOID.output.clone()),
             ExprContents::Conditional(cond) => cond.result.output.clone(),
-            ExprContents::While(wh) => wh.result.output.clone(), // This is always Void
+            ExprContents::While(_) | ExprContents::For(_) => VOID.output.clone(), // This is always Void
             ExprContents::Array(arr) => Box::new(ArrT {
                 entry: arr
                     .elements
@@ -273,6 +275,10 @@ impl Parser {
             Token::Keyword(Keyword::While) => {
                 imply_eol = allow_imply_eol;
                 self.parse_while()
+            }
+            Token::Keyword(Keyword::For) => {
+                imply_eol = allow_imply_eol;
+                self.parse_for()
             }
             Token::Keyword(Keyword::Let) => {
                 let is_mut = self.tokens.eat([Token::Keyword(Keyword::Mut)]).is_some();
@@ -469,6 +475,44 @@ impl Parser {
             condition: clause,
             result: result,
         })
+    }
+
+    fn parse_for(&mut self) -> ExprContents {
+        let var = match self.tokens.next() {
+            Some(Token::Identifier(id)) => id,
+            Some(t) => panic!("Expected identifier, found {t:?}"),
+            None => panic!("Unexpected EOF"),
+        };
+        self.tokens.expect(Token::Keyword(Keyword::In));
+        let it = self.parse_expr(
+            0,
+            &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
+            false,
+            false,
+        );
+        let iter = self.new_expr(it);
+        let i_type = match iter
+            .output
+            .prop_type("iter")
+            .and_then(|i_fn| i_fn.call_result(vec![]))
+            .and_then(|i| i.downcast::<IterT>())
+        {
+            Some(i_type) => i_type.output,
+            None => panic!("Non-iterable {} passed into for loop", iter.output),
+        };
+        self.tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)));
+        self.var_types.push(VarScope {
+            vars: HashMap::new(),
+            blocking: false,
+        });
+        self.set_var_type(var.clone(), i_type, false);
+        let sc = ExprContents::Scope(self.parse_scope(true));
+        self.var_types.pop();
+        let body = self.new_expr(sc);
+        self.tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)));
+        ExprContents::For(For { var, iter, body })
     }
 
     fn parse_conditional_clause(&mut self) -> (Box<Expr>, Box<Expr>) {

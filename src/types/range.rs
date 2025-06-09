@@ -53,7 +53,7 @@ fn range_iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }))
 }
 
-fn range_iter_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
+fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     let mut it = params.iter().cloned();
     let me_outer = it.next_as::<Range>().unwrap();
     let mut me = me_outer.inner_mut();

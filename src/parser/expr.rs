@@ -108,6 +108,7 @@ pub enum ExprContents {
     Scope(Scope),
     Conditional(Conditional),
     While(While),
+    For(For),
     Array(Array),
     Tuple(Tuple),
     Function(Function),
@@ -136,6 +137,7 @@ impl Debug for ExprContents {
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
             Self::Conditional(cond) => write!(f, "{cond:?}"),
             Self::While(wh) => write!(f, "{wh:?}"),
+            Self::For(fo) => write!(f, "{fo:?}"),
             Self::Array(arr) => write!(f, "{arr:?}"),
             Self::Tuple(tup) => write!(f, "{tup:?}"),
             Self::Function(func) => {
@@ -192,6 +194,7 @@ impl Display for Expr {
                 children
             }),
             ExprContents::While(wh) => ("while".to_string(), vec![&wh.condition, &wh.result]),
+            ExprContents::For(fo) => (format!("for {} in", fo.var), vec![&fo.iter, &fo.body]),
             ExprContents::Array(arr) => ("array".to_string(), arr.elements.iter().collect()),
             ExprContents::Tuple(tup) => ("tuple".to_string(), tup.elements.iter().collect()),
             ExprContents::Function(func) => (
@@ -270,6 +273,11 @@ impl Expr {
                 wh.condition
                     .used_variables()
                     .chain(wh.result.used_variables()),
+            ),
+            ExprContents::For(fo) => Box::new(
+                fo.iter
+                    .used_variables()
+                    .chain(fo.body.used_variables().filter(|v| *v != fo.var)),
             ),
             ExprContents::Array(array) => {
                 Box::new(array.elements.iter().map(|e| e.used_variables()).flatten())
@@ -394,6 +402,23 @@ pub struct While {
 impl Debug for While {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "while {:?} do {:?}", self.condition, self.result)
+    }
+}
+
+#[derive(Clone)]
+pub struct For {
+    pub var: String,
+    pub iter: Box<Expr>,
+    pub body: Box<Expr>,
+}
+
+impl Debug for For {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "for {:?} in {:?} do {:?}",
+            self.var, self.iter, self.body
+        )
     }
 }
 

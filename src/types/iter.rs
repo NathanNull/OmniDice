@@ -96,10 +96,19 @@ fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
     })
 }
 
+fn ident_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    params.first().cloned()
+}
+
+fn ident_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+    params.first().unwrap().clone()
+}
+
 gen_fn_map!(
     ITER_FNS,
     ("next", next_sig, next_fn),
-    ("map", map_sig, map_fn)
+    ("map", map_sig, map_fn),
+    ("iter", ident_sig, ident_fn)
 );
 
 impl Type for IterT {
