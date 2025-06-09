@@ -55,7 +55,7 @@ fn push_sig(params: Vec<Datatype>) -> Option<Datatype> {
     None
 }
 
-fn push_fn(params: Vec<Value>) -> Value {
+fn push_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if let Some(to_push) = p_iter.next() {
@@ -77,7 +77,7 @@ fn pop_sig(params: Vec<Datatype>) -> Option<Datatype> {
     None
 }
 
-fn pop_fn(params: Vec<Value>) -> Value {
+fn pop_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         return arr
@@ -89,10 +89,69 @@ fn pop_fn(params: Vec<Value>) -> Value {
     invalid!("Call", "push", params)
 }
 
+fn iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<ArrT>() {
+        if p_iter.next().is_none() {
+            return Some(Box::new(IterT { output: arr.entry }));
+        }
+    }
+    None
+}
+
+fn iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<Arr>() {
+        if p_iter.next().is_none() {
+            return Box::new(Iter {
+                output: arr.inner().entry.clone(),
+                next_fn: Box::new(RustFunc::new_member(
+                    iter_ret_sig,
+                    iter_ret_fn,
+                    Box::new(Tuple::new(vec![Box::new(0), arr.dup()])),
+                )),
+            });
+        }
+    }
+    invalid!("Call", "iter", params);
+}
+
+fn iter_ret_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    let mut it = params.iter().cloned();
+    let me = it.next_as::<TupT>()?;
+    let arr = me.entries.0.get(1).and_then(|v| v.downcast::<ArrT>())?;
+    Some(Box::new(MaybeT { output: arr.entry }))
+}
+
+fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+    let mut it = params.iter().cloned();
+    let me = it.next_as::<Tuple>().expect("Invalid function call");
+    let idx = me.inner().elements[0]
+        .downcast::<i32>()
+        .expect("Invalid function call") as usize;
+    *me.inner_mut()
+        .elements
+        .get_mut(0)
+        .unwrap()
+        .downcast_mut::<i32>()
+        .unwrap() += 1;
+    let arr = me
+        .inner()
+        .elements
+        .get(1)
+        .and_then(|v| v.downcast::<Arr>())
+        .expect("Invalid function call");
+    return Box::new(Maybe {
+        output: arr.inner().entry.clone(),
+        contents: arr.inner().elements.get(idx).map(|e| e.dup()),
+    });
+}
+
 gen_fn_map!(
     ARR_FNS,
     ("push", push_sig, push_fn),
-    ("pop", pop_sig, pop_fn)
+    ("pop", pop_sig, pop_fn),
+    ("iter", iter_sig, iter_fn)
 );
 
 impl Type for ArrT {

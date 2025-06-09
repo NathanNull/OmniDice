@@ -50,7 +50,8 @@ while true {
 }*/
 
 let arr = [1,2,3];
-while arr.length > 0 {
-    println("Popped {}", arr.pop());
-}
-arr
+let it = arr.iter();
+println("{}", it.next());
+println("{}", it.next());
+println("{}", it.next());
+println("{}", it.next());

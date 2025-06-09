@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{
-    invalid,
-    types::{Datatype, Downcast, Ref, RefT, RustFunc, Value, Void, string::VString},
+    interpreter::Interpreter,
+    types::{BoxIterUtils, Datatype, Downcast, Ref, RefT, RustFunc, Value, Void, string::VString},
 };
 
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
@@ -36,7 +36,7 @@ fn ref_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn ref_fn(params: Vec<Value>) -> Value {
+fn ref_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     if params.len() == 1 {
         Box::new(Ref::new(params[0].clone()))
     } else {
@@ -48,8 +48,8 @@ fn println_sig(params: Vec<Datatype>) -> Option<Datatype> {
     format_sig(params)
 }
 
-fn println_fn(params: Vec<Value>) -> Value {
-    let res = format_fn(params).downcast::<String>().unwrap();
+fn println_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
+    let res = format_fn(params, i).downcast::<String>().unwrap();
     println!("{res}");
     Box::new(res)
 }
@@ -58,7 +58,7 @@ fn error_sig(_params: Vec<Datatype>) -> Option<Datatype> {
     Some(Box::new(Void))
 }
 
-fn error_fn(params: Vec<Value>) -> Value {
+fn error_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     panic!(
         "{}",
         params
@@ -77,21 +77,21 @@ fn format_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn format_fn(params: Vec<Value>) -> Value {
+fn format_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     let mut param_iter = params.clone().into_iter();
-    if let Some(str) = param_iter.next().unwrap().downcast::<String>() {
-        let mut format_args = param_iter.map(|p| format!("{p}"));
-        let mut str_pieces = str.split("{}");
-        let mut res = "".to_string();
-        while let Some(next_str_piece) = str_pieces.next() {
-            res += next_str_piece;
-            match format_args.next() {
-                Some(arg) => res += &arg,
-                None if str_pieces.next().is_none() => break,
-                None => panic!("Not enough format args"),
-            }
+    let str = param_iter
+        .next_as::<String>()
+        .expect("Invalid function call");
+    let mut format_args = param_iter.map(|p| format!("{p}"));
+    let mut str_pieces = str.split("{}");
+    let mut res = "".to_string();
+    while let Some(next_str_piece) = str_pieces.next() {
+        res += next_str_piece;
+        match format_args.next() {
+            Some(arg) => res += &arg,
+            None if str_pieces.next().is_none() => break,
+            None => panic!("Not enough format args"),
         }
-        return Box::new(res);
     }
-    invalid!("Call", "format", params);
+    Box::new(res)
 }

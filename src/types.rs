@@ -35,6 +35,12 @@ pub use rust_function::{RustFunc, RustFuncT};
 mod func_sum;
 pub use func_sum::{FuncSum, FuncSumT};
 
+pub mod iter;
+pub use iter::{Iter, IterT};
+
+pub mod maybe;
+pub use maybe::{Maybe, MaybeT};
+
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;
 }
@@ -302,6 +308,7 @@ impl Clone for Value {
 #[allow(private_bounds)]
 pub trait Downcast {
     fn downcast<T: Clone + 'static>(&self) -> Option<T>;
+    fn downcast_mut<T: Clone + 'static>(&mut self) -> Option<&mut T>;
 }
 
 #[allow(private_bounds)]
@@ -309,11 +316,17 @@ impl Downcast for Value {
     fn downcast<T: Clone + 'static>(&self) -> Option<T> {
         (self.dup() as Box<dyn Any>).downcast().ok().map(|b| *b)
     }
+    fn downcast_mut<T: Clone + 'static>(&mut self) -> Option<&mut T> {
+        (self.as_mut() as &mut dyn Any).downcast_mut::<T>()
+    }
 }
 
 impl Downcast for Datatype {
     fn downcast<T: Clone + 'static>(&self) -> Option<T> {
         (self.dup() as Box<dyn Any>).downcast().ok().map(|b| *b)
+    }
+    fn downcast_mut<T: Clone + 'static>(&mut self) -> Option<&mut T> {
+        (self.as_mut() as &mut dyn Any).downcast_mut::<T>()
     }
 }
 
@@ -345,7 +358,7 @@ macro_rules! gen_fn_map {
                 &'static str,
                 (
                     fn(Vec<Datatype>) -> Option<Datatype>,
-                    fn(Vec<Value>) -> Value,
+                    fn(Vec<Value>, &mut Interpreter) -> Value,
                 ),
             >,
         > = ::std::sync::LazyLock::new(|| {
@@ -354,7 +367,7 @@ macro_rules! gen_fn_map {
                     $fname,
                     (
                         $fsig as fn(Vec<Datatype>) -> Option<Datatype>,
-                        $ffn as fn(Vec<Value>) -> Value,
+                        $ffn as fn(Vec<Value>, &mut Interpreter) -> Value,
                     ),
                 ),)*
             ])

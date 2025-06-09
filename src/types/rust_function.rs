@@ -29,7 +29,7 @@ impl Display for MaybeOwnerTy {
 pub struct RustFunc {
     pub signature: FuncPointer<Vec<Datatype>, Option<Datatype>>,
     pub owner_ty: MaybeOwnerTy,
-    pub contents: fn(Vec<Value>) -> Value,
+    pub contents: fn(Vec<Value>, &mut Interpreter) -> Value,
     pub owner: Option<Value>,
 }
 
@@ -54,7 +54,7 @@ impl PartialEq for RustFunc {
 impl RustFunc {
     fn new(
         signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        contents: fn(Vec<Value>) -> Value,
+        contents: fn(Vec<Value>, &mut Interpreter) -> Value,
         owner: Option<Value>,
     ) -> Self {
         Self {
@@ -67,7 +67,7 @@ impl RustFunc {
 
     pub fn new_member(
         signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        contents: fn(Vec<Value>) -> Value,
+        contents: fn(Vec<Value>, &mut Interpreter) -> Value,
         owner: Value,
     ) -> Self {
         Self::new(signature, contents, Some(owner))
@@ -75,7 +75,7 @@ impl RustFunc {
 
     pub fn new_const(
         signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        contents: fn(Vec<Value>) -> Value,
+        contents: fn(Vec<Value>, &mut Interpreter) -> Value,
     ) -> Self {
         Self::new(signature, contents, None)
     }
@@ -125,11 +125,11 @@ impl Type for RustFuncT {
     }
 }
 impl Val for RustFunc {
-    fn call(&self, mut params: Vec<Value>, _interpreter: &mut Interpreter) -> Value {
+    fn call(&self, mut params: Vec<Value>, interpreter: &mut Interpreter) -> Value {
         if let Some(owner) = self.owner.clone() {
             params = [owner].into_iter().chain(params.into_iter()).collect()
         }
-        (self.contents)(params)
+        (self.contents)(params, interpreter)
     }
     fn bin_op(&self, other: &Value, op: Op) -> Value {
         if op == Op::Plus && other.get_type().possible_call() {
