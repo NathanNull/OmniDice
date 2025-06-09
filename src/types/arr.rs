@@ -24,12 +24,9 @@ impl Display for _InnerArr {
 }
 
 impl _InnerArr {
-    fn new(elements: Vec<Value>) -> Self {
+    fn new(elements: Vec<Value>, ty: Datatype) -> Self {
         Self {
-            entry: elements
-                .first()
-                .map(|e| e.get_type())
-                .unwrap_or_else(|| Box::new(Void)),
+            entry: ty,
             elements,
         }
     }
@@ -38,8 +35,8 @@ impl _InnerArr {
 mut_type_init!(Arr, _InnerArr);
 
 impl Arr {
-    pub fn new(elements: Vec<Value>) -> Self {
-        Self::make(_InnerArr::new(elements))
+    pub fn new(elements: Vec<Value>, ty: Datatype) -> Self {
+        Self::make(_InnerArr::new(elements, ty))
     }
 }
 
@@ -198,13 +195,14 @@ impl Val for Arr {
                 .downcast::<Self>()
                 .expect("Just checked if it was the right type");
             match op {
-                Op::Plus => Box::new(Arr::new(
+                Op::Plus => Box::new(Self::new(
                     self.inner()
                         .elements
                         .iter()
                         .chain(rhs.inner().elements.iter())
                         .cloned()
                         .collect(),
+                    self.inner().entry.clone(),
                 )),
                 _ => invalid!(op, self, other),
             }
@@ -244,6 +242,7 @@ impl Val for Arr {
                         }
                     })
                     .collect(),
+                self.inner().entry.clone(),
             ))
         } else {
             invalid!("Index", self, index.get_type())

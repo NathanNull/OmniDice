@@ -3,9 +3,10 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
     builtins::BUILTINS,
     parser::{
-        Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For, Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While
+        Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
+        Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
     },
-    types::{Arr, Downcast, Func, Maybe, Tuple, Value, Void},
+    types::{Arr, ArrT, Datatype, Downcast, Func, Maybe, Tuple, Value, Void},
 };
 
 pub struct VarScope<T: Debug> {
@@ -44,9 +45,9 @@ impl Interpreter {
         }
     }
 
-    pub fn run(&mut self) -> Value {
+    pub fn run(&mut self) {
         let ast = self.ast.clone();
-        self.eval_expr(&ast)
+        self.eval_expr(&ast);
     }
 
     fn eval_scope(&mut self, scope: &Scope) -> Value {
@@ -75,7 +76,14 @@ impl Interpreter {
             ExprContents::Conditional(cond) => self.eval_conditional(cond),
             ExprContents::While(wh) => self.eval_while(wh),
             ExprContents::For(fo) => self.eval_for(fo),
-            ExprContents::Array(arr) => self.eval_array(arr),
+            ExprContents::Array(arr) => self.eval_array(
+                arr,
+                expr.output
+                    .downcast::<ArrT>()
+                    .expect("Array should be array")
+                    .entry
+                    .clone(),
+            ),
             ExprContents::Tuple(tup) => self.eval_tuple(tup),
             ExprContents::Function(func) => self.eval_function(func),
             ExprContents::Call(call) => self.eval_call(call),
@@ -226,35 +234,39 @@ impl Interpreter {
 
     fn eval_for(&mut self, fo: &For) -> Value {
         let iter = self.eval_expr(&fo.iter).get_prop("iter").call(vec![], self);
-        self.variables.push(VarScope { vars: HashMap::new(), blocking: false });
+        self.variables.push(VarScope {
+            vars: HashMap::new(),
+            blocking: false,
+        });
         loop {
             let next_val = iter.get_prop("next").call(vec![], self);
             match next_val.downcast::<Maybe>() {
-                Some(Maybe { output: _, contents: Some(c) }) => {
+                Some(Maybe {
+                    output: _,
+                    contents: Some(c),
+                }) => {
                     self.set_var(fo.var.clone(), c);
                     self.eval_expr(&fo.body);
                 }
-                Some(Maybe { output: _, contents: None }) => break,
-                None => panic!("Invalid for loop")
+                Some(Maybe {
+                    output: _,
+                    contents: None,
+                }) => break,
+                None => panic!("Invalid for loop"),
             }
         }
         self.variables.pop();
         Box::new(Void)
     }
 
-    fn eval_array(&mut self, arr: &Array) -> Value {
+    fn eval_array(&mut self, arr: &Array, expected_type: Datatype) -> Value {
         let mut res = vec![];
-        let mut ty = None;
         for expr in &arr.elements {
             res.push(self.eval_expr(expr));
             let next_type = res.last().unwrap().get_type();
-            if let Some(t) = &mut ty {
-                assert_eq!(t, &next_type, "Array types didn't match");
-            } else {
-                ty = Some(next_type);
-            }
+            assert_eq!(expected_type, next_type, "Array types didn't match");
         }
-        Box::new(Arr::new(res))
+        Box::new(Arr::new(res, expected_type))
     }
 
     fn eval_tuple(&mut self, tup: &TupleExpr) -> Value {

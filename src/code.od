@@ -49,9 +49,8 @@ while true {
     i += 1;
 }*/
 
-let a = "amogus";
-for next in (1..45).iter().map(func(param: int) -> (int, int) {
-    (param, param * param)
+for next in (1..5).iter().map(func(param: int) -> dice {
+    (param)d(param)
 }) {
-    println("{}^2 = {}", next.i0, next.i1);
+    println("dice: \n{}", next);
 }

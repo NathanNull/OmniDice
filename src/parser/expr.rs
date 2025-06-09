@@ -195,7 +195,7 @@ impl Display for Expr {
             }),
             ExprContents::While(wh) => ("while".to_string(), vec![&wh.condition, &wh.result]),
             ExprContents::For(fo) => (format!("for {} in", fo.var), vec![&fo.iter, &fo.body]),
-            ExprContents::Array(arr) => ("array".to_string(), arr.elements.iter().collect()),
+            ExprContents::Array(arr) => (format!("{}", self.output), arr.elements.iter().collect()),
             ExprContents::Tuple(tup) => ("tuple".to_string(), tup.elements.iter().collect()),
             ExprContents::Function(func) => (
                 format!(

@@ -5,7 +5,10 @@ use crate::{
     builtins::BUILTINS,
     interpreter::VarScope,
     lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{ArrT, BoolT, Datatype, Downcast, FloatT, FuncT, IntT, IterT, RefT, TupT, TypeList, Void},
+    types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
+        TupT, TypeList, Void,
+    },
 };
 
 pub mod expr;
@@ -42,8 +45,8 @@ impl Parser {
         }
     }
 
-    fn new_expr(&mut self, contents: ExprContents) -> Box<Expr> {
-        let output = self.decide_type(&contents);
+    fn new_expr(&mut self, contents: ExprContents, expected_type: Option<Datatype>) -> Box<Expr> {
+        let output = self.decide_type(&contents, expected_type);
         Box::new(Expr { output, contents })
     }
 
@@ -89,8 +92,8 @@ impl Parser {
         false
     }
 
-    fn decide_type(&self, contents: &ExprContents) -> Datatype {
-        match contents {
+    fn decide_type(&self, contents: &ExprContents, expected_type: Option<Datatype>) -> Datatype {
+        let res = match contents {
             ExprContents::Accessor(acc) => match acc {
                 Accessor::Variable(var) => self
                     .get_var_type(var)
@@ -143,7 +146,11 @@ impl Parser {
                     .elements
                     .first()
                     .map(|e| e.output.clone())
-                    .unwrap_or_else(|| VOID.output.clone()),
+                    .or(expected_type
+                        .as_ref()
+                        .and_then(|t| t.downcast::<ArrT>())
+                        .map(|arr| arr.entry))
+                    .expect("Unknown type for empty array, please annotate"),
             }),
             ExprContents::Tuple(tup) => Box::new(TupT {
                 entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
@@ -163,12 +170,16 @@ impl Parser {
                         TypeList(params)
                     ))
             }
+        };
+        if let Some(ty) = expected_type {
+            assert_eq!(ty, res, "Expected type {ty} but saw {res}");
         }
+        res
     }
 
     pub fn parse(&mut self) -> Expr {
         let scope = ExprContents::Scope(self.parse_scope(false));
-        *self.new_expr(scope)
+        *self.new_expr(scope, Some(VOID.output.clone()))
     }
 
     fn parse_scope(&mut self, is_inner: bool) -> Scope {
@@ -189,7 +200,7 @@ impl Parser {
         ];
         while self.tokens.peek().unwrap() != expected_end.last().unwrap() {
             let contents = self.parse_expr(0, &expected_end, true, false);
-            exprs.push(*self.new_expr(contents));
+            exprs.push(*self.new_expr(contents, None));
             just_parsed = true;
             assert!(
                 expected_end.contains(self.tokens.peek().unwrap()),
@@ -268,7 +279,7 @@ impl Parser {
             }
             Token::Keyword(Keyword::If) => {
                 imply_eol = allow_imply_eol;
-                self.parse_if()
+                self.parse_if(None)
             }
             Token::Keyword(Keyword::While) => {
                 imply_eol = allow_imply_eol;
@@ -283,11 +294,15 @@ impl Parser {
                     Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
                     tk => panic!("Expected literal or ident, found {tk:?}"),
                 };
-                assert!(
-                    self.tokens.eat([Token::OpLike(OpLike::Assign)]).is_some(),
-                    "Expected =, found {:?}",
-                    self.tokens.next()
-                );
+
+                let typehint = if self.tokens.eat([Token::OpLike(OpLike::Colon)]).is_some() {
+                    Some(self.parse_type())
+                } else {
+                    None
+                };
+
+                self.tokens.expect(Token::OpLike(OpLike::Assign));
+
                 let rhs = self.parse_expr(
                     INFIX_BINDING_POWER[&OpLike::Assign].1,
                     expected_end,
@@ -295,11 +310,7 @@ impl Parser {
                     false,
                 );
 
-                self.parse_assign(
-                    AssignType::Create,
-                    ident,
-                    rhs,
-                )
+                self.parse_assign(AssignType::Create, ident, rhs, typehint)
             }
             Token::Keyword(Keyword::Func) => {
                 imply_eol = allow_imply_eol;
@@ -331,8 +342,8 @@ impl Parser {
                         "Expected ]"
                     );
                     lhs = ExprContents::Accessor(Accessor::Index(
-                        self.new_expr(lhs),
-                        self.new_expr(index),
+                        self.new_expr(lhs, None),
+                        self.new_expr(index, None),
                     ));
                     continue;
                 }
@@ -360,7 +371,7 @@ impl Parser {
                             true,
                         ) {
                             ExprContents::Tuple(tup) => tup.elements,
-                            expr => vec![*self.new_expr(expr)],
+                            expr => vec![*self.new_expr(expr, None)],
                         };
                         assert_eq!(
                             self.tokens.next(),
@@ -370,7 +381,7 @@ impl Parser {
                         p
                     };
                     lhs = ExprContents::Call(Call {
-                        base: self.new_expr(lhs),
+                        base: self.new_expr(lhs, None),
                         params,
                     });
                     continue;
@@ -408,13 +419,13 @@ impl Parser {
         lhs
     }
 
-    fn parse_if(&mut self) -> ExprContents {
-        let (base_clause, base_expr) = self.parse_conditional_clause();
+    fn parse_if(&mut self, expected_type: Option<Datatype>) -> ExprContents {
+        let (base_clause, base_expr) = self.parse_conditional_clause(expected_type);
         let else_block =
             if let Some(_) = self.tokens.eat([Token::Keyword(Keyword::Else)].into_iter()) {
                 Some(
                     if let Some(_) = self.tokens.eat([Token::Keyword(Keyword::If)].into_iter()) {
-                        self.parse_if()
+                        self.parse_if(Some(base_expr.output.clone()))
                     } else {
                         assert!(
                             self.tokens
@@ -443,12 +454,7 @@ impl Parser {
             };
 
         let else_expr = if let Some(exc) = else_block {
-            let res = self.new_expr(exc);
-            assert_eq!(
-                &res.output, &base_expr.output,
-                "If statement recieved non-matching types {:?} and {:?}",
-                res.output, base_expr.output
-            );
+            let res = self.new_expr(exc, Some(base_expr.output.clone()));
             Some(res)
         } else {
             None
@@ -462,8 +468,7 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> ExprContents {
-        let (clause, result) = self.parse_conditional_clause();
-        assert_eq!(&result.output, &VOID.output, "While loops must return Void");
+        let (clause, result) = self.parse_conditional_clause(Some(VOID.output.clone()));
         ExprContents::While(While {
             condition: clause,
             result: result,
@@ -483,7 +488,7 @@ impl Parser {
             false,
             false,
         );
-        let iter = self.new_expr(it);
+        let iter = self.new_expr(it, None);
         let i_type = match iter
             .output
             .prop_type("iter")
@@ -502,31 +507,29 @@ impl Parser {
         self.set_var_type(var.clone(), i_type, false);
         let sc = ExprContents::Scope(self.parse_scope(true));
         self.var_types.pop();
-        let body = self.new_expr(sc);
+        let body = self.new_expr(sc, Some(VOID.output.clone()));
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)));
         ExprContents::For(For { var, iter, body })
     }
 
-    fn parse_conditional_clause(&mut self) -> (Box<Expr>, Box<Expr>) {
+    fn parse_conditional_clause(
+        &mut self,
+        expected_type: Option<Datatype>,
+    ) -> (Box<Expr>, Box<Expr>) {
         let expr = self.parse_expr(
             0,
             &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
             false,
             false,
         );
-        let clause = self.new_expr(expr);
+        let clause = self.new_expr(expr, Some(BOOL.output.clone()));
         assert!(
             self.tokens
                 .eat([Token::OpLike(OpLike::Bracket(Bracket::LCurly))])
                 .is_some(),
             "Expected {{, found {:?}",
             self.tokens.peek()
-        );
-        assert_eq!(
-            &clause.output, &BOOL.output,
-            "Expected expression returning boolean value, found {:?} ({:?})",
-            clause.output, clause.contents
         );
         let scope = self.parse_scope(true);
         assert!(
@@ -536,7 +539,7 @@ impl Parser {
             "Expected }}, found {:?}",
             self.tokens.peek()
         );
-        let result = self.new_expr(ExprContents::Scope(scope));
+        let result = self.new_expr(ExprContents::Scope(scope), expected_type);
         (clause, result)
     }
 
@@ -545,6 +548,7 @@ impl Parser {
         assign_type: AssignType,
         lhs: ExprContents,
         rhs: ExprContents,
+        expected_type: Option<Datatype>,
     ) -> ExprContents {
         /*let val = self.new_expr(rhs);
         let ty = val.output.clone();
@@ -559,7 +563,7 @@ impl Parser {
         });
         self.set_var_type(ident, ty, is_mut);
         res */
-        let val = self.new_expr(rhs);
+        let val = self.new_expr(rhs, expected_type);
         let ty = val.output.clone();
         let assignee = match lhs {
             ExprContents::Accessor(acc) => acc,
@@ -606,9 +610,7 @@ impl Parser {
                 );
             }
             AssignType::Create => match &assignee {
-                Accessor::Variable(v) => {
-                    self.set_var_type(v.clone(), ty, true)
-                }
+                Accessor::Variable(v) => self.set_var_type(v.clone(), ty, true),
                 _ => unreachable!(
                     "Let assignments should only be able to parse lhs as a single variable"
                 ),
@@ -624,6 +626,14 @@ impl Parser {
 
     fn parse_array(&mut self) -> ExprContents {
         let mut elements = vec![];
+        let mut expected_type = None;
+        if self
+            .tokens
+            .eat([Token::OpLike(OpLike::Bracket(Bracket::RSquare))])
+            .is_some()
+        {
+            return ExprContents::Array(Array { elements: vec![] });
+        }
         loop {
             let expr = self.parse_expr(
                 0,
@@ -634,20 +644,15 @@ impl Parser {
                 false,
                 false,
             );
-            elements.push(*self.new_expr(expr));
+            let to_push = self.new_expr(expr, expected_type);
+            expected_type = Some(to_push.output.clone());
+            elements.push(*to_push);
             match self.tokens.next() {
                 Some(Token::OpLike(OpLike::Comma)) => (),
                 Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
                 next => panic!("Unexpected token {next:?} in array expression"),
             }
         }
-        let ty = elements.first().map(|e| &e.output);
-        assert!(
-            elements.iter().all(|e| Some(&e.output) == ty),
-            "Array elements should all be the same type ({:?}), found {:?}",
-            ty.unwrap(),
-            elements.iter().map(|e| &e.output).collect::<Vec<_>>()
-        );
         ExprContents::Array(Array { elements })
     }
 
@@ -683,12 +688,7 @@ impl Parser {
             blocking: false,
         });
         let sc = ExprContents::Scope(self.parse_scope(true));
-        let contents = self.new_expr(sc);
-        assert_eq!(
-            contents.output, output,
-            "Expected function to return {:?}, instead found {:?}",
-            output, contents.output
-        );
+        let contents = self.new_expr(sc, Some(output.clone()));
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)));
         ExprContents::Function(Function { params, contents })
@@ -700,13 +700,19 @@ impl Parser {
                 "int" => Box::new(IntT),
                 "bool" => Box::new(BoolT),
                 "float" => Box::new(FloatT),
-                "void" => Box::new(Void),
-                "ref" => {
+                "string" => Box::new(StringT),
+                "ref" | "maybe" | "iter" => {
                     self.tokens.expect(Token::OpLike(OpLike::Less));
                     let referenced = self.parse_type();
                     self.tokens.expect(Token::OpLike(OpLike::Greater));
-                    Box::new(RefT { ty: referenced })
+                    match name.as_str() {
+                        "ref" => Box::new(RefT { ty: referenced }),
+                        "maybe" => Box::new(MaybeT { output: referenced }),
+                        "iter" => Box::new(IterT { output: referenced }),
+                        _ => unreachable!("how tho"),
+                    }
                 }
+                "dice" => Box::new(DiceT),
                 n => panic!("Unexpected token {n} in type"),
             },
             Some(Token::Keyword(Keyword::Func)) => {
@@ -738,19 +744,27 @@ impl Parser {
             }
             Some(Token::OpLike(OpLike::Bracket(b))) => match b {
                 Bracket::LBracket => {
-                    let mut entries = vec![];
-                    loop {
-                        entries.push(self.parse_type());
-                        match self.tokens.next() {
-                            Some(Token::OpLike(OpLike::Comma)) => (),
-                            Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
-                            Some(tk) => panic!("Unexpected token {tk:?} in function type"),
-                            None => panic!("Unexpected EOF"),
+                    if self
+                        .tokens
+                        .eat([Token::OpLike(OpLike::Bracket(Bracket::RBracket))])
+                        .is_some()
+                    {
+                        Box::new(Void)
+                    } else {
+                        let mut entries = vec![];
+                        loop {
+                            entries.push(self.parse_type());
+                            match self.tokens.next() {
+                                Some(Token::OpLike(OpLike::Comma)) => (),
+                                Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                                Some(tk) => panic!("Unexpected token {tk:?} in function type"),
+                                None => panic!("Unexpected EOF"),
+                            }
                         }
+                        Box::new(TupT {
+                            entries: TypeList(entries),
+                        })
                     }
-                    Box::new(TupT {
-                        entries: TypeList(entries),
-                    })
                 }
                 Bracket::LSquare => {
                     let entry = self.parse_type();
@@ -791,25 +805,28 @@ impl Parser {
                 | OpLike::Or,
                 OpType::Infix,
             ) => ExprContents::Binop(Binop {
-                lhs: self.new_expr(lhs),
-                rhs: self.new_expr(rhs),
+                lhs: self.new_expr(lhs, None),
+                rhs: self.new_expr(rhs, None),
                 op: op.try_into().unwrap(),
             }),
             (OpLike::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: op.try_into().unwrap(),
-                rhs: self.new_expr(rhs),
+                rhs: self.new_expr(rhs, None),
             }),
             (OpLike::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: op.try_into().unwrap(),
-                rhs: self.new_expr(rhs),
+                rhs: self.new_expr(rhs, None),
             }),
             // "d6" expands to "1d6"
             (OpLike::D, OpType::Prefix) => ExprContents::Binop(Binop {
-                lhs: self.new_expr(ExprContents::Literal(Box::new(1))),
-                rhs: self.new_expr(rhs),
+                lhs: self.new_expr(ExprContents::Literal(Box::new(1)), Some(Box::new(IntT))),
+                rhs: self.new_expr(rhs, Some(Box::new(IntT))),
                 op: op.try_into().unwrap(),
             }),
-            (OpLike::Assign, OpType::Infix) => self.parse_assign(AssignType::Reassign, lhs, rhs),
+            (OpLike::Assign, OpType::Infix) => {
+                let prev_type = self.new_expr(lhs.clone(), None).output;
+                self.parse_assign(AssignType::Reassign, lhs, rhs, Some(prev_type))
+            }
             (OpLike::OpAssign(op), OpType::Infix) => {
                 let val = self.make_expr(lhs.clone(), rhs, op.into(), op_type);
                 self.make_expr(lhs, val, OpLike::Assign, op_type)
@@ -819,7 +836,7 @@ impl Parser {
                     ExprContents::Accessor(Accessor::Variable(var)) => var,
                     _ => panic!("Expected property, found {rhs:?}"),
                 };
-                ExprContents::Accessor(Accessor::Property(self.new_expr(lhs), rhs))
+                ExprContents::Accessor(Accessor::Property(self.new_expr(lhs, None), rhs))
             }
             (OpLike::Comma, OpType::Infix) => ExprContents::Tuple(Tuple {
                 elements: match (lhs, rhs) {
@@ -831,13 +848,13 @@ impl Parser {
                     (ExprContents::Tuple(l), r) => l
                         .elements
                         .into_iter()
-                        .chain([*self.new_expr(r)].into_iter())
+                        .chain([*self.new_expr(r, None)].into_iter())
                         .collect(),
-                    (l, ExprContents::Tuple(r)) => [*self.new_expr(l)]
+                    (l, ExprContents::Tuple(r)) => [*self.new_expr(l, None)]
                         .into_iter()
                         .chain(r.elements.into_iter())
                         .collect(),
-                    (l, r) => vec![*self.new_expr(l), *self.new_expr(r)],
+                    (l, r) => vec![*self.new_expr(l, None), *self.new_expr(r, None)],
                 },
             }),
             (OpLike::Bracket(_) | OpLike::Colon, _) => {

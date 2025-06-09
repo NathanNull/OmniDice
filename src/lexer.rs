@@ -172,7 +172,7 @@ impl<'a> Lexer<'a> {
         // Invalidate identifiers that represent valid dice
         if name_str
             .strip_prefix("d")
-            .is_none_or(|n| n.parse::<i32>().is_err())
+            .is_none_or(|n| n.parse::<i32>().is_err() && n != "")
         {
             Some(Token::Keyword(match name_str.as_str() {
                 "true" => Keyword::True,

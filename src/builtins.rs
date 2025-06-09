@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{
     interpreter::Interpreter,
-    types::{BoxIterUtils, Datatype, Downcast, Ref, RefT, RustFunc, Value, Void, string::VString},
+    types::{BoxIterUtils, Datatype, Downcast, Ref, RefT, RustFunc, Value, Void, StringT},
 };
 
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
@@ -70,8 +70,8 @@ fn error_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
 }
 
 fn format_sig(params: Vec<Datatype>) -> Option<Datatype> {
-    if params.len() > 0 && params[0] == VString {
-        Some(Box::new(VString))
+    if params.len() > 0 && params[0] == StringT {
+        Some(Box::new(StringT))
     } else {
         None
     }

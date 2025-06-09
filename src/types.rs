@@ -12,7 +12,8 @@ pub use num::{FloatT, IntT};
 mod bool;
 pub use bool::BoolT;
 
-pub mod string;
+mod string;
+pub use string::StringT;
 
 mod dice;
 pub use dice::DiceT;

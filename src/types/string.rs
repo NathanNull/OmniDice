@@ -1,12 +1,12 @@
 use crate::{invalid, type_init};
 use super::*;
 
-type_init!(VString, String, "string");
-impl Type for VString {
+type_init!(StringT, String, "string");
+impl Type for StringT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if other == &VString {
+        if other == &StringT {
             match op {
-                Op::Plus => Some(Box::new(VString)),
+                Op::Plus => Some(Box::new(StringT)),
                 Op::Equal => Some(Box::new(BoolT)),
                 Op::NotEqual => Some(Box::new(BoolT)),
                 _ => None,

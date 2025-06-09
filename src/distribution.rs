@@ -1,6 +1,5 @@
 use std::{
-    collections::BTreeMap,
-    ops::{Add, Div, Mul, Sub},
+    collections::BTreeMap, fmt::Display, ops::{Add, Div, Mul, Sub}
 };
 
 use ordered_float::OrderedFloat;
@@ -75,7 +74,8 @@ impl Distribution {
 }
 
 const OUT_WIDTH: usize = 50;
-impl std::fmt::Display for Distribution {
+impl Display for Distribution {
+    // TODO: when this has too many entries, put it into buckets
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let max_prob = self
             .values
@@ -84,13 +84,14 @@ impl std::fmt::Display for Distribution {
             .max()
             .map(|f| f.0)
             .unwrap_or(1.);
+        let squished_max_prob = (1. + max_prob) / 2.;
         let outs = self
             .values
             .iter()
             .map(|(val, prob)| (val.to_string(), prob))
             .collect::<Vec<_>>();
         for (val, prob) in outs {
-            let filled_amt = (prob / max_prob * OUT_WIDTH as f32).round() as usize;
+            let filled_amt = (prob / squished_max_prob * OUT_WIDTH as f32).round() as usize;
             let bar = str::repeat("▮", filled_amt);
             write!(f, "{val: <5}: {bar}\n")?;
         }
