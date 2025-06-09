@@ -168,7 +168,7 @@ impl Type for ArrT {
 
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "length" => Some(Box::new(Int)),
+            "length" => Some(Box::new(IntT)),
             n if ARR_FNS.contains_key(n) => {
                 Some(Box::new(RustFuncT::new_member(ARR_FNS[n].0, self.dup())))
             }
@@ -177,10 +177,10 @@ impl Type for ArrT {
     }
 
     fn index_type(&self, index: &Datatype) -> Option<Datatype> {
-        if index == &Int {
+        if index == &IntT {
             Some(self.entry.clone())
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
-            if tup.entries.0.iter().all(|e| e == &Int) {
+            if tup.entries.0.iter().all(|e| e == &IntT) {
                 Some(self.dup())
             } else {
                 None

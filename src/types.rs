@@ -7,15 +7,15 @@ use std::{
 use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op};
 
 mod num;
-pub use num::{Float, Int};
+pub use num::{FloatT, IntT};
 
 mod bool;
-pub use bool::Bool;
+pub use bool::BoolT;
 
 pub mod string;
 
 mod dice;
-pub use dice::Dice;
+pub use dice::DiceT;
 
 mod arr;
 pub use arr::{Arr, ArrT};

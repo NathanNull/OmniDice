@@ -47,7 +47,7 @@ impl Type for MaybeT {
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "unwrap" => Some(Box::new(RustFuncT::new_member(unwrap_sig, self.dup()))),
-            "filled" => Some(Box::new(Bool)),
+            "filled" => Some(Box::new(BoolT)),
             _ => None,
         }
     }

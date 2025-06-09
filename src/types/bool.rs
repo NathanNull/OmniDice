@@ -1,10 +1,10 @@
 use crate::{invalid, type_init};
 use super::*;
 
-type_init!(Bool, bool, "bool");
-impl Type for Bool {
+type_init!(BoolT, bool, "bool");
+impl Type for BoolT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if other == &Bool {
+        if other == &BoolT {
             match op {
                 Op::And | Op::Or | Op::Equal | Op::NotEqual => Some(self.dup()),
                 _ => None,

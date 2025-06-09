@@ -1,20 +1,20 @@
 use super::*;
 use crate::{invalid, type_init};
 
-type_init!(Float, f32, "float");
-impl Type for Float {
+type_init!(FloatT, f32, "float");
+impl Type for FloatT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if (other == &Float || other == &Int) && NUM_OPS.contains(&op) {
-            Some(Box::new(Float))
-        } else if other == &Float && ORD_OPS.contains(&op) {
-            Some(Box::new(Bool))
+        if (other == &FloatT || other == &IntT) && NUM_OPS.contains(&op) {
+            Some(Box::new(FloatT))
+        } else if other == &FloatT && ORD_OPS.contains(&op) {
+            Some(Box::new(BoolT))
         } else {
             None
         }
     }
     fn pre_op_result(&self, op: Op) -> Option<Datatype> {
         match op {
-            Op::Minus => Some(Box::new(Float)),
+            Op::Minus => Some(Box::new(FloatT)),
             _ => None,
         }
     }
@@ -55,17 +55,17 @@ impl Val for f32 {
     }
 }
 
-type_init!(Int, i32, "int");
-impl Type for Int {
+type_init!(IntT, i32, "int");
+impl Type for IntT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if other == &Int {
+        if other == &IntT {
             if NUM_OPS.contains(&op) || op == Op::Mod {
-                Some(Box::new(Int))
+                Some(Box::new(IntT))
             } else if ORD_OPS.contains(&op) {
-                Some(Box::new(Bool))
-            } else if other == &Int && op == Op::D {
-                Some(Box::new(Dice))
-            } else if other == &Int && op == Op::Range {
+                Some(Box::new(BoolT))
+            } else if other == &IntT && op == Op::D {
+                Some(Box::new(DiceT))
+            } else if other == &IntT && op == Op::Range {
                 Some(Box::new(RangeT))
             } else {
                 None
@@ -76,7 +76,7 @@ impl Type for Int {
     }
     fn pre_op_result(&self, op: Op) -> Option<Datatype> {
         match op {
-            Op::Minus => Some(Box::new(Float)),
+            Op::Minus => Some(Box::new(FloatT)),
             _ => None,
         }
     }

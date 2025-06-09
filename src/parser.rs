@@ -5,9 +5,7 @@ use crate::{
     builtins::BUILTINS,
     interpreter::VarScope,
     lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{
-        ArrT, Bool, Datatype, Downcast, Float, FuncT, Int, Iter, IterT, RefT, TupT, TypeList, Void,
-    },
+    types::{ArrT, BoolT, Datatype, Downcast, FloatT, FuncT, IntT, IterT, RefT, TupT, TypeList, Void},
 };
 
 pub mod expr;
@@ -26,7 +24,7 @@ static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
 
 static BOOL: LazyLock<Expr> = LazyLock::new(|| Expr {
     contents: ExprContents::Literal(Box::new(false)),
-    output: Box::new(Bool),
+    output: Box::new(BoolT),
 });
 
 impl Parser {
@@ -704,9 +702,9 @@ impl Parser {
     fn parse_type(&mut self) -> Datatype {
         match self.tokens.next() {
             Some(Token::Identifier(name)) => match name.as_str() {
-                "int" => Box::new(Int),
-                "bool" => Box::new(Bool),
-                "float" => Box::new(Float),
+                "int" => Box::new(IntT),
+                "bool" => Box::new(BoolT),
+                "float" => Box::new(FloatT),
                 "void" => Box::new(Void),
                 "ref" => {
                     self.tokens.expect(Token::OpLike(OpLike::Less));

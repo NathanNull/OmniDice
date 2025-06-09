@@ -28,7 +28,7 @@ fn range_sig(params: Vec<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     it.next_as::<RangeT>()?;
     Some(Box::new(IterT {
-        output: Box::new(Int),
+        output: Box::new(IntT),
     }))
 }
 
@@ -36,7 +36,7 @@ fn range_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     let mut it = params.iter().cloned();
     let me = it.next_as::<Range>().expect("Invalid call");
     Box::new(Iter {
-        output: Box::new(Int),
+        output: Box::new(IntT),
         next_fn: Box::new(RustFunc::new_member(
             range_iter_sig,
             range_iter_fn,
@@ -49,7 +49,7 @@ fn range_iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     it.next_as::<RangeT>()?;
     Some(Box::new(MaybeT {
-        output: Box::new(Int),
+        output: Box::new(IntT),
     }))
 }
 
@@ -64,7 +64,7 @@ fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
         None
     };
     Box::new(Maybe {
-        output: Box::new(Int),
+        output: Box::new(IntT),
         contents,
     })
 }

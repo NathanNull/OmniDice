@@ -1,25 +1,25 @@
 use crate::{invalid, type_init};
 use super::*;
 
-type_init!(Dice, Distribution, "dice");
-impl Type for Dice {
+type_init!(DiceT, Distribution, "dice");
+impl Type for DiceT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if (other == &Int || other == &Dice) && NUM_OPS.contains(&op) {
-            Some(Box::new(Dice))
+        if (other == &IntT || other == &DiceT) && NUM_OPS.contains(&op) {
+            Some(Box::new(DiceT))
         } else {
             None
         }
     }
     fn pre_op_result(&self, op: Op) -> Option<Datatype> {
         match op {
-            Op::Minus => Some(Box::new(Dice)),
+            Op::Minus => Some(Box::new(DiceT)),
             _ => None,
         }
     }
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "mean" => Some(Box::new(Float)),
-            "max" | "min" => Some(Box::new(Int)),
+            "mean" => Some(Box::new(FloatT)),
+            "max" | "min" => Some(Box::new(IntT)),
             _ => None,
         }
     }

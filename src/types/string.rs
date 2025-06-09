@@ -7,8 +7,8 @@ impl Type for VString {
         if other == &VString {
             match op {
                 Op::Plus => Some(Box::new(VString)),
-                Op::Equal => Some(Box::new(Bool)),
-                Op::NotEqual => Some(Box::new(Bool)),
+                Op::Equal => Some(Box::new(BoolT)),
+                Op::NotEqual => Some(Box::new(BoolT)),
                 _ => None,
             }
         } else {
@@ -18,7 +18,7 @@ impl Type for VString {
 
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "length" => Some(Box::new(Int)),
+            "length" => Some(Box::new(IntT)),
             _ => None,
         }
     }
