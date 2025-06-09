@@ -250,7 +250,7 @@ impl Expr {
             ExprContents::Assign(assign) => Box::new(
                 match &assign.a_type {
                     AssignType::Reassign => accessor_vars(&assign.assignee),
-                    AssignType::Immut | AssignType::Mut => Box::new([].into_iter()),
+                    AssignType::Create => Box::new([].into_iter()),
                 }
                 .chain(assign.val.used_variables()),
             ),
@@ -333,8 +333,7 @@ pub struct Postfix {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssignType {
-    Immut,
-    Mut,
+    Create,
     Reassign,
 }
 
@@ -344,8 +343,7 @@ impl Display for AssignType {
             f,
             "{}",
             match self {
-                AssignType::Immut => "let",
-                AssignType::Mut => "mut",
+                AssignType::Create => "let",
                 AssignType::Reassign => "re",
             }
         )

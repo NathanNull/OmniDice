@@ -169,7 +169,7 @@ impl Interpreter {
                     );
                     self.update_var(name.clone(), val.dup());
                 }
-                AssignType::Mut | AssignType::Immut => self.set_var(name.clone(), val.dup()),
+                AssignType::Create => self.set_var(name.clone(), val.dup()),
             },
             Accessor::Property(base, prop) => {
                 let base_val = self.eval_expr(&base);

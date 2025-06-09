@@ -23,7 +23,6 @@ pub enum Keyword {
     For,
     In,
     Let,
-    Mut,
     Func,
 }
 
@@ -184,7 +183,6 @@ impl<'a> Lexer<'a> {
                 "for" => Keyword::For,
                 "in" => Keyword::In,
                 "let" => Keyword::Let,
-                "mut" => Keyword::Mut,
                 "func" => Keyword::Func,
                 _ => return Some(Token::Identifier(name_str)),
             }))

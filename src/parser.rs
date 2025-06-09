@@ -279,7 +279,6 @@ impl Parser {
                 self.parse_for()
             }
             Token::Keyword(Keyword::Let) => {
-                let is_mut = self.tokens.eat([Token::Keyword(Keyword::Mut)]).is_some();
                 let ident = match self.tokens.next().expect("Unexpected EOF") {
                     Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
                     tk => panic!("Expected literal or ident, found {tk:?}"),
@@ -297,11 +296,7 @@ impl Parser {
                 );
 
                 self.parse_assign(
-                    if is_mut {
-                        AssignType::Mut
-                    } else {
-                        AssignType::Immut
-                    },
+                    AssignType::Create,
                     ident,
                     rhs,
                 )
@@ -610,9 +605,9 @@ impl Parser {
                     "{assignee:?} is not reassignable"
                 );
             }
-            AssignType::Immut | AssignType::Mut => match &assignee {
+            AssignType::Create => match &assignee {
                 Accessor::Variable(v) => {
-                    self.set_var_type(v.clone(), ty, assign_type == AssignType::Mut)
+                    self.set_var_type(v.clone(), ty, true)
                 }
                 _ => unreachable!(
                     "Let assignments should only be able to parse lhs as a single variable"
