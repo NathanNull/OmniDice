@@ -1,7 +1,7 @@
 use std::sync::RwLockReadGuard;
 
 use super::*;
-use crate::{invalid, mut_type_init, type_init};
+use crate::{gen_fn_map, invalid, mut_type_init, type_init};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct _InnerArr {
@@ -45,6 +45,56 @@ impl Arr {
 
 type_init!(ArrT, Arr, "array", (RwLockReadGuard<_InnerArr>), entry: Datatype);
 
+fn push_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    let mut p_iter = params.iter();
+    if let Some(arr) = p_iter.next().and_then(|p| p.downcast::<ArrT>()) {
+        if p_iter.next().is_some_and(|p| *p == arr.entry) && p_iter.next().is_none() {
+            return Some(Box::new(Void));
+        }
+    }
+    None
+}
+
+fn push_fn(params: Vec<Value>) -> Value {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<Arr>() {
+        if let Some(to_push) = p_iter.next() {
+            assert_eq!(arr.inner().entry, to_push.get_type(), "Invalid type");
+            arr.inner_mut().elements.push(to_push.clone());
+            return Box::new(Void);
+        }
+    }
+    invalid!("Call", "push", params)
+}
+
+fn pop_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<ArrT>() {
+        if p_iter.next().is_none() {
+            return Some(arr.entry);
+        }
+    }
+    None
+}
+
+fn pop_fn(params: Vec<Value>) -> Value {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<Arr>() {
+        return arr
+            .inner_mut()
+            .elements
+            .pop()
+            .expect("Can't pop from empty array");
+    }
+    invalid!("Call", "push", params)
+}
+
+gen_fn_map!(
+    ARR_FNS,
+    ("push", push_sig, push_fn),
+    ("pop", pop_sig, pop_fn)
+);
+
 impl Type for ArrT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if other == self {
@@ -60,6 +110,9 @@ impl Type for ArrT {
     fn prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(Int)),
+            n if ARR_FNS.contains_key(n) => {
+                Some(Box::new(RustFuncT::new_member(ARR_FNS[n].0, self.dup())))
+            }
             _ => None,
         }
     }
@@ -104,6 +157,9 @@ impl Val for Arr {
     fn get_prop(&self, name: &str) -> Value {
         match name {
             "length" => Box::new(self.inner().elements.len() as i32),
+            n if ARR_FNS.contains_key(n) => {
+                Box::new(RustFunc::new_member(ARR_FNS[n].0, ARR_FNS[n].1, self.dup()))
+            }
             _ => invalid!("Prop", self, name),
         }
     }

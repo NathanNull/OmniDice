@@ -9,24 +9,24 @@ pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     HashMap::from_iter([
         (
             "ref".to_string(),
-            Box::new(RustFunc::new(ref_ptoo, ref_fn)) as Value,
+            Box::new(RustFunc::new_const(ref_sig, ref_fn)) as Value,
         ),
         (
             "println".to_string(),
-            Box::new(RustFunc::new(println_ptoo, println_fn)),
+            Box::new(RustFunc::new_const(println_sig, println_fn)),
         ),
         (
             "error".to_string(),
-            Box::new(RustFunc::new(error_ptoo, error_fn)),
+            Box::new(RustFunc::new_const(error_sig, error_fn)),
         ),
         (
             "format".to_string(),
-            Box::new(RustFunc::new(format_ptoo, format_fn)),
+            Box::new(RustFunc::new_const(format_sig, format_fn)),
         ),
     ])
 });
 
-fn ref_ptoo(params: Vec<Datatype>) -> Option<Datatype> {
+fn ref_sig(params: Vec<Datatype>) -> Option<Datatype> {
     if params.len() == 1 {
         Some(Box::new(RefT {
             ty: params[0].clone(),
@@ -44,8 +44,8 @@ fn ref_fn(params: Vec<Value>) -> Value {
     }
 }
 
-fn println_ptoo(params: Vec<Datatype>) -> Option<Datatype> {
-    format_ptoo(params)
+fn println_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    format_sig(params)
 }
 
 fn println_fn(params: Vec<Value>) -> Value {
@@ -54,7 +54,7 @@ fn println_fn(params: Vec<Value>) -> Value {
     Box::new(res)
 }
 
-fn error_ptoo(_params: Vec<Datatype>) -> Option<Datatype> {
+fn error_sig(_params: Vec<Datatype>) -> Option<Datatype> {
     Some(Box::new(Void))
 }
 
@@ -69,7 +69,7 @@ fn error_fn(params: Vec<Value>) -> Value {
     );
 }
 
-fn format_ptoo(params: Vec<Datatype>) -> Option<Datatype> {
+fn format_sig(params: Vec<Datatype>) -> Option<Datatype> {
     if params.len() > 0 && params[0] == VString {
         Some(Box::new(VString))
     } else {

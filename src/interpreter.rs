@@ -16,7 +16,16 @@ pub struct VarScope<T: Debug> {
 
 impl<T: Debug> Debug for VarScope<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "VarScope([{}], blocking? {})", self.vars.iter().map(|(v,_)|v.clone()).collect::<Vec<_>>().join(", "), self.blocking)
+        write!(
+            f,
+            "VarScope([{}], blocking? {})",
+            self.vars
+                .iter()
+                .map(|(v, _)| v.clone())
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.blocking
+        )
     }
 }
 
@@ -74,7 +83,7 @@ impl Interpreter {
         assert_eq!(
             &res.get_type(),
             &expr.output,
-            "Expression {expr:?} evaluated to a different type ({:?}) than expected ({:?}). This is notable.",
+            "Expression {expr:?} evaluated to a different type ({}) than expected ({}). This is notable.",
             res.get_type(),
             expr.output
         );
@@ -132,7 +141,10 @@ impl Interpreter {
                 break;
             }
         }
-        panic!("Tried to update unknown variable {var}, (vars: {:?})", self.variables);
+        panic!(
+            "Tried to update unknown variable {var}, (vars: {:?})",
+            self.variables
+        );
     }
 
     fn eval_prefix(&mut self, prefix: &Prefix) -> Value {

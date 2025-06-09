@@ -30,7 +30,7 @@ mod function;
 pub use function::{Func, FuncT};
 
 mod rust_function;
-pub use rust_function::RustFunc;
+pub use rust_function::{RustFunc, RustFuncT};
 
 mod func_sum;
 pub use func_sum::{FuncSum, FuncSumT};
@@ -180,12 +180,12 @@ macro_rules! mut_type_init {
 
 #[macro_export]
 macro_rules! _make_type {
-    ($ty: ident) => {
-        #[derive(Debug, Clone, PartialEq)]
+    ($ty: ident $(, $noeq: literal)?) => {
+        #[derive(Debug, Clone)]
         pub struct $ty;
     };
     ($ty: ident, [$($tvar: ident, $tty: ty),*]) => {
-        #[derive(Debug, Clone, PartialEq)]
+        #[derive(Debug, Clone)]
         pub struct $ty {
             $(pub $tvar: $tty),*
         }
@@ -299,14 +299,20 @@ impl Clone for Value {
     }
 }
 
-#[allow(unused, private_bounds)]
+#[allow(private_bounds)]
 pub trait Downcast {
-    fn downcast<T: Val + Clone + 'static>(&self) -> Option<T>;
+    fn downcast<T: Clone + 'static>(&self) -> Option<T>;
 }
 
-#[allow(unused, private_bounds)]
+#[allow(private_bounds)]
 impl Downcast for Value {
-    fn downcast<T: Val + Clone + 'static>(&self) -> Option<T> {
+    fn downcast<T: Clone + 'static>(&self) -> Option<T> {
+        (self.dup() as Box<dyn Any>).downcast().ok().map(|b| *b)
+    }
+}
+
+impl Downcast for Datatype {
+    fn downcast<T: Clone + 'static>(&self) -> Option<T> {
         (self.dup() as Box<dyn Any>).downcast().ok().map(|b| *b)
     }
 }
@@ -314,6 +320,12 @@ impl Downcast for Value {
 type_init!(Void, Void, "()");
 impl Type for Void {}
 impl Val for Void {}
+
+impl PartialEq for Void {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
 
 const NUM_OPS: [Op; 4] = [Op::Plus, Op::Minus, Op::Times, Op::Divided];
 const ORD_OPS: [Op; 6] = [
@@ -324,3 +336,38 @@ const ORD_OPS: [Op; 6] = [
     Op::Geq,
     Op::Leq,
 ];
+
+#[macro_export]
+macro_rules! gen_fn_map {
+    ($name: ident, $(($fname: literal, $fsig: ident, $ffn: ident)),*) => {
+        static $name: ::std::sync::LazyLock<
+            ::std::collections::HashMap<
+                &'static str,
+                (
+                    fn(Vec<Datatype>) -> Option<Datatype>,
+                    fn(Vec<Value>) -> Value,
+                ),
+            >,
+        > = ::std::sync::LazyLock::new(|| {
+            ::std::collections::HashMap::from_iter([
+                $((
+                    $fname,
+                    (
+                        $fsig as fn(Vec<Datatype>) -> Option<Datatype>,
+                        $ffn as fn(Vec<Value>) -> Value,
+                    ),
+                ),)*
+            ])
+        });
+    };
+}
+
+pub trait BoxIterUtils {
+    fn next_as<T: Clone + 'static>(&mut self) -> Option<T>;
+}
+
+impl<Iter: Iterator<Item = Item>, Item: Downcast> BoxIterUtils for Iter {
+    fn next_as<T: Clone + 'static>(&mut self) -> Option<T> {
+        self.next().and_then(|v|v.downcast::<T>())
+    }
+}

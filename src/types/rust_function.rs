@@ -1,4 +1,4 @@
-use crate::{type_init, invalid};
+use crate::{invalid, type_init};
 
 use super::*;
 
@@ -11,15 +11,31 @@ impl<I, O> Display for FuncPointer<I, O> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MaybeOwnerTy(Option<Datatype>);
+
+impl Display for MaybeOwnerTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ty) = self.0.as_ref() {
+            write!(f, "{ty}")
+        } else {
+            write!(f, "unowned")
+        }
+    }
+}
+
+
 #[derive(Clone)]
 pub struct RustFunc {
-    pub params_to_output: FuncPointer<Vec<Datatype>, Option<Datatype>>,
+    pub signature: FuncPointer<Vec<Datatype>, Option<Datatype>>,
+    pub owner_ty: MaybeOwnerTy,
     pub contents: fn(Vec<Value>) -> Value,
+    pub owner: Option<Value>,
 }
 
 impl Debug for RustFunc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RustFunc({:?})",self.contents)
+        write!(f, "RustFunc({:?})", self.contents)
     }
 }
 
@@ -36,23 +52,63 @@ impl PartialEq for RustFunc {
 }
 
 impl RustFunc {
-    pub fn new(
-        params_to_output: fn(Vec<Datatype>) -> Option<Datatype>,
+    fn new(
+        signature: fn(Vec<Datatype>) -> Option<Datatype>,
         contents: fn(Vec<Value>) -> Value,
+        owner: Option<Value>,
     ) -> Self {
         Self {
-            params_to_output: FuncPointer(params_to_output),
-            contents
+            signature: FuncPointer(signature),
+            contents,
+            owner_ty: MaybeOwnerTy(owner.as_ref().map(|o| o.get_type())),
+            owner,
         }
+    }
+
+    pub fn new_member(
+        signature: fn(Vec<Datatype>) -> Option<Datatype>,
+        contents: fn(Vec<Value>) -> Value,
+        owner: Value,
+    ) -> Self {
+        Self::new(signature, contents, Some(owner))
+    }
+
+    pub fn new_const(
+        signature: fn(Vec<Datatype>) -> Option<Datatype>,
+        contents: fn(Vec<Value>) -> Value,
+    ) -> Self {
+        Self::new(signature, contents, None)
     }
 }
 
-type_init!(RustFuncT, RustFunc, "func", params_to_output: FuncPointer<Vec<Datatype>,Option<Datatype>>);
+type_init!(RustFuncT, RustFunc, "func", owner_ty: MaybeOwnerTy, signature: FuncPointer<Vec<Datatype>,Option<Datatype>>);
+
+impl RustFuncT {
+    fn new(
+        signature: fn(Vec<Datatype>) -> Option<Datatype>,
+        owner: Option<Datatype>,
+    ) -> Self {
+        Self {
+            signature: FuncPointer(signature),
+            owner_ty: MaybeOwnerTy(owner),
+        }
+    }
+
+    pub fn new_member(
+        signature: fn(Vec<Datatype>) -> Option<Datatype>,
+        owner: Datatype,
+    ) -> Self {
+        Self::new(signature, Some(owner))
+    }
+}
 
 // TODO: idk if this needed anything but if it does, add it
 impl Type for RustFuncT {
-    fn call_result(&self, params: Vec<Datatype>) -> Option<Datatype> {
-        (self.params_to_output.0)(params)
+    fn call_result(&self, mut params: Vec<Datatype>) -> Option<Datatype> {
+        if let MaybeOwnerTy(Some(ty)) = self.owner_ty.clone() {
+            params = [ty].into_iter().chain(params.into_iter()).collect()
+        }
+        (self.signature.0)(params)
     }
     fn possible_call(&self) -> bool {
         true
@@ -61,7 +117,7 @@ impl Type for RustFuncT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
-                f_types: TypeList(vec![self.dup(), other.dup()])
+                f_types: TypeList(vec![self.dup(), other.dup()]),
             }))
         } else {
             None
@@ -69,7 +125,10 @@ impl Type for RustFuncT {
     }
 }
 impl Val for RustFunc {
-    fn call(&self, params: Vec<Value>, _interpreter: &mut Interpreter) -> Value {
+    fn call(&self, mut params: Vec<Value>, _interpreter: &mut Interpreter) -> Value {
+        if let Some(owner) = self.owner.clone() {
+            params = [owner].into_iter().chain(params.into_iter()).collect()
+        }
         (self.contents)(params)
     }
     fn bin_op(&self, other: &Value, op: Op) -> Value {

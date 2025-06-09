@@ -345,21 +345,31 @@ impl Parser {
                     if *bp < min_bp {
                         break;
                     }
+
                     self.tokens.next(); // Remove the (
-                    let params = match self.parse_expr(
-                        0,
-                        &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
-                        false,
-                        true,
-                    ) {
-                        ExprContents::Tuple(tup) => tup.elements,
-                        expr => vec![*self.new_expr(expr)],
+                    let params = if self
+                        .tokens
+                        .eat([Token::OpLike(OpLike::Bracket(Bracket::RBracket))])
+                        .is_some()
+                    {
+                        vec![]
+                    } else {
+                        let p = match self.parse_expr(
+                            0,
+                            &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
+                            false,
+                            true,
+                        ) {
+                            ExprContents::Tuple(tup) => tup.elements,
+                            expr => vec![*self.new_expr(expr)],
+                        };
+                        assert_eq!(
+                            self.tokens.next(),
+                            Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))),
+                            "Expected ]"
+                        );
+                        p
                     };
-                    assert_eq!(
-                        self.tokens.next(),
-                        Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))),
-                        "Expected ]"
-                    );
                     lhs = ExprContents::Call(Call {
                         base: self.new_expr(lhs),
                         params,
@@ -660,28 +670,35 @@ impl Parser {
                     self.tokens.expect(Token::OpLike(OpLike::Greater));
                     Box::new(RefT { ty: referenced })
                 }
-                "func" => {
-                    self.tokens
-                        .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)));
-                    let mut params = vec![];
-                    loop {
-                        params.push(self.parse_type());
-                        match self.tokens.next() {
-                            Some(Token::OpLike(OpLike::Comma)) => (),
-                            Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
-                            Some(tk) => panic!("Unexpected token {tk:?} in function type"),
-                            None => panic!("Unexpected EOF"),
-                        }
-                    }
-                    self.tokens.expect(Token::Arrow);
-                    let output = self.parse_type();
-                    Box::new(FuncT {
-                        params: TypeList(params),
-                        output,
-                    })
-                }
                 n => panic!("Unexpected token {n} in type"),
             },
+            Some(Token::Keyword(Keyword::Func)) => {
+                self.tokens
+                    .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)));
+                let mut params = vec![];
+                loop {
+                    if self
+                        .tokens
+                        .eat([Token::OpLike(OpLike::Bracket(Bracket::RBracket))])
+                        .is_some()
+                    {
+                        break;
+                    }
+                    params.push(self.parse_type());
+                    match self.tokens.next() {
+                        Some(Token::OpLike(OpLike::Comma)) => (),
+                        Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                        Some(tk) => panic!("Unexpected token {tk:?} in function type"),
+                        None => panic!("Unexpected EOF"),
+                    }
+                }
+                self.tokens.expect(Token::Arrow);
+                let output = self.parse_type();
+                Box::new(FuncT {
+                    params: TypeList(params),
+                    output,
+                })
+            }
             Some(Token::OpLike(OpLike::Bracket(b))) => match b {
                 Bracket::LBracket => {
                     let mut entries = vec![];

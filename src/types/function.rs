@@ -54,7 +54,7 @@ impl Type for FuncT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
-                f_types: TypeList(vec![self.dup(), other.dup()])
+                f_types: TypeList(vec![self.dup(), other.dup()]),
             }))
         } else {
             None
@@ -76,6 +76,7 @@ impl Val for Func {
         {
             preset_vals.insert(name, val);
         }
+
         interpreter.call_function(preset_vals, &self.contents)
     }
 
