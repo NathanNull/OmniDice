@@ -42,9 +42,9 @@ type_init!(FuncSumT, FuncSum, "func", f_types: TypeList);
 // TODO: idk if this needed anything but if it does, add it
 // TODO: what did I mean by this
 impl Type for FuncSumT {
-    fn call_result(&self, params: Vec<Datatype>) -> Option<Datatype> {
+    fn real_call_result(&self, params: Vec<Datatype>, expected_output: Option<Datatype>) -> Option<Datatype> {
         for f in self.f_types.0.iter().rev() {
-            if let Some(res) = f.call_result(params.clone()) {
+            if let Some(res) = f.call_result(params.clone(), expected_output.clone()) {
                 return Some(res);
             }
         }
@@ -54,7 +54,7 @@ impl Type for FuncSumT {
         true
     }
 
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
                 f_types: TypeList(vec![self.dup(), other.dup()]),
@@ -84,12 +84,15 @@ impl Type for FuncSumT {
         }
         Some(vars)
     }
+    fn get_generics(&self) -> Vec<String> {
+        self.f_types.0.iter().map(|f|f.get_generics().into_iter()).flatten().collect()
+    }
 }
 impl Val for FuncSum {
-    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter) -> Value {
+    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter, expected_output: Option<Datatype>) -> Value {
         for (ty, f) in self.f_types.0.iter().zip(self.fns.iter()).rev() {
-            if let Some(_) = ty.call_result(params.iter().map(|v| v.get_type()).collect()) {
-                return f.call(params, interpreter);
+            if let Some(_) = ty.call_result(params.iter().map(|v| v.get_type()).collect(), expected_output.clone()) {
+                return f.call(params, interpreter, expected_output);
             }
         }
         invalid!("Call", self, ());

@@ -8,7 +8,7 @@ use strum::EnumIter;
 
 use crate::{
     lexer::OpLike,
-    types::{Arr, Datatype, GenericList, Value},
+    types::{Datatype, GenericList, Value},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -178,7 +178,7 @@ impl Display for Expr {
                 (format!("{:?} post", postfix.op), vec![&postfix.lhs])
             }
             ExprContents::Assign(assign) => (
-                format!("assign ({}) {:?} to", assign.a_type, assign.assignee),
+                format!("{} {:?} ({})", assign.a_type, assign.assignee, self.output.clone()),
                 vec![&assign.val],
             ),
             ExprContents::Accessor(accessor) => match accessor {
@@ -455,7 +455,7 @@ impl Expr {
             ExprContents::Literal(val) => ExprContents::Literal(val.clone()),
             ExprContents::Binop(binop) => ExprContents::Binop(Binop {
                 lhs: binop.lhs.replace_generics(generics),
-                rhs: binop.lhs.replace_generics(generics),
+                rhs: binop.rhs.replace_generics(generics),
                 op: binop.op,
             }),
             ExprContents::Prefix(prefix) => ExprContents::Prefix(Prefix {

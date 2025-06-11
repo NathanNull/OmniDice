@@ -3,7 +3,7 @@ use super::*;
 
 type_init!(StringT, String, "string");
 impl Type for StringT {
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if other == &StringT {
             match op {
                 Op::Plus => Some(Box::new(StringT)),
@@ -16,7 +16,7 @@ impl Type for StringT {
         }
     }
 
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(IntT)),
             _ => None,

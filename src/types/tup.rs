@@ -48,7 +48,7 @@ fn as_idx(prop: &str) -> Option<usize> {
 }
 
 impl Type for TupT {
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         if let Some(idx) = as_idx(name) {
             self.entries.0.get(idx).cloned()
         } else {
@@ -64,7 +64,7 @@ impl Type for TupT {
             entries: TypeList(entries),
         }))
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         let other = other.downcast::<Self>()?;
         let mut vars = HashMap::new();
         for t in &self.entries.0 {
@@ -75,6 +75,9 @@ impl Type for TupT {
             }
         }
         Some(vars)
+    }
+    fn get_generics(&self) -> Vec<String> {
+        self.entries.0.iter().map(|e|e.get_generics().into_iter()).flatten().collect()
     }
 }
 impl Val for Tuple {

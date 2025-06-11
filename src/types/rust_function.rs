@@ -3,9 +3,9 @@ use crate::{invalid, type_init};
 use super::*;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FuncPointer<I, O>(fn(I) -> O);
+pub struct FuncPointer<I1, I2, O>(fn(I1, I2) -> O);
 
-impl<I, O> Display for FuncPointer<I, O> {
+impl<I1, I2, O> Display for FuncPointer<I1, I2, O> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "???")
     }
@@ -24,12 +24,11 @@ impl Display for MaybeOwnerTy {
     }
 }
 
-
 #[derive(Clone)]
 pub struct RustFunc {
-    pub signature: FuncPointer<Vec<Datatype>, Option<Datatype>>,
+    pub signature: FuncPointer<Vec<Datatype>, Option<Datatype>, Option<Datatype>>,
     pub owner_ty: MaybeOwnerTy,
-    pub contents: fn(Vec<Value>, &mut Interpreter) -> Value,
+    pub contents: fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
     pub owner: Option<Value>,
 }
 
@@ -53,8 +52,8 @@ impl PartialEq for RustFunc {
 
 impl RustFunc {
     fn new(
-        signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        contents: fn(Vec<Value>, &mut Interpreter) -> Value,
+        signature: fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+        contents: fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
         owner: Option<Value>,
     ) -> Self {
         Self {
@@ -66,54 +65,58 @@ impl RustFunc {
     }
 
     pub fn new_member(
-        signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        contents: fn(Vec<Value>, &mut Interpreter) -> Value,
+        signature: fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+        contents: fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
         owner: Value,
     ) -> Self {
         Self::new(signature, contents, Some(owner))
     }
 
     pub fn new_const(
-        signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        contents: fn(Vec<Value>, &mut Interpreter) -> Value,
+        signature: fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+        contents: fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
     ) -> Self {
         Self::new(signature, contents, None)
     }
 }
 
-type_init!(RustFuncT, RustFunc, "func", owner_ty: MaybeOwnerTy, signature: FuncPointer<Vec<Datatype>,Option<Datatype>>);
+type_init!(RustFuncT, RustFunc, "func", owner_ty: MaybeOwnerTy, signature: FuncPointer<Vec<Datatype>,Option<Datatype>,Option<Datatype>>);
 
 impl RustFuncT {
-    fn new(
-        signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        owner: Option<Datatype>,
-    ) -> Self {
+    fn new(signature: fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>, owner: Option<Datatype>) -> Self {
         Self {
             signature: FuncPointer(signature),
             owner_ty: MaybeOwnerTy(owner),
         }
     }
 
-    pub fn new_member(
-        signature: fn(Vec<Datatype>) -> Option<Datatype>,
-        owner: Datatype,
-    ) -> Self {
+    pub fn new_member(signature: fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>, owner: Datatype) -> Self {
         Self::new(signature, Some(owner))
     }
 }
 
+// TODO: remove this in favor of regular FuncT
 impl Type for RustFuncT {
-    fn call_result(&self, mut params: Vec<Datatype>) -> Option<Datatype> {
+    fn real_call_result(
+        &self,
+        mut params: Vec<Datatype>,
+        expected_output: Option<Datatype>,
+    ) -> Option<Datatype> {
         if let MaybeOwnerTy(Some(ty)) = self.owner_ty.clone() {
             params = [ty].into_iter().chain(params.into_iter()).collect()
         }
-        (self.signature.0)(params)
+        let out = (self.signature.0)(params, expected_output.clone())?;
+        Some(if let Some(o) = expected_output {
+            o.assert_same(&out)
+        } else {
+            out
+        })
     }
     fn possible_call(&self) -> bool {
         true
     }
 
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
                 f_types: TypeList(vec![self.dup(), other.dup()]),
@@ -122,13 +125,24 @@ impl Type for RustFuncT {
             None
         }
     }
+    fn get_generics(&self) -> Vec<String> {
+        match &self.owner_ty.0 {
+            Some(t) => t.get_generics(),
+            None => vec![],
+        }
+    }
 }
 impl Val for RustFunc {
-    fn call(&self, mut params: Vec<Value>, interpreter: &mut Interpreter) -> Value {
+    fn call(
+        &self,
+        mut params: Vec<Value>,
+        interpreter: &mut Interpreter,
+        expected_output: Option<Datatype>,
+    ) -> Value {
         if let Some(owner) = self.owner.clone() {
             params = [owner].into_iter().chain(params.into_iter()).collect()
         }
-        (self.contents)(params, interpreter)
+        (self.contents)(params, interpreter, expected_output)
     }
     fn bin_op(&self, other: &Value, op: Op) -> Value {
         if op == Op::Plus && other.get_type().possible_call() {

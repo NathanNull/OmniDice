@@ -42,7 +42,7 @@ impl Ref {
 type_init!(RefT, Ref, "ref", (RwLockReadGuard<_InnerRef>), ty: Datatype);
 
 impl Type for RefT {
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         if name == "inner" {
             Some(self.ty.dup())
         } else {
@@ -50,23 +50,23 @@ impl Type for RefT {
         }
     }
 
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         self.ty.bin_op_result(other, op)
     }
 
-    fn pre_op_result(&self, op: Op) -> Option<Datatype> {
+    fn real_pre_op_result(&self, op: Op) -> Option<Datatype> {
         self.ty.pre_op_result(op)
     }
 
-    fn post_op_result(&self, op: Op) -> Option<Datatype> {
+    fn real_post_op_result(&self, op: Op) -> Option<Datatype> {
         self.ty.post_op_result(op)
     }
 
-    fn call_result(&self, params: Vec<Datatype>) -> Option<Datatype> {
-        self.ty.call_result(params)
+    fn real_call_result(&self, params: Vec<Datatype>, expected_output: Option<Datatype>) -> Option<Datatype> {
+        self.ty.call_result(params, expected_output)
     }
 
-    fn index_type(&self, index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, index: &Datatype) -> Option<Datatype> {
         self.ty.index_type(index)
     }
 
@@ -79,8 +79,11 @@ impl Type for RefT {
             ty: self.ty.insert_generics(generics)?,
         }))
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         self.ty.try_match(&other.downcast::<Self>()?.ty)
+    }
+    fn get_generics(&self) -> Vec<String> {
+        self.ty.get_generics()
     }
 }
 
@@ -121,7 +124,7 @@ impl Val for Ref {
         self.inner().val.set_index(index, value);
     }
 
-    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter) -> Value {
-        self.inner().val.call(params, interpreter)
+    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter, expected_output: Option<Datatype>) -> Value {
+        self.inner().val.call(params, interpreter, expected_output)
     }
 }

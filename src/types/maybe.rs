@@ -25,7 +25,7 @@ impl Display for Maybe {
 
 type_init!(MaybeT, Maybe, "maybe", output: Datatype);
 
-fn unwrap_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn unwrap_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<MaybeT>() {
         Some(me.output)
@@ -34,7 +34,7 @@ fn unwrap_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Maybe>() {
         me.contents.unwrap()
@@ -44,7 +44,7 @@ fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
 }
 
 impl Type for MaybeT {
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "unwrap" => Some(Box::new(RustFuncT::new_member(unwrap_sig, self.dup()))),
             "filled" => Some(Box::new(BoolT)),
@@ -57,8 +57,11 @@ impl Type for MaybeT {
             output: self.output.insert_generics(generics)?,
         }))
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         self.output.try_match(&other.downcast::<Self>()?.output)
+    }
+    fn get_generics(&self) -> Vec<String> {
+        self.output.get_generics()
     }
 }
 impl Val for Maybe {

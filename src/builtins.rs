@@ -17,7 +17,8 @@ gen_fn_map!(
     ("error", error_sig, error_fn),
     ("format", format_sig, format_fn),
     ("filled", filled_sig, filled_fn),
-    ("iter", iter_sig, iter_fn)
+    ("iter", iter_sig, iter_fn),
+    ("null", null_sig, null_fn)
 );
 
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
@@ -29,7 +30,7 @@ pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     }))
 });
 
-fn ref_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn ref_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     if params.len() == 1 {
         Some(Box::new(RefT {
             ty: params[0].clone(),
@@ -39,7 +40,7 @@ fn ref_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn ref_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     if params.len() == 1 {
         Box::new(Ref::new(params[0].clone()))
     } else {
@@ -47,21 +48,21 @@ fn ref_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     }
 }
 
-fn println_sig(params: Vec<Datatype>) -> Option<Datatype> {
-    format_sig(params)
+fn println_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
+    format_sig(params, o)
 }
 
-fn println_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
-    let res = format_fn(params, i).downcast::<String>().unwrap();
+fn println_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Value {
+    let res = format_fn(params, i, o).downcast::<String>().unwrap();
     println!("{res}");
     Box::new(res)
 }
 
-fn error_sig(_params: Vec<Datatype>) -> Option<Datatype> {
+fn error_sig(_params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     Some(Box::new(Void))
 }
 
-fn error_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn error_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     panic!(
         "{}",
         params
@@ -72,7 +73,7 @@ fn error_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     );
 }
 
-fn format_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn format_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     if params.len() > 0 && params[0] == StringT {
         Some(Box::new(StringT))
     } else {
@@ -80,7 +81,7 @@ fn format_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn format_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut param_iter = params.clone().into_iter();
     let str = param_iter
         .next_as::<String>()
@@ -99,7 +100,7 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     Box::new(res)
 }
 
-fn filled_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn filled_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     if params.len() == 1 {
         Some(Box::new(MaybeT {
             output: params[0].clone(),
@@ -109,7 +110,7 @@ fn filled_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn filled_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     if params.len() == 1 {
         Box::new(Maybe {
             output: params[0].get_type(),
@@ -120,9 +121,28 @@ fn filled_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     }
 }
 
-// TODO: maybe::null constructor once generics are implemented
+fn null_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
+    if params.len() == 0 {
+        if let Some(ret) = o.and_then(|o|o.downcast::<MaybeT>()) {
+            return Some(Box::new(ret))
+        }
+    }
+    None
+}
 
-fn iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn null_fn(params: Vec<Value>, _i: &mut Interpreter, o: Option<Datatype>) -> Value {
+    if params.len() == 0 {
+        if let Some(ret) = o.and_then(|o|o.downcast::<MaybeT>()) {
+            return Box::new(Maybe {
+                output: ret.output,
+                contents: None
+            })
+        }
+    }
+    invalid!("Call", "null", params)
+}
+
+fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     if params.len() == 1 {
         let func = params.first().and_then(|p| p.downcast::<FuncT>())?;
         if func.params.0.len() > 0 {
@@ -135,7 +155,7 @@ fn iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     if params.len() == 1 {
         let func = params
             .first()

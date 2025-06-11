@@ -22,7 +22,7 @@ impl Display for Iter {
 
 type_init!(IterT, Iter, "iter", output: Datatype);
 
-fn next_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn next_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<IterT>() {
         Some(Box::new(MaybeT { output: me.output }))
@@ -31,12 +31,12 @@ fn next_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }
 }
 
-fn next_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
+fn next_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Iter>() {
         Box::new(
             me.next_fn
-                .call(vec![], i)
+                .call(vec![], i, None)
                 .downcast::<Maybe>()
                 .expect("Invalid iter function return value"),
         )
@@ -45,22 +45,22 @@ fn next_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
     }
 }
 
-fn map_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn map_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     let me = it.next_as::<IterT>()?;
     let mapper = it.next_as::<FuncT>()?;
-    let output = mapper.call_result(vec![me.output])?;
+    let output = mapper.call_result(vec![me.output], None)?;
     Some(Box::new(IterT { output }))
 }
 
-fn map_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn map_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let me = it.next_as::<Iter>().expect("Invalid call");
     let mapper = it.next_as::<Func>().expect("Invalid call");
     Box::new(Iter {
         output: mapper
             .get_type()
-            .call_result(vec![me.output.dup()])
+            .call_result(vec![me.output.dup()], None)
             .expect("Invalid call"),
         next_fn: Box::new(RustFunc::new_member(
             map_iter_sig,
@@ -70,37 +70,37 @@ fn map_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     })
 }
 
-fn map_iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn map_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     let tup = it.next_as::<TupT>()?;
     let mut it = tup.entries.0.into_iter();
     let me = it.next_as::<IterT>()?;
     let mapper = it.next_as::<FuncT>()?;
-    let output = mapper.call_result(vec![me.output])?;
+    let output = mapper.call_result(vec![me.output], None)?;
     Some(Box::new(MaybeT { output }))
 }
 
-fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter) -> Value {
+fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let tup = it.next_as::<Tuple>().unwrap();
     let mut it = tup.inner().elements.clone().into_iter();
     let me = it.next_as::<Iter>().unwrap();
     let mapper = it.next_as::<Func>().unwrap();
-    let next = next_fn(vec![me.dup()], i).downcast::<Maybe>().unwrap();
+    let next = next_fn(vec![me.dup()], i, None).downcast::<Maybe>().unwrap();
     Box::new(Maybe {
         output: mapper
             .get_type()
-            .call_result(vec![me.output.dup()])
+            .call_result(vec![me.output.dup()], None)
             .unwrap(),
-        contents: next.contents.map(|n| mapper.call(vec![n], i)),
+        contents: next.contents.map(|n| mapper.call(vec![n], i, None)),
     })
 }
 
-fn ident_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn ident_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     params.first().cloned()
 }
 
-fn ident_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn ident_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     params.first().unwrap().clone()
 }
 
@@ -112,7 +112,7 @@ gen_fn_map!(
 );
 
 impl Type for IterT {
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             n if ITER_FNS.contains_key(n) => {
                 Some(Box::new(RustFuncT::new_member(ITER_FNS[n].0, self.dup())))
@@ -126,8 +126,11 @@ impl Type for IterT {
             output: self.output.insert_generics(generics)?,
         }))
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         self.output.try_match(&other.downcast::<Self>()?.output)
+    }
+    fn get_generics(&self) -> Vec<String> {
+        self.output.get_generics()
     }
 }
 impl Val for Iter {

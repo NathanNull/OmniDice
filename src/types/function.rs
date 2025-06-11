@@ -39,12 +39,22 @@ impl PartialEq for Func {
 type_init!(FuncT, Func, "func", params: TypeList, output: Datatype, generic: GenericList);
 
 impl FuncT {
-    fn get_generics(&self, params: Vec<Datatype>) -> Option<HashMap<String, Datatype>> {
+    fn get_generics(
+        &self,
+        params: Vec<Datatype>,
+        expected_output: &Option<Datatype>,
+    ) -> Option<HashMap<String, Datatype>> {
+        if params.len() != self.params.0.len() {
+            return None;
+        }
         let mut generic_matches = HashMap::new();
-        for (given, expected) in params.iter().zip(self.params.0.iter()) {
-            let generics = expected
-                .insert_generics(&generic_matches)?
-                .try_match(given)?;
+        for (given, expected) in params
+            .iter()
+            .zip(self.params.0.iter())
+            .chain(expected_output.iter().map(|o| (o, &self.output)))
+        {
+            let inserted = expected.insert_generics(&generic_matches)?;
+            let generics = inserted.try_match(given)?;
             for (g, ty) in generics {
                 if let Some(prev_ty) = generic_matches.get(&g) {
                     if *prev_ty != ty {
@@ -60,12 +70,25 @@ impl FuncT {
 }
 
 impl Type for FuncT {
-    fn call_result(&self, params: Vec<Datatype>) -> Option<Datatype> {
-        let generic_matches = self.get_generics(params)?;
-        self.output.insert_generics(&generic_matches)
+    fn real_call_result(
+        &self,
+        params: Vec<Datatype>,
+        expected_output: Option<Datatype>,
+    ) -> Option<Datatype> {
+        let generic_matches = self.get_generics(params, &expected_output)?;
+        let res = self.output.insert_generics(&generic_matches)?;
+        if res.get_generics().iter().any(|g|self.generic.0.contains(g)) {
+            println!("Unconstrained generic");
+            return None;
+        }
+        Some(if let Some(o) = expected_output {
+            o.assert_same(&res)
+        } else {
+            res
+        })
     }
 
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
                 f_types: TypeList(vec![self.dup(), other.dup()]),
@@ -90,14 +113,36 @@ impl Type for FuncT {
             generic: self.generic.clone(),
         }))
     }
+    fn get_generics(&self) -> Vec<String> {
+        self.output
+            .get_generics()
+            .into_iter()
+            .chain(
+                self.params
+                    .0
+                    .iter()
+                    .map(|p| p.get_generics().into_iter())
+                    .flatten(),
+            )
+            .filter(|g| !self.generic.0.contains(g))
+            .collect()
+    }
 }
 impl Val for Func {
-    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter) -> Value {
+    fn call(
+        &self,
+        params: Vec<Value>,
+        interpreter: &mut Interpreter,
+        expected_output: Option<Datatype>,
+    ) -> Value {
         let generics = self
             .get_type()
             .downcast::<FuncT>()
             .unwrap()
-            .get_generics(params.iter().map(|p| p.get_type()).collect())
+            .get_generics(
+                params.iter().map(|p| p.get_type()).collect(),
+                &expected_output,
+            )
             .unwrap();
         let mut preset_vals = self.captured_scope.clone();
         for (name, val) in self
@@ -108,7 +153,8 @@ impl Val for Func {
         {
             preset_vals.insert(name, val);
         }
-        interpreter.call_function(preset_vals, &self.contents.replace_generics(&generics))
+        let body = self.contents.replace_generics(&generics);
+        interpreter.call_function(preset_vals, &body)
     }
 
     fn bin_op(&self, other: &Value, op: Op) -> Value {

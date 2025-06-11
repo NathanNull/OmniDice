@@ -63,22 +63,64 @@ trait BaseType {
 
 #[allow(private_bounds)]
 pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
-    fn prop_type(&self, _name: &str) -> Option<Datatype> {
+    fn prop_type(&self, name: &str) -> Option<Datatype> {
+        if !self.get_generics().is_empty() {
+            Some(Box::new(TypeVar::Prop(self.dup(), name.to_string())))
+        } else {
+            self.real_prop_type(name)
+        }
+    }
+    fn index_type(&self, index: &Datatype) -> Option<Datatype> {
+        if !self.get_generics().is_empty() {
+            Some(Box::new(TypeVar::Index(self.dup(), index.clone())))
+        } else {
+            self.real_index_type(index)
+        }
+    }
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+        if !self.get_generics().is_empty() || !other.get_generics().is_empty() {
+            Some(Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)))
+        } else {
+            self.real_bin_op_result(other, op)
+        }
+    }
+    fn pre_op_result(&self, op: Op) -> Option<Datatype> {
+        if !self.get_generics().is_empty() {
+            Some(Box::new(TypeVar::UnaryOp(self.dup(), op, true)))
+        } else {
+            self.real_pre_op_result(op)
+        }
+    }
+    fn post_op_result(&self, op: Op) -> Option<Datatype> {
+        if !self.get_generics().is_empty() {
+            Some(Box::new(TypeVar::UnaryOp(self.dup(), op, false)))
+        } else {
+            self.real_post_op_result(op)
+        }
+    }
+    fn call_result(&self, params: Vec<Datatype>, expected_output: Option<Datatype>) -> Option<Datatype> {
+        if !self.get_generics().is_empty() || params.iter().any(|p|!p.get_generics().is_empty()) {
+            Some(Box::new(TypeVar::Call(self.dup(), params, expected_output)))
+        } else {
+            self.real_call_result(params, expected_output)
+        }
+    }
+    fn real_prop_type(&self, _name: &str) -> Option<Datatype> {
         None
     }
-    fn index_type(&self, _index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, _index: &Datatype) -> Option<Datatype> {
         None
     }
-    fn bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<Datatype> {
         None
     }
-    fn pre_op_result(&self, _op: Op) -> Option<Datatype> {
+    fn real_pre_op_result(&self, _op: Op) -> Option<Datatype> {
         None
     }
-    fn post_op_result(&self, _op: Op) -> Option<Datatype> {
+    fn real_post_op_result(&self, _op: Op) -> Option<Datatype> {
         None
     }
-    fn call_result(&self, _params: Vec<Datatype>) -> Option<Datatype> {
+    fn real_call_result(&self, _params: Vec<Datatype>, _expected_output: Option<Datatype>) -> Option<Datatype> {
         None
     }
     fn possible_call(&self) -> bool {
@@ -87,17 +129,27 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn insert_generics(&self, _generics: &HashMap<String, Datatype>) -> Option<Datatype> {
         Some(self.dup())
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         if self.name() == other.name() {
             Some(HashMap::new())
         } else {
             None
         }
     }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        if let Some(typevar) = other.downcast::<TypeVar>() {
+            typevar.real_try_match(&self.dup())
+        } else {
+            self.real_try_match(other)
+        }
+    }
     fn assert_same(&self, other: &Datatype) -> Datatype {
         let dt = self.dup();
         assert_eq!(&dt, other, "Expected type {self} but saw {other}");
         dt
+    }
+    fn get_generics(&self) -> Vec<String> {
+        vec![]
     }
 }
 
@@ -133,7 +185,7 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn post_op(&self, _op: Op) -> Value {
         unreachable!("Type '{}' has no postfix operations.", self.get_name())
     }
-    fn call(&self, _params: Vec<Value>, _interpreter: &mut Interpreter) -> Value {
+    fn call(&self, _params: Vec<Value>, _interpreter: &mut Interpreter, _expected_output: Option<Datatype>) -> Value {
         unreachable!("Type '{}' cannot be called.", self.get_name())
     }
     fn get_type(&self) -> Datatype {
@@ -401,8 +453,8 @@ macro_rules! gen_fn_map {
             ::std::collections::HashMap<
                 &'static str,
                 (
-                    fn(Vec<Datatype>) -> Option<Datatype>,
-                    fn(Vec<Value>, &mut Interpreter) -> Value,
+                    fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+                    fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
                 ),
             >,
         > = ::std::sync::LazyLock::new(|| {
@@ -410,8 +462,8 @@ macro_rules! gen_fn_map {
                 $((
                     $fname,
                     (
-                        $fsig as fn(Vec<Datatype>) -> Option<Datatype>,
-                        $ffn as fn(Vec<Value>, &mut Interpreter) -> Value,
+                        $fsig as fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+                        $ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
                     ),
                 ),)*
             ])

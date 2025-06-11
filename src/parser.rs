@@ -1,9 +1,14 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    builtins::BUILTINS, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
-        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, GenericList, IntT, IterT, MaybeT, RefT, StringT, TupT, TypeList, TypeVar, Void
-    }, TokenIter
+    TokenIter,
+    builtins::BUILTINS,
+    interpreter::VarScope,
+    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
+    types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, GenericList, IntT, IterT, MaybeT,
+        RefT, StringT, TupT, TypeList, TypeVar, Void,
+    },
 };
 
 pub mod expr;
@@ -13,6 +18,7 @@ use strum::IntoEnumIterator;
 pub struct Parser {
     tokens: TokenIter<IntoIter<Token>>,
     var_types: Vec<VarScope<(Datatype, bool)>>,
+    typedefs: Vec<VarScope<Datatype>>,
 }
 
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
@@ -37,6 +43,7 @@ impl Parser {
                 ),
                 blocking: true,
             }],
+            typedefs: vec![],
         }
     }
 
@@ -66,6 +73,18 @@ impl Parser {
     fn get_var_type(&self, name: &str) -> Option<Datatype> {
         for scope in self.var_types.iter().rev() {
             if let Some((dtype, _)) = scope.vars.get(name) {
+                return Some(dtype.clone());
+            }
+            if scope.blocking {
+                break;
+            }
+        }
+        None
+    }
+
+    fn get_typedef(&self, name: &str) -> Option<Datatype> {
+        for scope in self.typedefs.iter().rev() {
+            if let Some(dtype) = scope.vars.get(name) {
                 return Some(dtype.clone());
             }
             if scope.blocking {
@@ -159,11 +178,16 @@ impl Parser {
                 let params: Vec<Datatype> = call.params.iter().map(|p| p.output.clone()).collect();
                 call.base
                     .output
-                    .call_result(params.clone())
+                    .call_result(params.clone(), expected_type.clone())
                     .expect(&format!(
-                        "Can't call {} with params {}",
+                        "Can't call {} with params ({}){}",
                         call.base.output,
-                        TypeList(params)
+                        TypeList(params),
+                        if let Some(e) = expected_type.as_ref() {
+                            format!(" and expect output {e}")
+                        } else {
+                            "".to_string()
+                        }
                     ))
             }
         };
@@ -175,11 +199,11 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Expr {
-        let scope = ExprContents::Scope(self.parse_scope(false));
+        let scope = ExprContents::Scope(self.parse_scope(false, Some(VOID.output.clone())));
         *self.new_expr(scope, Some(VOID.output.clone()))
     }
 
-    fn parse_scope(&mut self, is_inner: bool) -> Scope {
+    fn parse_scope(&mut self, is_inner: bool, expected_type: Option<Datatype>) -> Scope {
         let mut exprs = vec![];
         let mut just_parsed = false;
         // Variables created in scope should only live while it does
@@ -197,7 +221,15 @@ impl Parser {
         ];
         while self.tokens.peek().unwrap() != expected_end.last().unwrap() {
             let contents = self.parse_expr(0, &expected_end, true, false);
-            exprs.push(*self.new_expr(contents, None));
+            let is_last = self.tokens.peek().unwrap() == expected_end.last().unwrap();
+            exprs.push(*self.new_expr(
+                contents,
+                if is_last {
+                    expected_type.clone()
+                } else {
+                    None
+                },
+            ));
             just_parsed = true;
             assert!(
                 expected_end.contains(self.tokens.peek().unwrap()),
@@ -256,7 +288,7 @@ impl Parser {
                 }
             }
             Token::OpLike(OpLike::Bracket(Bracket::LCurly)) => {
-                let scope = ExprContents::Scope(self.parse_scope(true));
+                let scope = ExprContents::Scope(self.parse_scope(true, None));
                 let next = self.tokens.next().unwrap();
                 assert_eq!(
                     next,
@@ -431,7 +463,7 @@ impl Parser {
                             "Expected {{, found {:?}",
                             self.tokens.peek()
                         );
-                        let scope = self.parse_scope(true);
+                        let scope = self.parse_scope(true, Some(base_expr.output.clone()));
                         assert!(
                             self.tokens
                                 .eat([Token::OpLike(OpLike::Bracket(Bracket::RCurly))].into_iter())
@@ -489,7 +521,7 @@ impl Parser {
         let i_type = match iter
             .output
             .prop_type("iter")
-            .and_then(|i_fn| i_fn.call_result(vec![]))
+            .and_then(|i_fn| i_fn.call_result(vec![], None))
             .and_then(|i| i.downcast::<IterT>())
         {
             Some(i_type) => i_type.output,
@@ -502,7 +534,7 @@ impl Parser {
             blocking: false,
         });
         self.set_var_type(var.clone(), i_type, false);
-        let sc = ExprContents::Scope(self.parse_scope(true));
+        let sc = ExprContents::Scope(self.parse_scope(true, Some(VOID.output.clone())));
         self.var_types.pop();
         let body = self.new_expr(sc, Some(VOID.output.clone()));
         self.tokens
@@ -528,7 +560,7 @@ impl Parser {
             "Expected {{, found {:?}",
             self.tokens.peek()
         );
-        let scope = self.parse_scope(true);
+        let scope = self.parse_scope(true, expected_type.clone());
         assert!(
             self.tokens
                 .eat([Token::OpLike(OpLike::Bracket(Bracket::RCurly))])
@@ -654,22 +686,37 @@ impl Parser {
     }
 
     fn parse_func(&mut self) -> ExprContents {
-        let generic = GenericList(if self.tokens.eat([Token::OpLike(OpLike::Less)]).is_some() {
-            let mut generic = vec![];
-            while self.tokens.eat([Token::OpLike(OpLike::Greater)]).is_none() {
-                generic.push(match self.tokens.next() {
-                    Some(Token::Identifier(s)) => s,
-                    tk => panic!("Expected identifier, found {tk:?}")
-                });
-                match self.tokens.next() {
-                    Some(Token::OpLike(OpLike::Comma)) => continue,
-                    Some(Token::OpLike(OpLike::Greater)) => break,
-                    tk => panic!("Unexpected token {tk:?}")
+        let generic = GenericList(
+            if self.tokens.eat([Token::OpLike(OpLike::Less)]).is_some() {
+                let mut generic = vec![];
+                while self.tokens.eat([Token::OpLike(OpLike::Greater)]).is_none() {
+                    generic.push(match self.tokens.next() {
+                        Some(Token::Identifier(s)) => s,
+                        tk => panic!("Expected identifier, found {tk:?}"),
+                    });
+                    match self.tokens.next() {
+                        Some(Token::OpLike(OpLike::Comma)) => continue,
+                        Some(Token::OpLike(OpLike::Greater)) => break,
+                        tk => panic!("Unexpected token {tk:?}"),
+                    }
                 }
-            }
-            generic
-        } else {
-            vec![]
+                assert!(
+                    generic.iter().all(|g| self.get_typedef(g).is_none()),
+                    "Can't reuse generic variable"
+                );
+                generic
+            } else {
+                vec![]
+            },
+        );
+        self.typedefs.push(VarScope {
+            vars: HashMap::from_iter(
+                generic
+                    .0
+                    .iter()
+                    .map(|n| (n.clone(), Box::new(TypeVar::Var(n.clone())) as Datatype)),
+            ),
+            blocking: false,
         });
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)));
@@ -701,11 +748,17 @@ impl Parser {
             ),
             blocking: false,
         });
-        let sc = ExprContents::Scope(self.parse_scope(true));
+        let sc = ExprContents::Scope(self.parse_scope(true, Some(output.clone())));
         let contents = self.new_expr(sc, Some(output.clone()));
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)));
-        ExprContents::Function(Function { params, contents, generic })
+        // Generics defined in this function go out of scope
+        self.typedefs.pop();
+        ExprContents::Function(Function {
+            params,
+            contents,
+            generic,
+        })
     }
 
     fn parse_type(&mut self) -> Datatype {
@@ -727,7 +780,13 @@ impl Parser {
                     }
                 }
                 "dice" => Box::new(DiceT),
-                n => Box::new(TypeVar::Var(n.to_string())),
+                n => {
+                    if let Some(t) = self.get_typedef(n) {
+                        t
+                    } else {
+                        panic!("Unknown type {n}")
+                    }
+                }
             },
             Some(Token::Keyword(Keyword::Func)) => {
                 self.tokens

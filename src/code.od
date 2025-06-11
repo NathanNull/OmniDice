@@ -49,22 +49,20 @@ while true {
     i += 1;
 }*/
 
-/*let it = (1..5).iter();
+let it = (1..5).iter();
 for next in iter(func() -> maybe<int> {
     if (let n_opt = it.next()).filled {
         let next = n_opt.unwrap();
         filled(next * next)
     } else {
-        error("finished");
-        filled(1)
+        null()
     }
 }) {
     println("{}", next);
-}*/
+}
 
-let fn = func(param: T) -> T {
-    println("{}", param);
-    param + param
+/*let fn = func<T>() -> T {
+    5
 };
-println("return is {}", fn("test"));
-println("other return is {}", fn(3));
+let a: float = fn();
+println("{}", a);*/

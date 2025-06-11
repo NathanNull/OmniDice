@@ -24,7 +24,7 @@ impl Range {
 
 type_init!(RangeT, Range, "range");
 
-fn range_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn range_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     it.next_as::<RangeT>()?;
     Some(Box::new(IterT {
@@ -32,7 +32,7 @@ fn range_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }))
 }
 
-fn range_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn range_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let me = it.next_as::<Range>().expect("Invalid call");
     Box::new(Iter {
@@ -45,7 +45,7 @@ fn range_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     })
 }
 
-fn range_iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn range_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     it.next_as::<RangeT>()?;
     Some(Box::new(MaybeT {
@@ -53,7 +53,7 @@ fn range_iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
     }))
 }
 
-fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let me_outer = it.next_as::<Range>().unwrap();
     let mut me = me_outer.inner_mut();
@@ -72,7 +72,7 @@ fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
 gen_fn_map!(RANGE_FNS, ("iter", range_sig, range_fn));
 
 impl Type for RangeT {
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             n if RANGE_FNS.contains_key(n) => {
                 Some(Box::new(RustFuncT::new_member(RANGE_FNS[n].0, self.dup())))

@@ -18,6 +18,7 @@ fn main() {
     println!("Tokens: {tokens:?}");
     let ast = Parser::new(tokens).parse();
     println!("AST: {ast}");
+    println!("Program output:");
     Interpreter::new(ast).run();
 }
 

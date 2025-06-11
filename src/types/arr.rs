@@ -42,7 +42,7 @@ impl Arr {
 
 type_init!(ArrT, Arr, "array", (RwLockReadGuard<_InnerArr>), entry: Datatype);
 
-fn push_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn push_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut p_iter = params.iter();
     if let Some(arr) = p_iter.next().and_then(|p| p.downcast::<ArrT>()) {
         if p_iter.next().is_some_and(|p| *p == arr.entry) && p_iter.next().is_none() {
@@ -52,7 +52,7 @@ fn push_sig(params: Vec<Datatype>) -> Option<Datatype> {
     None
 }
 
-fn push_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if let Some(to_push) = p_iter.next() {
@@ -64,7 +64,7 @@ fn push_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     invalid!("Call", "push", params)
 }
 
-fn pop_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn pop_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<ArrT>() {
         if p_iter.next().is_none() {
@@ -74,7 +74,7 @@ fn pop_sig(params: Vec<Datatype>) -> Option<Datatype> {
     None
 }
 
-fn pop_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         return arr
@@ -86,7 +86,7 @@ fn pop_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     invalid!("Call", "push", params)
 }
 
-fn iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<ArrT>() {
         if p_iter.next().is_none() {
@@ -96,7 +96,7 @@ fn iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
     None
 }
 
-fn iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if p_iter.next().is_none() {
@@ -113,14 +113,14 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
     invalid!("Call", "iter", params);
 }
 
-fn iter_ret_sig(params: Vec<Datatype>) -> Option<Datatype> {
+fn iter_ret_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
     let mut it = params.iter().cloned();
     let me = it.next_as::<TupT>()?;
     let arr = me.entries.0.get(1).and_then(|v| v.downcast::<ArrT>())?;
     Some(Box::new(MaybeT { output: arr.entry }))
 }
 
-fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let me = it.next_as::<Tuple>().expect("Invalid function call");
     let idx = me.inner().elements[0]
@@ -152,7 +152,7 @@ gen_fn_map!(
 );
 
 impl Type for ArrT {
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if other == self {
             match op {
                 Op::Plus => Some(self.dup()),
@@ -163,7 +163,7 @@ impl Type for ArrT {
         }
     }
 
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(IntT)),
             n if ARR_FNS.contains_key(n) => {
@@ -173,7 +173,7 @@ impl Type for ArrT {
         }
     }
 
-    fn index_type(&self, index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, index: &Datatype) -> Option<Datatype> {
         if index == &IntT {
             Some(self.entry.clone())
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
@@ -192,8 +192,11 @@ impl Type for ArrT {
             entry: self.entry.insert_generics(generics)?,
         }))
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         self.entry.try_match(&other.downcast::<Self>()?.entry)
+    }
+    fn get_generics(&self) -> Vec<String> {
+        self.entry.get_generics()
     }
 }
 

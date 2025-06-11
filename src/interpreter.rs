@@ -86,7 +86,7 @@ impl Interpreter {
             ),
             ExprContents::Tuple(tup) => self.eval_tuple(tup),
             ExprContents::Function(func) => self.eval_function(func),
-            ExprContents::Call(call) => self.eval_call(call),
+            ExprContents::Call(call) => self.eval_call(call, expr.output.clone()),
         };
         assert_eq!(
             &res.get_type(),
@@ -233,13 +233,13 @@ impl Interpreter {
     }
 
     fn eval_for(&mut self, fo: &For) -> Value {
-        let iter = self.eval_expr(&fo.iter).get_prop("iter").call(vec![], self);
+        let iter = self.eval_expr(&fo.iter).get_prop("iter").call(vec![], self, None);
         self.variables.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
         });
         loop {
-            let next_val = iter.get_prop("next").call(vec![], self);
+            let next_val = iter.get_prop("next").call(vec![], self, None);
             match next_val.downcast::<Maybe>() {
                 Some(Maybe {
                     output: _,
@@ -297,14 +297,14 @@ impl Interpreter {
         })
     }
 
-    fn eval_call(&mut self, call: &Call) -> Value {
+    fn eval_call(&mut self, call: &Call, expected_type: Datatype) -> Value {
         let base = self.eval_expr(&call.base);
         let params = call
             .params
             .iter()
             .map(|p| self.eval_expr(p))
             .collect::<Vec<_>>();
-        base.call(params, self)
+        base.call(params, self, Some(expected_type))
     }
 
     pub fn call_function(&mut self, preset_vals: HashMap<String, Value>, func: &Expr) -> Value {

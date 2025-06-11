@@ -3,7 +3,7 @@ use super::*;
 
 type_init!(BoolT, bool, "bool");
 impl Type for BoolT {
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if other == &BoolT {
             match op {
                 Op::And | Op::Or | Op::Equal | Op::NotEqual => Some(self.dup()),
@@ -14,7 +14,7 @@ impl Type for BoolT {
         }
     }
 
-    fn pre_op_result(&self, op: Op) -> Option<Datatype> {
+    fn real_pre_op_result(&self, op: Op) -> Option<Datatype> {
         match op {
             Op::Not => Some(self.dup()),
             _ => None,
