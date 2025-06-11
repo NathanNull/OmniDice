@@ -73,6 +73,15 @@ impl Type for RefT {
     fn possible_call(&self) -> bool {
         self.ty.possible_call()
     }
+
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+        Some(Box::new(Self {
+            ty: self.ty.insert_generics(generics)?,
+        }))
+    }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        self.ty.try_match(&other.downcast::<Self>()?.ty)
+    }
 }
 
 impl Val for Ref {

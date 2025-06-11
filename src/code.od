@@ -49,8 +49,22 @@ while true {
     i += 1;
 }*/
 
-for next in (1..5).iter().map(func(param: int) -> dice {
-    (param)d(param)
+/*let it = (1..5).iter();
+for next in iter(func() -> maybe<int> {
+    if (let n_opt = it.next()).filled {
+        let next = n_opt.unwrap();
+        filled(next * next)
+    } else {
+        error("finished");
+        filled(1)
+    }
 }) {
-    println("dice: \n{}", next);
-}
+    println("{}", next);
+}*/
+
+let fn = func(param: T) -> T {
+    println("{}", param);
+    param + param
+};
+println("return is {}", fn("test"));
+println("other return is {}", fn(3));

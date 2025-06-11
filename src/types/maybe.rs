@@ -51,6 +51,15 @@ impl Type for MaybeT {
             _ => None,
         }
     }
+
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+        Some(Box::new(Self {
+            output: self.output.insert_generics(generics)?,
+        }))
+    }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        self.output.try_match(&other.downcast::<Self>()?.output)
+    }
 }
 impl Val for Maybe {
     fn get_prop(&self, name: &str) -> Value {

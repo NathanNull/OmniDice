@@ -292,6 +292,7 @@ impl Interpreter {
                         (v, val)
                     }),
             ),
+            generic: func.generic.clone(),
             contents: *func.contents.clone(),
         })
     }

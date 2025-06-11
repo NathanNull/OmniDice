@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     ops::Deref,
 };
@@ -7,7 +8,7 @@ use strum::EnumIter;
 
 use crate::{
     lexer::OpLike,
-    types::{Datatype, Value},
+    types::{Arr, Datatype, GenericList, Value},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -199,7 +200,12 @@ impl Display for Expr {
             ExprContents::Tuple(tup) => ("tuple".to_string(), tup.elements.iter().collect()),
             ExprContents::Function(func) => (
                 format!(
-                    "func ({})",
+                    "func{} ({})",
+                    if func.generic.0.len() > 0 {
+                        format!("<{}>", func.generic.0.join(", "))
+                    } else {
+                        "".to_string()
+                    },
                     func.params
                         .iter()
                         .map(|(n, t)| format!("{n}: {t}"))
@@ -209,7 +215,7 @@ impl Display for Expr {
                 vec![&func.contents],
             ),
             ExprContents::Call(call) => (
-                "call".to_string(),
+                format!("call -> {}", self.output),
                 vec![call.base.deref()]
                     .into_iter()
                     .chain(call.params.iter().map(|p| &*p))
@@ -241,49 +247,121 @@ impl Display for Expr {
 impl Expr {
     pub fn used_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         match &self.contents {
-            ExprContents::Literal(_) => Box::new(vec![].into_iter()),
+            ExprContents::Literal(_) => Box::new([].into_iter()),
             ExprContents::Binop(binop) => {
-                Box::new(binop.lhs.used_variables().chain(binop.rhs.used_variables()))
+                let l_created = binop.lhs.assigned_variables().collect::<Vec<_>>();
+                Box::new(
+                    binop.lhs.used_variables().chain(
+                        binop
+                            .rhs
+                            .used_variables()
+                            .filter(move |v| !l_created.contains(v)),
+                    ),
+                )
             }
             ExprContents::Prefix(prefix) => prefix.rhs.used_variables(),
             ExprContents::Postfix(postfix) => postfix.lhs.used_variables(),
-            ExprContents::Assign(assign) => Box::new(
-                match &assign.a_type {
-                    AssignType::Reassign => accessor_vars(&assign.assignee),
-                    AssignType::Create => Box::new([].into_iter()),
-                }
-                .chain(assign.val.used_variables()),
-            ),
-            ExprContents::Accessor(accessor) => accessor_vars(accessor),
-            ExprContents::Scope(exprs) => {
-                Box::new(exprs.iter().map(|e| e.used_variables()).flatten())
+            ExprContents::Assign(assign) => {
+                let l_created = accessor_assigned_vars(&assign.assignee).collect::<Vec<_>>();
+                Box::new(
+                    match &assign.a_type {
+                        AssignType::Reassign => accessor_used_vars(&assign.assignee),
+                        AssignType::Create => Box::new([].into_iter()),
+                    }
+                    .chain(
+                        assign
+                            .val
+                            .used_variables()
+                            .filter(move |v| !l_created.contains(v)),
+                    ),
+                )
             }
-            ExprContents::Conditional(conditional) => Box::new(
-                conditional
+            ExprContents::Accessor(accessor) => accessor_used_vars(accessor),
+            ExprContents::Scope(exprs) => {
+                let mut used = vec![];
+                let mut assigned = vec![];
+                for line in exprs {
+                    assigned.extend(line.assigned_variables());
+                    let l_used = line
+                        .used_variables()
+                        .filter(|v| !assigned.contains(v) && !used.contains(v))
+                        .collect::<Vec<_>>();
+                    used.extend_from_slice(&l_used);
+                }
+                Box::new(used.into_iter())
+            }
+            ExprContents::Conditional(conditional) => {
+                let l_created = conditional
                     .condition
-                    .used_variables()
-                    .chain(conditional.result.used_variables())
-                    .chain(if let Some(otw) = &conditional.otherwise {
-                        otw.used_variables()
-                    } else {
-                        Box::new([].into_iter())
-                    }),
-            ),
-            ExprContents::While(wh) => Box::new(
-                wh.condition
-                    .used_variables()
-                    .chain(wh.result.used_variables()),
-            ),
-            ExprContents::For(fo) => Box::new(
-                fo.iter
-                    .used_variables()
-                    .chain(fo.body.used_variables().filter(|v| *v != fo.var)),
-            ),
+                    .assigned_variables()
+                    .collect::<Vec<_>>();
+                let lc_2 = l_created.clone();
+                let r_created = conditional.result.assigned_variables().collect::<Vec<_>>();
+                Box::new(
+                    conditional
+                        .condition
+                        .used_variables()
+                        .chain(
+                            conditional
+                                .result
+                                .used_variables()
+                                .filter(move |v| !l_created.clone().contains(v)),
+                        )
+                        .chain(if let Some(otw) = &conditional.otherwise {
+                            Box::new(
+                                otw.used_variables()
+                                    .filter(move |v| !lc_2.contains(v) && !r_created.contains(v)),
+                            ) as Box<dyn Iterator<Item = String>>
+                        } else {
+                            Box::new([].into_iter())
+                        }),
+                )
+            }
+            ExprContents::While(wh) => {
+                let l_created = wh.condition.assigned_variables().collect::<Vec<_>>();
+                Box::new(
+                    wh.condition.used_variables().chain(
+                        wh.result
+                            .used_variables()
+                            .filter(move |v| !l_created.contains(v)),
+                    ),
+                )
+            }
+            ExprContents::For(fo) => {
+                let l_created = fo.iter.assigned_variables().collect::<Vec<_>>();
+                Box::new(
+                    fo.iter.used_variables().chain(
+                        fo.body
+                            .used_variables()
+                            .filter(move |v| *v != fo.var && !l_created.contains(v)),
+                    ),
+                )
+            }
             ExprContents::Array(array) => {
-                Box::new(array.elements.iter().map(|e| e.used_variables()).flatten())
+                let mut used = vec![];
+                let mut assigned = vec![];
+                for line in &array.elements {
+                    assigned.extend(line.assigned_variables());
+                    let l_used = line
+                        .used_variables()
+                        .filter(|v| !assigned.contains(v) && !used.contains(v))
+                        .collect::<Vec<_>>();
+                    used.extend_from_slice(&l_used);
+                }
+                Box::new(used.into_iter())
             }
             ExprContents::Tuple(tuple) => {
-                Box::new(tuple.elements.iter().map(|e| e.used_variables()).flatten())
+                let mut used = vec![];
+                let mut assigned = vec![];
+                for line in &tuple.elements {
+                    assigned.extend(line.assigned_variables());
+                    let l_used = line
+                        .used_variables()
+                        .filter(|v| !assigned.contains(v) && !used.contains(v))
+                        .collect::<Vec<_>>();
+                    used.extend_from_slice(&l_used);
+                }
+                Box::new(used.into_iter())
             }
             ExprContents::Function(function) => Box::new(
                 function
@@ -291,24 +369,208 @@ impl Expr {
                     .used_variables()
                     .filter(|v| !function.params.iter().any(|(p, _)| p == v)),
             ),
+            ExprContents::Call(call) => {
+                let mut used = vec![];
+                let mut assigned = vec![];
+                for line in [call.base.as_ref()].into_iter().chain(call.params.iter()) {
+                    assigned.extend(line.assigned_variables());
+                    let l_used = line
+                        .used_variables()
+                        .filter(|v| !assigned.contains(v) && !used.contains(v))
+                        .collect::<Vec<_>>();
+                    used.extend_from_slice(&l_used);
+                }
+                Box::new(used.into_iter())
+            }
+        }
+    }
+
+    pub fn assigned_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        match &self.contents {
+            ExprContents::Literal(_) => Box::new([].into_iter()),
+            ExprContents::Binop(binop) => Box::new(
+                binop
+                    .lhs
+                    .assigned_variables()
+                    .chain(binop.rhs.assigned_variables()),
+            ),
+            ExprContents::Prefix(prefix) => prefix.rhs.assigned_variables(),
+            ExprContents::Postfix(postfix) => postfix.lhs.assigned_variables(),
+            ExprContents::Assign(assign) => Box::new(
+                match &assign.a_type {
+                    AssignType::Reassign => accessor_assigned_vars(&assign.assignee),
+                    AssignType::Create => match &assign.assignee {
+                        Accessor::Variable(v) => Box::new([v.clone()].into_iter()),
+                        _ => unreachable!("Unexpected non-variable in let statement"),
+                    },
+                }
+                .chain(assign.val.assigned_variables()),
+            ),
+            ExprContents::Accessor(accessor) => accessor_assigned_vars(accessor),
+            ExprContents::Scope(exprs) => {
+                Box::new(exprs.iter().map(|e| e.assigned_variables()).flatten())
+            }
+            ExprContents::Conditional(conditional) => {
+                Box::new(conditional.condition.assigned_variables().chain(
+                    if let Some(otw) = &conditional.otherwise {
+                        otw.assigned_variables()
+                    } else {
+                        Box::new([].into_iter())
+                    },
+                ))
+            }
+            ExprContents::While(wh) => wh.condition.assigned_variables(),
+            ExprContents::For(fo) => fo.iter.assigned_variables(),
+            ExprContents::Array(array) => Box::new(
+                array
+                    .elements
+                    .iter()
+                    .map(|e| e.assigned_variables())
+                    .flatten(),
+            ),
+            ExprContents::Tuple(tuple) => Box::new(
+                tuple
+                    .elements
+                    .iter()
+                    .map(|e| e.assigned_variables())
+                    .flatten(),
+            ),
+            ExprContents::Function(_) => Box::new([].into_iter()),
             ExprContents::Call(call) => Box::new(
                 call.params
                     .iter()
-                    .map(|p| p.used_variables())
+                    .map(|p| p.assigned_variables())
                     .flatten()
-                    .chain(call.base.used_variables()),
+                    .chain(call.base.assigned_variables()),
             ),
         }
     }
+
+    pub fn replace_generics(&self, generics: &HashMap<String, Datatype>) -> Box<Self> {
+        let new_type = self
+            .output
+            .insert_generics(&generics)
+            .expect("Invalid type");
+        let new_contents = match &self.contents {
+            ExprContents::Literal(val) => ExprContents::Literal(val.clone()),
+            ExprContents::Binop(binop) => ExprContents::Binop(Binop {
+                lhs: binop.lhs.replace_generics(generics),
+                rhs: binop.lhs.replace_generics(generics),
+                op: binop.op,
+            }),
+            ExprContents::Prefix(prefix) => ExprContents::Prefix(Prefix {
+                op: prefix.op,
+                rhs: prefix.rhs.replace_generics(generics),
+            }),
+            ExprContents::Postfix(postfix) => ExprContents::Postfix(Postfix {
+                op: postfix.op,
+                lhs: postfix.lhs.replace_generics(generics),
+            }),
+            ExprContents::Assign(assign) => ExprContents::Assign(Assign {
+                assignee: accessor_replace_generics(&assign.assignee, generics),
+                val: assign.val.replace_generics(generics),
+                a_type: assign.a_type.clone(),
+            }),
+            ExprContents::Accessor(accessor) => {
+                ExprContents::Accessor(accessor_replace_generics(accessor, generics))
+            }
+            ExprContents::Scope(exprs) => ExprContents::Scope(
+                exprs
+                    .iter()
+                    .map(|e| *e.replace_generics(generics))
+                    .collect(),
+            ),
+            ExprContents::Conditional(conditional) => ExprContents::Conditional(Conditional {
+                condition: conditional.condition.replace_generics(generics),
+                result: conditional.result.replace_generics(generics),
+                otherwise: conditional
+                    .otherwise
+                    .as_ref()
+                    .map(|otw| otw.replace_generics(generics)),
+            }),
+            ExprContents::While(wh) => ExprContents::While(While {
+                condition: wh.condition.replace_generics(generics),
+                result: wh.result.replace_generics(generics),
+            }),
+            ExprContents::For(fo) => ExprContents::For(For {
+                var: fo.var.clone(),
+                iter: fo.iter.replace_generics(generics),
+                body: fo.body.replace_generics(generics),
+            }),
+            ExprContents::Array(array) => ExprContents::Array(Array {
+                elements: array
+                    .elements
+                    .iter()
+                    .map(|e| *e.replace_generics(generics))
+                    .collect(),
+            }),
+            ExprContents::Tuple(tuple) => ExprContents::Tuple(Tuple {
+                elements: tuple
+                    .elements
+                    .iter()
+                    .map(|e| *e.replace_generics(generics))
+                    .collect(),
+            }),
+            ExprContents::Function(function) => ExprContents::Function(Function {
+                params: function
+                    .params
+                    .iter()
+                    .map(|(n, t)| (n.clone(), t.insert_generics(generics).expect("Invalid")))
+                    .collect(),
+                contents: function.contents.replace_generics(generics),
+                generic: function.generic.clone(),
+            }),
+            ExprContents::Call(call) => ExprContents::Call(Call {
+                base: call.base.replace_generics(generics),
+                params: call
+                    .params
+                    .iter()
+                    .map(|p| *p.replace_generics(generics))
+                    .collect(),
+            }),
+        };
+        Box::new(Self {
+            contents: new_contents,
+            output: new_type,
+        })
+    }
 }
 
-fn accessor_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
+fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
     match accessor {
         Accessor::Variable(v) => Box::new([v.clone()].into_iter()),
         Accessor::Property(base, _) => base.used_variables(),
         Accessor::Index(indexed, index) => {
             Box::new(indexed.used_variables().chain(index.used_variables()))
         }
+    }
+}
+
+fn accessor_assigned_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
+    match accessor {
+        Accessor::Variable(_) => Box::new([].into_iter()),
+        Accessor::Property(base, _) => base.assigned_variables(),
+        Accessor::Index(indexed, index) => Box::new(
+            indexed
+                .assigned_variables()
+                .chain(index.assigned_variables()),
+        ),
+    }
+}
+
+fn accessor_replace_generics(
+    accessor: &Accessor,
+    generics: &HashMap<String, Datatype>,
+) -> Accessor {
+    match accessor {
+        Accessor::Variable(_) => accessor.clone(),
+        Accessor::Property(base, prop) => {
+            Accessor::Property(base.replace_generics(generics), prop.clone())
+        }
+        Accessor::Index(base, index) => Accessor::Index(
+            base.replace_generics(generics),
+            index.replace_generics(generics),
+        ),
     }
 }
 
@@ -462,6 +724,7 @@ impl Debug for Tuple {
 pub struct Function {
     pub params: Vec<(String, Datatype)>,
     pub contents: Box<Expr>,
+    pub generic: GenericList,
 }
 
 #[derive(Debug, Clone)]

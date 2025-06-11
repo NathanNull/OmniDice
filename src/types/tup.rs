@@ -55,6 +55,27 @@ impl Type for TupT {
             None
         }
     }
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+        let mut entries = vec![];
+        for t in &self.entries.0 {
+            entries.push(t.insert_generics(generics)?);
+        }
+        Some(Box::new(Self {
+            entries: TypeList(entries),
+        }))
+    }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        let other = other.downcast::<Self>()?;
+        let mut vars = HashMap::new();
+        for t in &self.entries.0 {
+            for v in &other.entries.0 {
+                for (name, var) in t.try_match(v)? {
+                    vars.insert(name, var);
+                }
+            }
+        }
+        Some(vars)
+    }
 }
 impl Val for Tuple {
     fn get_prop(&self, name: &str) -> Value {

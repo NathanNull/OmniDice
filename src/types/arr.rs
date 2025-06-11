@@ -186,6 +186,15 @@ impl Type for ArrT {
             None
         }
     }
+
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+        Some(Box::new(Self {
+            entry: self.entry.insert_generics(generics)?,
+        }))
+    }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        self.entry.try_match(&other.downcast::<Self>()?.entry)
+    }
 }
 
 impl Val for Arr {

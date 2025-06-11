@@ -1,7 +1,5 @@
 use std::{
-    any::Any,
-    fmt::{Debug, Display},
-    sync::Arc,
+    any::Any, collections::HashMap, fmt::{Debug, Display}, sync::Arc
 };
 
 use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op};
@@ -45,6 +43,9 @@ pub use maybe::{Maybe, MaybeT};
 mod range;
 pub use range::{Range, RangeT};
 
+mod typevar;
+pub use typevar::TypeVar;
+
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;
 }
@@ -82,6 +83,21 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     }
     fn possible_call(&self) -> bool {
         false
+    }
+    fn insert_generics(&self, _generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+        Some(self.dup())
+    }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        if self.name() == other.name() {
+            Some(HashMap::new())
+        } else {
+            None
+        }
+    }
+    fn assert_same(&self, other: &Datatype) -> Datatype {
+        let dt = self.dup();
+        assert_eq!(&dt, other, "Expected type {self} but saw {other}");
+        dt
     }
 }
 
@@ -204,7 +220,7 @@ macro_rules! _make_type {
 
 #[macro_export]
 macro_rules! type_init {
-    ($ty: ident, $val: ident, $repr: expr $(, $(($ref_t: ty), )? $($tvar: ident : $tty: ty),*)?) => {
+    ($ty: ident, $val: ty, $repr: expr $(, $(($ref_t: ty), )? $($tvar: ident : $tty: ty),*)?) => {
         crate::_make_type!($ty $(, [$($tvar, $tty),*])?);
         impl BaseType for $ty {
             fn name(&self) -> String {
@@ -269,6 +285,30 @@ impl Display for TypeList {
 
 impl FromIterator<Datatype> for TypeList {
     fn from_iter<T: IntoIterator<Item = Datatype>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GenericList(pub Vec<String>);
+
+impl Display for GenericList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //write!(f, "[")?;
+        let len = self.0.len();
+        for (i, ele) in self.0.iter().enumerate() {
+            write!(f, "{}", ele)?;
+            if i != len - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        Ok(())
+        //write!(f, "]")
+    }
+}
+
+impl FromIterator<String> for GenericList {
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
     }
 }
@@ -385,6 +425,6 @@ pub trait BoxIterUtils {
 
 impl<Iter: Iterator<Item = Item>, Item: Downcast> BoxIterUtils for Iter {
     fn next_as<T: Clone + 'static>(&mut self) -> Option<T> {
-        self.next().and_then(|v|v.downcast::<T>())
+        self.next().and_then(|v| v.downcast::<T>())
     }
 }

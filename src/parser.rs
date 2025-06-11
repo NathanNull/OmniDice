@@ -1,14 +1,9 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    TokenIter,
-    builtins::BUILTINS,
-    interpreter::VarScope,
-    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{
-        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
-        TupT, TypeList, Void,
-    },
+    builtins::BUILTINS, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, GenericList, IntT, IterT, MaybeT, RefT, StringT, TupT, TypeList, TypeVar, Void
+    }, TokenIter
 };
 
 pub mod expr;
@@ -158,6 +153,7 @@ impl Parser {
             ExprContents::Function(func) => Box::new(FuncT {
                 params: func.params.iter().map(|(_, t)| t.clone()).collect(),
                 output: func.contents.output.clone(),
+                generic: func.generic.clone(),
             }),
             ExprContents::Call(call) => {
                 let params: Vec<Datatype> = call.params.iter().map(|p| p.output.clone()).collect();
@@ -172,9 +168,10 @@ impl Parser {
             }
         };
         if let Some(ty) = expected_type {
-            assert_eq!(ty, res, "Expected type {ty} but saw {res}");
+            ty.assert_same(&res)
+        } else {
+            res
         }
-        res
     }
 
     pub fn parse(&mut self) -> Expr {
@@ -657,6 +654,23 @@ impl Parser {
     }
 
     fn parse_func(&mut self) -> ExprContents {
+        let generic = GenericList(if self.tokens.eat([Token::OpLike(OpLike::Less)]).is_some() {
+            let mut generic = vec![];
+            while self.tokens.eat([Token::OpLike(OpLike::Greater)]).is_none() {
+                generic.push(match self.tokens.next() {
+                    Some(Token::Identifier(s)) => s,
+                    tk => panic!("Expected identifier, found {tk:?}")
+                });
+                match self.tokens.next() {
+                    Some(Token::OpLike(OpLike::Comma)) => continue,
+                    Some(Token::OpLike(OpLike::Greater)) => break,
+                    tk => panic!("Unexpected token {tk:?}")
+                }
+            }
+            generic
+        } else {
+            vec![]
+        });
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)));
         let mut params = vec![];
@@ -691,7 +705,7 @@ impl Parser {
         let contents = self.new_expr(sc, Some(output.clone()));
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)));
-        ExprContents::Function(Function { params, contents })
+        ExprContents::Function(Function { params, contents, generic })
     }
 
     fn parse_type(&mut self) -> Datatype {
@@ -713,7 +727,7 @@ impl Parser {
                     }
                 }
                 "dice" => Box::new(DiceT),
-                n => panic!("Unexpected token {n} in type"),
+                n => Box::new(TypeVar::Var(n.to_string())),
             },
             Some(Token::Keyword(Keyword::Func)) => {
                 self.tokens
@@ -740,6 +754,7 @@ impl Parser {
                 Box::new(FuncT {
                     params: TypeList(params),
                     output,
+                    generic: GenericList(vec![]),
                 })
             }
             Some(Token::OpLike(OpLike::Bracket(b))) => match b {

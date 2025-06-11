@@ -102,7 +102,6 @@ impl RustFuncT {
     }
 }
 
-// TODO: idk if this needed anything but if it does, add it
 impl Type for RustFuncT {
     fn call_result(&self, mut params: Vec<Datatype>) -> Option<Datatype> {
         if let MaybeOwnerTy(Some(ty)) = self.owner_ty.clone() {

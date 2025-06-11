@@ -1,29 +1,32 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{
+    gen_fn_map,
     interpreter::Interpreter,
-    types::{BoxIterUtils, Datatype, Downcast, Ref, RefT, RustFunc, Value, Void, StringT},
+    invalid,
+    types::{
+        BoxIterUtils, Datatype, Downcast, Func, FuncT, Iter, IterT, Maybe, MaybeT, Ref, RefT,
+        RustFunc, StringT, Val, Value, Void,
+    },
 };
 
+gen_fn_map!(
+    BUILTIN_FUNCS,
+    ("ref", ref_sig, ref_fn),
+    ("println", println_sig, println_fn),
+    ("error", error_sig, error_fn),
+    ("format", format_sig, format_fn),
+    ("filled", filled_sig, filled_fn),
+    ("iter", iter_sig, iter_fn)
+);
+
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
-    HashMap::from_iter([
+    HashMap::from_iter(BUILTIN_FUNCS.iter().map(|(name, (sig, func))| {
         (
-            "ref".to_string(),
-            Box::new(RustFunc::new_const(ref_sig, ref_fn)) as Value,
-        ),
-        (
-            "println".to_string(),
-            Box::new(RustFunc::new_const(println_sig, println_fn)),
-        ),
-        (
-            "error".to_string(),
-            Box::new(RustFunc::new_const(error_sig, error_fn)),
-        ),
-        (
-            "format".to_string(),
-            Box::new(RustFunc::new_const(format_sig, format_fn)),
-        ),
-    ])
+            name.to_string(),
+            Box::new(RustFunc::new_const(*sig, *func)) as Value,
+        )
+    }))
 });
 
 fn ref_sig(params: Vec<Datatype>) -> Option<Datatype> {
@@ -94,4 +97,63 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
         }
     }
     Box::new(res)
+}
+
+fn filled_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    if params.len() == 1 {
+        Some(Box::new(MaybeT {
+            output: params[0].clone(),
+        }))
+    } else {
+        None
+    }
+}
+
+fn filled_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+    if params.len() == 1 {
+        Box::new(Maybe {
+            output: params[0].get_type(),
+            contents: Some(params[0].clone()),
+        })
+    } else {
+        invalid!("Call", "filled", params)
+    }
+}
+
+// TODO: maybe::null constructor once generics are implemented
+
+fn iter_sig(params: Vec<Datatype>) -> Option<Datatype> {
+    if params.len() == 1 {
+        let func = params.first().and_then(|p| p.downcast::<FuncT>())?;
+        if func.params.0.len() > 0 {
+            return None;
+        }
+        let output = func.output.downcast::<MaybeT>()?.output;
+        Some(Box::new(IterT { output }))
+    } else {
+        None
+    }
+}
+
+fn iter_fn(params: Vec<Value>, _i: &mut Interpreter) -> Value {
+    if params.len() == 1 {
+        let func = params
+            .first()
+            .and_then(|p| p.downcast::<Func>())
+            .expect("Invalid function call");
+        if func.params.0.len() > 0 {
+            invalid!("Call", "iter", params);
+        }
+        let output = func
+            .output
+            .downcast::<MaybeT>()
+            .expect("Invalid function call")
+            .output;
+        Box::new(Iter {
+            output,
+            next_fn: func.dup(),
+        })
+    } else {
+        invalid!("Call", "iter", params);
+    }
 }

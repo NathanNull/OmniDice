@@ -40,6 +40,7 @@ impl FuncSum {
 type_init!(FuncSumT, FuncSum, "func", f_types: TypeList);
 
 // TODO: idk if this needed anything but if it does, add it
+// TODO: what did I mean by this
 impl Type for FuncSumT {
     fn call_result(&self, params: Vec<Datatype>) -> Option<Datatype> {
         for f in self.f_types.0.iter().rev() {
@@ -56,11 +57,32 @@ impl Type for FuncSumT {
     fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
-                f_types: TypeList(vec![self.dup(), other.dup()])
+                f_types: TypeList(vec![self.dup(), other.dup()]),
             }))
         } else {
             None
         }
+    }
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+        let mut f_types = vec![];
+        for t in &self.f_types.0 {
+            f_types.push(t.insert_generics(generics)?);
+        }
+        Some(Box::new(Self {
+            f_types: TypeList(f_types),
+        }))
+    }
+    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+        let other = other.downcast::<Self>()?;
+        let mut vars = HashMap::new();
+        for t in &self.f_types.0 {
+            for v in &other.f_types.0 {
+                for (name, var) in t.try_match(v)? {
+                    vars.insert(name, var);
+                }
+            }
+        }
+        Some(vars)
     }
 }
 impl Val for FuncSum {
