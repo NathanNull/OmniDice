@@ -66,3 +66,4 @@ let fn = func<T,U>(p1: T, p2: U) -> T {
 };
 let a = fn(1, 5);
 printf("{}", a);
+printf("1: {}, 2: {}, 3: {}", (1,2,3));

@@ -79,7 +79,7 @@ impl Display for FuncT {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "func{}({})->{}",
+            "func<{}>({})->{}",
             if self.generic.len() > 0 {
                 format!(
                     "{}",

@@ -11,6 +11,7 @@ pub enum Token {
     EOL,
     EOF,
     Arrow,
+    Comma,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,7 +58,6 @@ pub enum OpLike {
     Assign,
     OpAssign(Op),
     Access,
-    Comma,
     Bracket(Bracket),
     Colon,
 }
@@ -84,7 +84,6 @@ impl Debug for OpLike {
             Self::Assign => "=",
             Self::OpAssign(op) => &format!("{op:?}="),
             Self::Access => ".",
-            Self::Comma => ",",
             Self::Bracket(b) => &format!("{b:?}"),
             Self::Colon => ":",
         };
@@ -286,7 +285,7 @@ impl<'a> Lexer<'a> {
             ("]", Token::OpLike(OpLike::Bracket(Bracket::RSquare))),
             ("=", Token::OpLike(OpLike::Assign)),
             (".", Token::OpLike(OpLike::Access)),
-            (",", Token::OpLike(OpLike::Comma)),
+            (",", Token::Comma),
             (":", Token::OpLike(OpLike::Colon)),
             (";", Token::EOL),
         ] {
