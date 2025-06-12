@@ -1,4 +1,4 @@
-use std::sync::RwLockReadGuard;
+use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
 use crate::{gen_fn_map, invalid, mut_type_init, type_init};
@@ -42,15 +42,25 @@ impl Arr {
 
 type_init!(ArrT, Arr, "array", (RwLockReadGuard<_InnerArr>), entry: Datatype);
 
-fn push_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut p_iter = params.iter();
-    if let Some(arr) = p_iter.next().and_then(|p| p.downcast::<ArrT>()) {
-        if p_iter.next().is_some_and(|p| *p == arr.entry) && p_iter.next().is_none() {
-            return Some(Box::new(Void));
-        }
-    }
-    None
-}
+// fn push_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut p_iter = params.iter();
+//     if let Some(arr) = p_iter.next().and_then(|p| p.downcast::<ArrT>()) {
+//         if p_iter.next().is_some_and(|p| *p == arr.entry) && p_iter.next().is_none() {
+//             return Some(Box::new(Void));
+//         }
+//     }
+//     None
+// }
+
+static TV1_NAME: &str = "__T";
+static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
+
+static PUSH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![TV1.clone()]),
+    output: Box::new(Void),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(Box::new(ArrT { entry: TV1.clone() }))),
+});
 
 fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut p_iter = params.iter().cloned();
@@ -64,15 +74,23 @@ fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
     invalid!("Call", "push", params)
 }
 
-fn pop_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut p_iter = params.iter().cloned();
-    if let Some(arr) = p_iter.next_as::<ArrT>() {
-        if p_iter.next().is_none() {
-            return Some(arr.entry);
-        }
-    }
-    None
-}
+// fn pop_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut p_iter = params.iter().cloned();
+//     if let Some(arr) = p_iter.next_as::<ArrT>() {
+//         if p_iter.next().is_none() {
+//             return Some(arr.entry);
+//         }
+//     }
+//     None
+// }
+
+// TODO: make this return a maybe
+static POP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: TV1.clone(),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(Box::new(ArrT { entry: TV1.clone() }))),
+});
 
 fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut p_iter = params.iter().cloned();
@@ -86,15 +104,35 @@ fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Val
     invalid!("Call", "push", params)
 }
 
-fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut p_iter = params.iter().cloned();
-    if let Some(arr) = p_iter.next_as::<ArrT>() {
-        if p_iter.next().is_none() {
-            return Some(Box::new(IterT { output: arr.entry }));
-        }
-    }
-    None
-}
+// fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut p_iter = params.iter().cloned();
+//     if let Some(arr) = p_iter.next_as::<ArrT>() {
+//         if p_iter.next().is_none() {
+//             return Some(Box::new(IterT { output: arr.entry }));
+//         }
+//     }
+//     None
+// }
+
+static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(IterT {
+        output: TV1.clone(),
+    }),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(Box::new(ArrT { entry: TV1.clone() }))),
+});
+
+static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(MaybeT {
+        output: TV1.clone(),
+    }),
+    generic: GenericList(vec![]),
+    owner_t: MaybeOwnerTy(Some(Box::new(TupT {
+        entries: TypeList(vec![Box::new(IntT), Box::new(ArrT { entry: TV1.clone() })]),
+    }))),
+});
 
 fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut p_iter = params.iter().cloned();
@@ -102,8 +140,7 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
         if p_iter.next().is_none() {
             return Box::new(Iter {
                 output: arr.inner().entry.clone(),
-                next_fn: Box::new(RustFunc::new_member(
-                    iter_ret_sig,
+                next_fn: Box::new(ITER_RET_SIG.clone().make_rust_member(
                     iter_ret_fn,
                     Box::new(Tuple::new(vec![Box::new(0), arr.dup()])),
                 )),
@@ -113,12 +150,12 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
     invalid!("Call", "iter", params);
 }
 
-fn iter_ret_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    let me = it.next_as::<TupT>()?;
-    let arr = me.entries.0.get(1).and_then(|v| v.downcast::<ArrT>())?;
-    Some(Box::new(MaybeT { output: arr.entry }))
-}
+// fn iter_ret_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     let me = it.next_as::<TupT>()?;
+//     let arr = me.entries.0.get(1).and_then(|v| v.downcast::<ArrT>())?;
+//     Some(Box::new(MaybeT { output: arr.entry }))
+// }
 
 fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
@@ -146,9 +183,9 @@ fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -
 
 gen_fn_map!(
     ARR_FNS,
-    ("push", push_sig, push_fn),
-    ("pop", pop_sig, pop_fn),
-    ("iter", iter_sig, iter_fn)
+    ("push", PUSH_SIG, push_fn),
+    ("pop", POP_SIG, pop_fn),
+    ("iter", ITER_SIG, iter_fn)
 );
 
 impl Type for ArrT {
@@ -166,9 +203,14 @@ impl Type for ArrT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(IntT)),
-            n if ARR_FNS.contains_key(n) => {
-                Some(Box::new(RustFuncT::new_member(ARR_FNS[n].0, self.dup())))
-            }
+            n if ARR_FNS.contains_key(n) => Some(
+                ARR_FNS[n]
+                    .0
+                    .clone()
+                    .with_owner(self.dup())
+                    .expect("Invalid owner")
+                    .dup(),
+            ),
             _ => None,
         }
     }
@@ -226,9 +268,12 @@ impl Val for Arr {
     fn get_prop(&self, name: &str) -> Value {
         match name {
             "length" => Box::new(self.inner().elements.len() as i32),
-            n if ARR_FNS.contains_key(n) => {
-                Box::new(RustFunc::new_member(ARR_FNS[n].0, ARR_FNS[n].1, self.dup()))
-            }
+            n if ARR_FNS.contains_key(n) => Box::new(
+                ARR_FNS[n]
+                    .0
+                    .clone()
+                    .make_rust_member(ARR_FNS[n].1, self.dup()),
+            ),
             _ => invalid!("Prop", self, name),
         }
     }

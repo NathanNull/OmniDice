@@ -67,9 +67,17 @@ impl Type for TupT {
     fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         let other = other.downcast::<Self>()?;
         let mut vars = HashMap::new();
-        for t in &self.entries.0 {
-            for v in &other.entries.0 {
-                for (name, var) in t.try_match(v)? {
+        if self.entries.0.len() != other.entries.0.len() {
+            return None;
+        }
+        for (t, v) in self.entries.0.iter().zip(other.entries.0.iter()) {
+            let matched = t.try_match(v)?;
+            for (name, var) in matched {
+                if let Some(res) = vars.get(&name) {
+                    if *res != *var {
+                        return None;
+                    }
+                } else {
                     vars.insert(name, var);
                 }
             }
@@ -77,7 +85,12 @@ impl Type for TupT {
         Some(vars)
     }
     fn get_generics(&self) -> Vec<String> {
-        self.entries.0.iter().map(|e|e.get_generics().into_iter()).flatten().collect()
+        self.entries
+            .0
+            .iter()
+            .map(|e| e.get_generics().into_iter())
+            .flatten()
+            .collect()
     }
 }
 impl Val for Tuple {

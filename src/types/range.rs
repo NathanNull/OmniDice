@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::{gen_fn_map, invalid, mut_type_init, type_init};
 
 use super::*;
@@ -18,40 +20,61 @@ mut_type_init!(Range, _InnerRange);
 
 impl Range {
     pub fn new(start: i32, end: i32) -> Self {
-        Self::make(_InnerRange { curr: start - 1, last: end })
+        Self::make(_InnerRange {
+            curr: start - 1,
+            last: end,
+        })
     }
 }
 
 type_init!(RangeT, Range, "range");
 
-fn range_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    it.next_as::<RangeT>()?;
-    Some(Box::new(IterT {
+static RANGE_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(IterT {
         output: Box::new(IntT),
-    }))
-}
+    }),
+    generic: GenericList(vec![]),
+    owner_t: MaybeOwnerTy(Some(Box::new(RangeT))),
+});
+
+static RANGE_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(MaybeT {
+        output: Box::new(IntT),
+    }),
+    generic: GenericList(vec![]),
+    owner_t: MaybeOwnerTy(Some(Box::new(RangeT))),
+});
+
+// fn range_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     it.next_as::<RangeT>()?;
+//     Some(Box::new(IterT {
+//         output: Box::new(IntT),
+//     }))
+// }
 
 fn range_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let me = it.next_as::<Range>().expect("Invalid call");
     Box::new(Iter {
         output: Box::new(IntT),
-        next_fn: Box::new(RustFunc::new_member(
-            range_iter_sig,
-            range_iter_fn,
-            Box::new(me),
-        )),
+        next_fn: Box::new(
+            RANGE_ITER_SIG
+                .clone()
+                .make_rust_member(range_iter_fn, Box::new(me)),
+        ),
     })
 }
 
-fn range_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    it.next_as::<RangeT>()?;
-    Some(Box::new(MaybeT {
-        output: Box::new(IntT),
-    }))
-}
+// fn range_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     it.next_as::<RangeT>()?;
+//     Some(Box::new(MaybeT {
+//         output: Box::new(IntT),
+//     }))
+// }
 
 fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
@@ -69,14 +92,12 @@ fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>)
     })
 }
 
-gen_fn_map!(RANGE_FNS, ("iter", range_sig, range_fn));
+gen_fn_map!(RANGE_FNS, ("iter", RANGE_SIG, range_fn));
 
 impl Type for RangeT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            n if RANGE_FNS.contains_key(n) => {
-                Some(Box::new(RustFuncT::new_member(RANGE_FNS[n].0, self.dup())))
-            }
+            n if RANGE_FNS.contains_key(n) => Some(RANGE_FNS[n].0.dup()),
             _ => None,
         }
     }
@@ -84,11 +105,12 @@ impl Type for RangeT {
 impl Val for Range {
     fn get_prop(&self, name: &str) -> Value {
         match name {
-            n if RANGE_FNS.contains_key(n) => Box::new(RustFunc::new_member(
-                RANGE_FNS[n].0,
-                RANGE_FNS[n].1,
-                self.dup(),
-            )),
+            n if RANGE_FNS.contains_key(n) => Box::new(
+                RANGE_FNS[n]
+                    .0
+                    .clone()
+                    .make_rust_member(RANGE_FNS[n].1, self.dup()),
+            ),
             _ => invalid!("Prop", self, name),
         }
     }

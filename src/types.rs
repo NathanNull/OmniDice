@@ -26,10 +26,10 @@ mod ref_t;
 pub use ref_t::{Ref, RefT};
 
 mod function;
-pub use function::{Func, FuncT};
+pub use function::{Func, FuncT, InnerFunc, MaybeOwnerTy};
 
-mod rust_function;
-pub use rust_function::{RustFunc, RustFuncT};
+// mod rust_function;
+// pub use rust_function::{RustFunc, RustFuncT};
 
 mod func_sum;
 pub use func_sum::{FuncSum, FuncSumT};
@@ -453,7 +453,7 @@ macro_rules! gen_fn_map {
             ::std::collections::HashMap<
                 &'static str,
                 (
-                    fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+                    FuncT,
                     fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
                 ),
             >,
@@ -462,7 +462,7 @@ macro_rules! gen_fn_map {
                 $((
                     $fname,
                     (
-                        $fsig as fn(Vec<Datatype>, Option<Datatype>) -> Option<Datatype>,
+                        (&$fsig as &FuncT).clone(),
                         $ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
                     ),
                 ),)*

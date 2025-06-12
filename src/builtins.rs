@@ -5,40 +5,49 @@ use crate::{
     interpreter::Interpreter,
     invalid,
     types::{
-        BoxIterUtils, Datatype, Downcast, Func, FuncT, Iter, IterT, Maybe, MaybeT, Ref, RefT,
-        RustFunc, StringT, Val, Value, Void,
+        BoxIterUtils, Datatype, Downcast, Func, FuncT, GenericList, Iter, IterT, Maybe, MaybeOwnerTy, MaybeT, Ref, RefT, StringT, TypeList, TypeVar, Val, Value, Void
     },
 };
 
 gen_fn_map!(
     BUILTIN_FUNCS,
-    ("ref", ref_sig, ref_fn),
-    ("println", println_sig, println_fn),
-    ("error", error_sig, error_fn),
-    ("format", format_sig, format_fn),
-    ("filled", filled_sig, filled_fn),
-    ("iter", iter_sig, iter_fn),
-    ("null", null_sig, null_fn)
+    ("ref", REF_SIG, ref_fn),
+    ("println", PRINTLN_SIG, println_fn),
+    ("printf", PRINTF_SIG, printf_fn),
+    ("error", ERROR_SIG, error_fn),
+    ("format", FORMAT_SIG, format_fn),
+    ("filled", FILLED_SIG, filled_fn),
+    ("iter", ITER_SIG, iter_fn),
+    ("null", NULL_SIG, null_fn)
 );
 
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     HashMap::from_iter(BUILTIN_FUNCS.iter().map(|(name, (sig, func))| {
         (
             name.to_string(),
-            Box::new(RustFunc::new_const(*sig, *func)) as Value,
+            Box::new(sig.clone().make_rust(*func)) as Value,
         )
     }))
 });
 
-fn ref_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    if params.len() == 1 {
-        Some(Box::new(RefT {
-            ty: params[0].clone(),
-        }))
-    } else {
-        None
-    }
-}
+// fn ref_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     if params.len() == 1 {
+//         Some(Box::new(RefT {
+//             ty: params[0].clone(),
+//         }))
+//     } else {
+//         None
+//     }
+// }
+static TV1_NAME: &str = "__T";
+static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
+
+static REF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![TV1.clone()]),
+    output: Box::new(RefT { ty: TV1.clone() }),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
 
 fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     if params.len() == 1 {
@@ -48,19 +57,46 @@ fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Val
     }
 }
 
-fn println_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
-    format_sig(params, o)
+// fn println_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
+//     format_sig(params, o)
+// }
+static PRINTLN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![Box::new(StringT)]),
+    output: Box::new(Void),
+    generic: GenericList(vec![]),
+    owner_t: MaybeOwnerTy(None),
+});
+
+fn println_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+    let res = params.first().unwrap().downcast::<String>().unwrap();
+    println!("{res}");
+    Box::new(Void)
 }
 
-fn println_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Value {
+static PRINTF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![Box::new(StringT), TV1.clone()]),
+    output: Box::new(Void),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
+
+fn printf_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Value {
     let res = format_fn(params, i, o).downcast::<String>().unwrap();
     println!("{res}");
-    Box::new(res)
+    Box::new(Void)
 }
 
-fn error_sig(_params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    Some(Box::new(Void))
-}
+
+// fn error_sig(_params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     Some(Box::new(Void))
+// }
+
+static ERROR_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![TV1.clone()]),
+    output: Box::new(Void),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
 
 fn error_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     panic!(
@@ -73,13 +109,12 @@ fn error_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> V
     );
 }
 
-fn format_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    if params.len() > 0 && params[0] == StringT {
-        Some(Box::new(StringT))
-    } else {
-        None
-    }
-}
+static FORMAT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![Box::new(StringT), TV1.clone()]),
+    output: Box::new(StringT),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
 
 fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut param_iter = params.clone().into_iter();
@@ -100,15 +135,24 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Box::new(res)
 }
 
-fn filled_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    if params.len() == 1 {
-        Some(Box::new(MaybeT {
-            output: params[0].clone(),
-        }))
-    } else {
-        None
-    }
-}
+// fn filled_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     if params.len() == 1 {
+//         Some(Box::new(MaybeT {
+//             output: params[0].clone(),
+//         }))
+//     } else {
+//         None
+//     }
+// }
+
+static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![TV1.clone()]),
+    output: Box::new(MaybeT {
+        output: TV1.clone(),
+    }),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
 
 fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     if params.len() == 1 {
@@ -121,39 +165,64 @@ fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     }
 }
 
-fn null_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
-    if params.len() == 0 {
-        if let Some(ret) = o.and_then(|o|o.downcast::<MaybeT>()) {
-            return Some(Box::new(ret))
-        }
-    }
-    None
-}
+// fn null_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
+//     if params.len() == 0 {
+//         if let Some(ret) = o.and_then(|o| o.downcast::<MaybeT>()) {
+//             return Some(Box::new(ret));
+//         }
+//     }
+//     None
+// }
+
+static NULL_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(MaybeT {
+        output: TV1.clone(),
+    }),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
 
 fn null_fn(params: Vec<Value>, _i: &mut Interpreter, o: Option<Datatype>) -> Value {
     if params.len() == 0 {
-        if let Some(ret) = o.and_then(|o|o.downcast::<MaybeT>()) {
+        if let Some(ret) = o.and_then(|o| o.downcast::<MaybeT>()) {
             return Box::new(Maybe {
                 output: ret.output,
-                contents: None
-            })
+                contents: None,
+            });
         }
     }
     invalid!("Call", "null", params)
 }
 
-fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    if params.len() == 1 {
-        let func = params.first().and_then(|p| p.downcast::<FuncT>())?;
-        if func.params.0.len() > 0 {
-            return None;
-        }
-        let output = func.output.downcast::<MaybeT>()?.output;
-        Some(Box::new(IterT { output }))
-    } else {
-        None
-    }
-}
+// fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     if params.len() == 1 {
+//         let func = params.first().and_then(|p| p.downcast::<FuncT>())?;
+//         if func.params.0.len() > 0 {
+//             return None;
+//         }
+//         let output = func.output.downcast::<MaybeT>()?.output;
+//         Some(Box::new(IterT { output }))
+//     } else {
+//         None
+//     }
+// }
+
+static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![Box::new(FuncT {
+        params: TypeList(vec![]),
+        output: Box::new(MaybeT {
+            output: TV1.clone(),
+        }),
+        generic: GenericList(vec![]),
+        owner_t: MaybeOwnerTy(None),
+    })]),
+    output: Box::new(IterT {
+        output: TV1.clone(),
+    }),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(None),
+});
 
 fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     if params.len() == 1 {

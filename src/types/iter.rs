@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::{gen_fn_map, invalid, type_init};
 
 use super::*;
@@ -22,14 +24,32 @@ impl Display for Iter {
 
 type_init!(IterT, Iter, "iter", output: Datatype);
 
-fn next_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    if let Some(me) = it.next_as::<IterT>() {
-        Some(Box::new(MaybeT { output: me.output }))
-    } else {
-        None
-    }
-}
+static ITER_T_NAME: &str = "__IterT";
+static ITER_T: LazyLock<Datatype> =
+    LazyLock::new(|| Box::new(TypeVar::Var(ITER_T_NAME.to_string())));
+
+static TV2_NAME: &str = "__T2";
+static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME.to_string())));
+
+// fn next_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     if let Some(me) = it.next_as::<IterT>() {
+//         Some(Box::new(MaybeT { output: me.output }))
+//     } else {
+//         None
+//     }
+// }
+
+static NEXT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(MaybeT {
+        output: ITER_T.clone(),
+    }),
+    generic: GenericList(vec![ITER_T_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(Box::new(IterT {
+        output: ITER_T.clone(),
+    }))),
+});
 
 fn next_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
@@ -45,13 +65,47 @@ fn next_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Val
     }
 }
 
-fn map_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    let me = it.next_as::<IterT>()?;
-    let mapper = it.next_as::<FuncT>()?;
-    let output = mapper.call_result(vec![me.output], None)?;
-    Some(Box::new(IterT { output }))
-}
+// fn map_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     let me = it.next_as::<IterT>()?;
+//     let mapper = it.next_as::<FuncT>()?;
+//     let output = mapper.call_result(vec![me.output], None)?;
+//     Some(Box::new(IterT { output }))
+// }
+
+static MAPPER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![ITER_T.clone()]),
+    output: TV2.clone(),
+    generic: GenericList(vec![]),
+    owner_t: MaybeOwnerTy(None),
+});
+
+static MAP_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: Box::new(MaybeT {
+        output: TV2.clone(),
+    }),
+    generic: GenericList(vec![]),
+    owner_t: MaybeOwnerTy(Some(Box::new(TupT {
+        entries: TypeList(vec![
+            Box::new(IterT {
+                output: ITER_T.clone(),
+            }),
+            MAPPER_SIG.dup(),
+        ]),
+    }))),
+});
+
+static MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![MAPPER_SIG.dup()]),
+    output: Box::new(IterT {
+        output: TV2.clone(),
+    }),
+    generic: GenericList(vec![ITER_T_NAME.to_string(), TV2_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(Box::new(IterT {
+        output: ITER_T.clone(),
+    }))),
+});
 
 fn map_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
@@ -62,23 +116,32 @@ fn map_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Val
             .get_type()
             .call_result(vec![me.output.dup()], None)
             .expect("Invalid call"),
-        next_fn: Box::new(RustFunc::new_member(
-            map_iter_sig,
-            map_iter_fn,
-            Box::new(Tuple::new(vec![me.dup(), mapper.dup()])),
-        )),
+        next_fn: Box::new(
+            MAP_ITER_SIG
+                .insert_generics(&HashMap::from_iter([
+                    (ITER_T_NAME.to_string(), me.output.clone()),
+                    (TV2_NAME.to_string(), mapper.output.clone()),
+                ]))
+                .unwrap()
+                .downcast::<FuncT>()
+                .unwrap()
+                .make_rust_member(
+                    map_iter_fn,
+                    Box::new(Tuple::new(vec![me.dup(), mapper.dup()])),
+                ),
+        ),
     })
 }
 
-fn map_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    let tup = it.next_as::<TupT>()?;
-    let mut it = tup.entries.0.into_iter();
-    let me = it.next_as::<IterT>()?;
-    let mapper = it.next_as::<FuncT>()?;
-    let output = mapper.call_result(vec![me.output], None)?;
-    Some(Box::new(MaybeT { output }))
-}
+// fn map_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     let tup = it.next_as::<TupT>()?;
+//     let mut it = tup.entries.0.into_iter();
+//     let me = it.next_as::<IterT>()?;
+//     let mapper = it.next_as::<FuncT>()?;
+//     let output = mapper.call_result(vec![me.output], None)?;
+//     Some(Box::new(MaybeT { output }))
+// }
 
 fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
@@ -86,7 +149,9 @@ fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) ->
     let mut it = tup.inner().elements.clone().into_iter();
     let me = it.next_as::<Iter>().unwrap();
     let mapper = it.next_as::<Func>().unwrap();
-    let next = next_fn(vec![me.dup()], i, None).downcast::<Maybe>().unwrap();
+    let next = next_fn(vec![me.dup()], i, None)
+        .downcast::<Maybe>()
+        .unwrap();
     Box::new(Maybe {
         output: mapper
             .get_type()
@@ -96,9 +161,16 @@ fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) ->
     })
 }
 
-fn ident_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    params.first().cloned()
-}
+// fn ident_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     params.first().cloned()
+// }
+
+static IDENT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: ITER_T.clone(),
+    generic: GenericList(vec![ITER_T_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(ITER_T.clone())),
+});
 
 fn ident_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     params.first().unwrap().clone()
@@ -106,17 +178,21 @@ fn ident_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> V
 
 gen_fn_map!(
     ITER_FNS,
-    ("next", next_sig, next_fn),
-    ("map", map_sig, map_fn),
-    ("iter", ident_sig, ident_fn)
+    ("next", NEXT_SIG, next_fn),
+    ("map", MAP_SIG, map_fn),
+    ("iter", IDENT_SIG, ident_fn)
 );
 
 impl Type for IterT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            n if ITER_FNS.contains_key(n) => {
-                Some(Box::new(RustFuncT::new_member(ITER_FNS[n].0, self.dup())))
-            }
+            n if ITER_FNS.contains_key(n) => Some(Box::new(
+                ITER_FNS[n]
+                    .0
+                    .clone()
+                    .with_owner(self.dup())
+                    .expect("Invalid owner"),
+            )),
             _ => None,
         }
     }
@@ -136,11 +212,12 @@ impl Type for IterT {
 impl Val for Iter {
     fn get_prop(&self, name: &str) -> Value {
         match name {
-            n if ITER_FNS.contains_key(n) => Box::new(RustFunc::new_member(
-                ITER_FNS[n].0,
-                ITER_FNS[n].1,
-                self.dup(),
-            )),
+            n if ITER_FNS.contains_key(n) => Box::new(
+                ITER_FNS[n]
+                    .0
+                    .clone()
+                    .make_rust_member(ITER_FNS[n].1, self.dup()),
+            ),
             _ => invalid!("Prop", self, name),
         }
     }

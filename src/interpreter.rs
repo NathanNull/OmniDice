@@ -6,7 +6,7 @@ use crate::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
         Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
     },
-    types::{Arr, ArrT, Datatype, Downcast, Func, Maybe, Tuple, Value, Void},
+    types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, MaybeOwnerTy, Tuple, Value, Void},
 };
 
 pub struct VarScope<T: Debug> {
@@ -233,7 +233,10 @@ impl Interpreter {
     }
 
     fn eval_for(&mut self, fo: &For) -> Value {
-        let iter = self.eval_expr(&fo.iter).get_prop("iter").call(vec![], self, None);
+        let iter = self
+            .eval_expr(&fo.iter)
+            .get_prop("iter")
+            .call(vec![], self, None);
         self.variables.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
@@ -281,19 +284,22 @@ impl Interpreter {
     fn eval_function(&mut self, func: &Function) -> Value {
         Box::new(Func {
             params: func.params.iter().map(|(_, t)| t.clone()).collect(),
-            param_names: func.params.iter().map(|(n, _)| n.clone()).collect(),
             output: func.contents.output.clone(),
-            captured_scope: HashMap::from_iter(
-                func.contents
-                    .used_variables()
-                    .filter(|v| !func.params.iter().any(|(n, _)| v == n))
-                    .map(|v| {
-                        let val = self.get_var(&v).clone();
-                        (v, val)
-                    }),
-            ),
             generic: func.generic.clone(),
-            contents: *func.contents.clone(),
+            owner_t: MaybeOwnerTy(None),
+            contents: InnerFunc::Code(
+                *func.contents.clone(),
+                func.params.iter().map(|(n, _)| n.clone()).collect(),
+                HashMap::from_iter(
+                    func.contents
+                        .used_variables()
+                        .filter(|v| !func.params.iter().any(|(n, _)| v == n))
+                        .map(|v| {
+                            let val = self.get_var(&v).clone();
+                            (v, val)
+                        }),
+                ),
+            ),
         })
     }
 

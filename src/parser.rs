@@ -1,14 +1,9 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    TokenIter,
-    builtins::BUILTINS,
-    interpreter::VarScope,
-    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{
-        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, GenericList, IntT, IterT, MaybeT,
-        RefT, StringT, TupT, TypeList, TypeVar, Void,
-    },
+    builtins::BUILTINS, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, GenericList, IntT, IterT, MaybeOwnerTy, MaybeT, RefT, StringT, TupT, TypeList, TypeVar, Void
+    }, TokenIter
 };
 
 pub mod expr;
@@ -173,6 +168,7 @@ impl Parser {
                 params: func.params.iter().map(|(_, t)| t.clone()).collect(),
                 output: func.contents.output.clone(),
                 generic: func.generic.clone(),
+                owner_t: MaybeOwnerTy(None),
             }),
             ExprContents::Call(call) => {
                 let params: Vec<Datatype> = call.params.iter().map(|p| p.output.clone()).collect();
@@ -814,6 +810,7 @@ impl Parser {
                     params: TypeList(params),
                     output,
                     generic: GenericList(vec![]),
+                    owner_t: MaybeOwnerTy(None),
                 })
             }
             Some(Token::OpLike(OpLike::Bracket(b))) => match b {

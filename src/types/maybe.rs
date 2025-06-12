@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::{invalid, type_init};
 
 use super::*;
@@ -5,7 +7,7 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct Maybe {
     pub output: Datatype,
-    pub contents: Option<Value>
+    pub contents: Option<Value>,
 }
 
 impl PartialEq for Maybe {
@@ -25,14 +27,26 @@ impl Display for Maybe {
 
 type_init!(MaybeT, Maybe, "maybe", output: Datatype);
 
-fn unwrap_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-    let mut it = params.iter().cloned();
-    if let Some(me) = it.next_as::<MaybeT>() {
-        Some(me.output)
-    } else {
-        None
-    }
-}
+// fn unwrap_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
+//     let mut it = params.iter().cloned();
+//     if let Some(me) = it.next_as::<MaybeT>() {
+//         Some(me.output)
+//     } else {
+//         None
+//     }
+// }
+
+static TV1_NAME: &str = "__T";
+static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
+
+static UNWRAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: TypeList(vec![]),
+    output: TV1.clone(),
+    generic: GenericList(vec![TV1_NAME.to_string()]),
+    owner_t: MaybeOwnerTy(Some(Box::new(MaybeT {
+        output: TV1.clone(),
+    }))),
+});
 
 fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
@@ -46,7 +60,7 @@ fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
 impl Type for MaybeT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "unwrap" => Some(Box::new(RustFuncT::new_member(unwrap_sig, self.dup()))),
+            "unwrap" => Some(Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).expect("Invalid owner"))),
             "filled" => Some(Box::new(BoolT)),
             _ => None,
         }
@@ -67,7 +81,7 @@ impl Type for MaybeT {
 impl Val for Maybe {
     fn get_prop(&self, name: &str) -> Value {
         match name {
-            "unwrap" => Box::new(RustFunc::new_member(unwrap_sig, unwrap_fn, self.dup())),
+            "unwrap" => Box::new(UNWRAP_SIG.clone().make_rust_member(unwrap_fn, self.dup())),
             "filled" => Box::new(self.contents.is_some()),
             _ => invalid!("Prop", self, name),
         }
