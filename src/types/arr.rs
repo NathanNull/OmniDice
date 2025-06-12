@@ -56,10 +56,10 @@ static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
 static PUSH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![TV1.clone()]),
+    params: vec![TV1.clone()],
     output: Box::new(Void),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(Box::new(ArrT { entry: TV1.clone() }))),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
 fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -86,10 +86,10 @@ fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
 
 // TODO: make this return a maybe
 static POP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: TV1.clone(),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(Box::new(ArrT { entry: TV1.clone() }))),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
 fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -115,23 +115,23 @@ fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Val
 // }
 
 static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(IterT {
         output: TV1.clone(),
     }),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(Box::new(ArrT { entry: TV1.clone() }))),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
 static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(MaybeT {
         output: TV1.clone(),
     }),
-    generic: GenericList(vec![]),
-    owner_t: MaybeOwnerTy(Some(Box::new(TupT {
-        entries: TypeList(vec![Box::new(IntT), Box::new(ArrT { entry: TV1.clone() })]),
-    }))),
+    generic: vec![],
+    owner_t: Some(Box::new(TupT {
+        entries: vec![Box::new(IntT), Box::new(ArrT { entry: TV1.clone() })],
+    })),
 });
 
 fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -219,7 +219,7 @@ impl Type for ArrT {
         if index == &IntT {
             Some(self.entry.clone())
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
-            if tup.entries.0.iter().all(|e| e == &IntT) {
+            if tup.entries.iter().all(|e| e == &IntT) {
                 Some(self.dup())
             } else {
                 None

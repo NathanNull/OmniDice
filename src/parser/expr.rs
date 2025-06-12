@@ -8,7 +8,7 @@ use strum::EnumIter;
 
 use crate::{
     lexer::OpLike,
-    types::{Datatype, GenericList, Value},
+    types::{Datatype, Value},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -201,8 +201,8 @@ impl Display for Expr {
             ExprContents::Function(func) => (
                 format!(
                     "func{} ({})",
-                    if func.generic.0.len() > 0 {
-                        format!("<{}>", func.generic.0.join(", "))
+                    if func.generic.len() > 0 {
+                        format!("<{}>", func.generic.join(", "))
                     } else {
                         "".to_string()
                     },
@@ -724,7 +724,7 @@ impl Debug for Tuple {
 pub struct Function {
     pub params: Vec<(String, Datatype)>,
     pub contents: Box<Expr>,
-    pub generic: GenericList,
+    pub generic: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

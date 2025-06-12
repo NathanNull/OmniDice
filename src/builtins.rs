@@ -5,7 +5,8 @@ use crate::{
     interpreter::Interpreter,
     invalid,
     types::{
-        BoxIterUtils, Datatype, Downcast, Func, FuncT, GenericList, Iter, IterT, Maybe, MaybeOwnerTy, MaybeT, Ref, RefT, StringT, TypeList, TypeVar, Val, Value, Void
+        BoxIterUtils, Datatype, Downcast, Func, FuncT, Iter, IterT, Maybe, MaybeT, Ref, RefT,
+        StringT, TypeVar, Val, Value, Void,
     },
 };
 
@@ -43,10 +44,10 @@ static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
 static REF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![TV1.clone()]),
+    params: vec![TV1.clone()],
     output: Box::new(RefT { ty: TV1.clone() }),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -61,10 +62,10 @@ fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Val
 //     format_sig(params, o)
 // }
 static PRINTLN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![Box::new(StringT)]),
+    params: vec![Box::new(StringT)],
     output: Box::new(Void),
-    generic: GenericList(vec![]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![],
+    owner_t: None,
 });
 
 fn println_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -74,10 +75,10 @@ fn println_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) ->
 }
 
 static PRINTF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![Box::new(StringT), TV1.clone()]),
+    params: vec![Box::new(StringT), TV1.clone()],
     output: Box::new(Void),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn printf_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Value {
@@ -86,16 +87,15 @@ fn printf_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Va
     Box::new(Void)
 }
 
-
 // fn error_sig(_params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
 //     Some(Box::new(Void))
 // }
 
 static ERROR_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![TV1.clone()]),
+    params: vec![TV1.clone()],
     output: Box::new(Void),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn error_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -110,10 +110,10 @@ fn error_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> V
 }
 
 static FORMAT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![Box::new(StringT), TV1.clone()]),
+    params: vec![Box::new(StringT), TV1.clone()],
     output: Box::new(StringT),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -146,12 +146,12 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
 // }
 
 static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![TV1.clone()]),
+    params: vec![TV1.clone()],
     output: Box::new(MaybeT {
         output: TV1.clone(),
     }),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -175,12 +175,12 @@ fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
 // }
 
 static NULL_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(MaybeT {
         output: TV1.clone(),
     }),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn null_fn(params: Vec<Value>, _i: &mut Interpreter, o: Option<Datatype>) -> Value {
@@ -209,19 +209,19 @@ fn null_fn(params: Vec<Value>, _i: &mut Interpreter, o: Option<Datatype>) -> Val
 // }
 
 static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![Box::new(FuncT {
-        params: TypeList(vec![]),
+    params: vec![Box::new(FuncT {
+        params: vec![],
         output: Box::new(MaybeT {
             output: TV1.clone(),
         }),
-        generic: GenericList(vec![]),
-        owner_t: MaybeOwnerTy(None),
-    })]),
+        generic: vec![],
+        owner_t: None,
+    })],
     output: Box::new(IterT {
         output: TV1.clone(),
     }),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: None,
 });
 
 fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -230,7 +230,7 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
             .first()
             .and_then(|p| p.downcast::<Func>())
             .expect("Invalid function call");
-        if func.params.0.len() > 0 {
+        if func.params.len() > 0 {
             invalid!("Call", "iter", params);
         }
         let output = func

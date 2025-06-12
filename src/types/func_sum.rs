@@ -5,7 +5,7 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct FuncSum {
     pub fns: Vec<Value>,
-    pub f_types: TypeList,
+    pub f_types: Vec<Datatype>,
 }
 
 impl Display for FuncSum {
@@ -37,13 +37,31 @@ impl FuncSum {
     }
 }
 
-type_init!(FuncSumT, FuncSum, "func", f_types: TypeList);
+type_init!(FuncSumT {nodisplay}, FuncSum, "func", f_types: Vec<Datatype>);
+
+impl Display for FuncSumT {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "fsum({})",
+            self.f_types
+                .iter()
+                .map(|f| format!("{f}"))
+                .collect::<Vec<_>>()
+                .join(" + ")
+        )
+    }
+}
 
 // TODO: idk if this needed anything but if it does, add it
 // TODO: what did I mean by this
 impl Type for FuncSumT {
-    fn real_call_result(&self, params: Vec<Datatype>, expected_output: Option<Datatype>) -> Option<Datatype> {
-        for f in self.f_types.0.iter().rev() {
+    fn real_call_result(
+        &self,
+        params: Vec<Datatype>,
+        expected_output: Option<Datatype>,
+    ) -> Option<Datatype> {
+        for f in self.f_types.iter().rev() {
             if let Some(res) = f.call_result(params.clone(), expected_output.clone()) {
                 return Some(res);
             }
@@ -57,7 +75,7 @@ impl Type for FuncSumT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
-                f_types: TypeList(vec![self.dup(), other.dup()]),
+                f_types: vec![self.dup(), other.dup()],
             }))
         } else {
             None
@@ -65,18 +83,16 @@ impl Type for FuncSumT {
     }
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
         let mut f_types = vec![];
-        for t in &self.f_types.0 {
+        for t in &self.f_types {
             f_types.push(t.insert_generics(generics)?);
         }
-        Some(Box::new(Self {
-            f_types: TypeList(f_types),
-        }))
+        Some(Box::new(Self { f_types }))
     }
     fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         let other = other.downcast::<Self>()?;
         let mut vars = HashMap::new();
-        for t in &self.f_types.0 {
-            for v in &other.f_types.0 {
+        for t in &self.f_types {
+            for v in &other.f_types {
                 for (name, var) in t.try_match(v)? {
                     vars.insert(name, var);
                 }
@@ -85,13 +101,25 @@ impl Type for FuncSumT {
         Some(vars)
     }
     fn get_generics(&self) -> Vec<String> {
-        self.f_types.0.iter().map(|f|f.get_generics().into_iter()).flatten().collect()
+        self.f_types
+            .iter()
+            .map(|f| f.get_generics().into_iter())
+            .flatten()
+            .collect()
     }
 }
 impl Val for FuncSum {
-    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter, expected_output: Option<Datatype>) -> Value {
-        for (ty, f) in self.f_types.0.iter().zip(self.fns.iter()).rev() {
-            if let Some(_) = ty.call_result(params.iter().map(|v| v.get_type()).collect(), expected_output.clone()) {
+    fn call(
+        &self,
+        params: Vec<Value>,
+        interpreter: &mut Interpreter,
+        expected_output: Option<Datatype>,
+    ) -> Value {
+        for (ty, f) in self.f_types.iter().zip(self.fns.iter()).rev() {
+            if let Some(_) = ty.call_result(
+                params.iter().map(|v| v.get_type()).collect(),
+                expected_output.clone(),
+            ) {
                 return f.call(params, interpreter, expected_output);
             }
         }

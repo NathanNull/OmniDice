@@ -41,14 +41,14 @@ static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME
 // }
 
 static NEXT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(MaybeT {
         output: ITER_T.clone(),
     }),
-    generic: GenericList(vec![ITER_T_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(Box::new(IterT {
+    generic: vec![ITER_T_NAME.to_string()],
+    owner_t: Some(Box::new(IterT {
         output: ITER_T.clone(),
-    }))),
+    })),
 });
 
 fn next_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -74,37 +74,37 @@ fn next_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Val
 // }
 
 static MAPPER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![ITER_T.clone()]),
+    params: vec![ITER_T.clone()],
     output: TV2.clone(),
-    generic: GenericList(vec![]),
-    owner_t: MaybeOwnerTy(None),
+    generic: vec![],
+    owner_t: None,
 });
 
 static MAP_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(MaybeT {
         output: TV2.clone(),
     }),
-    generic: GenericList(vec![]),
-    owner_t: MaybeOwnerTy(Some(Box::new(TupT {
-        entries: TypeList(vec![
+    generic: vec![],
+    owner_t: Some(Box::new(TupT {
+        entries: vec![
             Box::new(IterT {
                 output: ITER_T.clone(),
             }),
             MAPPER_SIG.dup(),
-        ]),
-    }))),
+        ],
+    })),
 });
 
 static MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![MAPPER_SIG.dup()]),
+    params: vec![MAPPER_SIG.dup()],
     output: Box::new(IterT {
         output: TV2.clone(),
     }),
-    generic: GenericList(vec![ITER_T_NAME.to_string(), TV2_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(Box::new(IterT {
+    generic: vec![ITER_T_NAME.to_string(), TV2_NAME.to_string()],
+    owner_t: Some(Box::new(IterT {
         output: ITER_T.clone(),
-    }))),
+    })),
 });
 
 fn map_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
@@ -166,10 +166,10 @@ fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) ->
 // }
 
 static IDENT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: ITER_T.clone(),
-    generic: GenericList(vec![ITER_T_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(ITER_T.clone())),
+    generic: vec![ITER_T_NAME.to_string()],
+    owner_t: Some(ITER_T.clone()),
 });
 
 fn ident_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {

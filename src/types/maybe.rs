@@ -40,12 +40,12 @@ static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
 static UNWRAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: TV1.clone(),
-    generic: GenericList(vec![TV1_NAME.to_string()]),
-    owner_t: MaybeOwnerTy(Some(Box::new(MaybeT {
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: Some(Box::new(MaybeT {
         output: TV1.clone(),
-    }))),
+    })),
 });
 
 fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {

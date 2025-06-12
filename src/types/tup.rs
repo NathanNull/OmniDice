@@ -6,7 +6,7 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct _InnerTuple {
-    entries: TypeList,
+    entries: Vec<Datatype>,
     pub elements: Vec<Value>,
 }
 
@@ -41,7 +41,21 @@ impl Tuple {
     }
 }
 
-type_init!(TupT, Tuple, "tuple", (RwLockReadGuard<_InnerTuple>), entries: TypeList);
+type_init!(TupT {nodisplay}, Tuple, "tuple", (RwLockReadGuard<_InnerTuple>), entries: Vec<Datatype>);
+
+impl Display for TupT {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({},)",
+            self.entries
+                .iter()
+                .map(|e| format!("{e}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
 
 fn as_idx(prop: &str) -> Option<usize> {
     prop.strip_prefix('i').and_then(|n| n.parse::<usize>().ok())
@@ -50,27 +64,25 @@ fn as_idx(prop: &str) -> Option<usize> {
 impl Type for TupT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         if let Some(idx) = as_idx(name) {
-            self.entries.0.get(idx).cloned()
+            self.entries.get(idx).cloned()
         } else {
             None
         }
     }
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
         let mut entries = vec![];
-        for t in &self.entries.0 {
+        for t in &self.entries {
             entries.push(t.insert_generics(generics)?);
         }
-        Some(Box::new(Self {
-            entries: TypeList(entries),
-        }))
+        Some(Box::new(Self { entries }))
     }
     fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         let other = other.downcast::<Self>()?;
         let mut vars = HashMap::new();
-        if self.entries.0.len() != other.entries.0.len() {
+        if self.entries.len() != other.entries.len() {
             return None;
         }
-        for (t, v) in self.entries.0.iter().zip(other.entries.0.iter()) {
+        for (t, v) in self.entries.iter().zip(other.entries.iter()) {
             let matched = t.try_match(v)?;
             for (name, var) in matched {
                 if let Some(res) = vars.get(&name) {
@@ -86,7 +98,6 @@ impl Type for TupT {
     }
     fn get_generics(&self) -> Vec<String> {
         self.entries
-            .0
             .iter()
             .map(|e| e.get_generics().into_iter())
             .flatten()

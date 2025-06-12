@@ -30,21 +30,21 @@ impl Range {
 type_init!(RangeT, Range, "range");
 
 static RANGE_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(IterT {
         output: Box::new(IntT),
     }),
-    generic: GenericList(vec![]),
-    owner_t: MaybeOwnerTy(Some(Box::new(RangeT))),
+    generic: vec![],
+    owner_t: Some(Box::new(RangeT)),
 });
 
 static RANGE_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: TypeList(vec![]),
+    params: vec![],
     output: Box::new(MaybeT {
         output: Box::new(IntT),
     }),
-    generic: GenericList(vec![]),
-    owner_t: MaybeOwnerTy(Some(Box::new(RangeT))),
+    generic: vec![],
+    owner_t: Some(Box::new(RangeT)),
 });
 
 // fn range_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {

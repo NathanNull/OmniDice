@@ -4,25 +4,12 @@ use crate::{invalid, parser::Expr, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone)]
-pub struct MaybeOwnerTy(pub Option<Datatype>);
-
-impl Display for MaybeOwnerTy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(ty) = self.0.as_ref() {
-            write!(f, "{ty}")
-        } else {
-            write!(f, "unowned")
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Func {
-    pub params: TypeList,
-    pub owner_t: MaybeOwnerTy,
+    pub params: Vec<Datatype>,
+    pub owner_t: Option<Datatype>,
     pub output: Datatype,
-    pub generic: GenericList,
+    pub generic: Vec<String>,
     pub contents: InnerFunc,
 }
 
@@ -71,7 +58,6 @@ impl Display for Func {
             f,
             "func ({})->{}",
             self.params
-                .0
                 .iter()
                 .map(|p| format!("{p}"))
                 .collect::<Vec<_>>()
@@ -87,7 +73,34 @@ impl PartialEq for Func {
     }
 }
 
-type_init!(FuncT, Func, "func", params: TypeList, output: Datatype, generic: GenericList, owner_t: MaybeOwnerTy);
+type_init!(FuncT {nodisplay}, Func, "func", params: Vec<Datatype>, output: Datatype, generic: Vec<String>, owner_t: Option<Datatype>);
+
+impl Display for FuncT {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "func{}({})->{}",
+            if self.generic.len() > 0 {
+                format!(
+                    "{}",
+                    self.generic
+                        .iter()
+                        .map(|p| format!("{p}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                "".to_string()
+            },
+            self.params
+                .iter()
+                .map(|p| format!("{p}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.output
+        )
+    }
+}
 
 impl FuncT {
     fn get_generics(
@@ -95,13 +108,13 @@ impl FuncT {
         params: Vec<Datatype>,
         expected_output: &Option<Datatype>,
     ) -> Option<HashMap<String, Datatype>> {
-        if params.len() != self.params.0.len() {
+        if params.len() != self.params.len() {
             return None;
         }
         let mut generic_matches = HashMap::new();
         for (given, expected) in params
             .iter()
-            .zip(self.params.0.iter())
+            .zip(self.params.iter())
             .chain(expected_output.iter().map(|o| (o, &self.output)))
         {
             let inserted = expected.insert_generics(&generic_matches)?;
@@ -124,7 +137,7 @@ impl FuncT {
             params: self.params,
             output: self.output,
             generic: self.generic,
-            owner_t: MaybeOwnerTy(None),
+            owner_t: None,
             contents: InnerFunc::Rust(func, None),
         }
     }
@@ -143,16 +156,14 @@ impl FuncT {
     pub fn with_owner(mut self, owner: Datatype) -> Option<Self> {
         let me_owner = self
             .owner_t
-            .0
             .as_ref()
             .expect("Can't make this function into a member");
         let generics = me_owner
             .try_match(&owner)
             .expect("Invalid owner for this type");
         for (name, _) in &generics {
-            self.generic.0.remove(
+            self.generic.remove(
                 self.generic
-                    .0
                     .iter()
                     .enumerate()
                     .find(|g| (g.1 == name))
@@ -161,19 +172,16 @@ impl FuncT {
             );
         }
         self.params
-            .0
             .iter_mut()
             .for_each(|p| *p = p.insert_generics(&generics).expect("Invalid generic here"));
         self.output = self
             .output
             .insert_generics(&generics)
             .expect("Invalid generic here");
-        self.owner_t = MaybeOwnerTy(
-            self.owner_t
-                .0
-                .as_ref()
-                .map(|o| o.insert_generics(&generics).expect("Invalid generic here")),
-        );
+        self.owner_t = self
+            .owner_t
+            .as_ref()
+            .map(|o| o.insert_generics(&generics).expect("Invalid generic here"));
         Some(self)
     }
 }
@@ -186,11 +194,7 @@ impl Type for FuncT {
     ) -> Option<Datatype> {
         let generic_matches = self.get_generics(params, &expected_output)?;
         let res = self.output.insert_generics(&generic_matches)?;
-        if res
-            .get_generics()
-            .iter()
-            .any(|g| self.generic.0.contains(g))
-        {
+        if res.get_generics().iter().any(|g| self.generic.contains(g)) {
             println!("Unconstrained generic");
             return None;
         }
@@ -204,7 +208,7 @@ impl Type for FuncT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
         if op == Op::Plus && other.possible_call() {
             Some(Box::new(FuncSumT {
-                f_types: TypeList(vec![self.dup(), other.dup()]),
+                f_types: vec![self.dup(), other.dup()],
             }))
         } else {
             None
@@ -217,16 +221,16 @@ impl Type for FuncT {
 
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
         let mut params = vec![];
-        for t in &self.params.0 {
+        for t in &self.params {
             params.push(t.insert_generics(generics)?);
         }
-        let owner_t = MaybeOwnerTy(if let Some(t) = self.owner_t.0.as_ref() {
+        let owner_t = if let Some(t) = self.owner_t.as_ref() {
             Some(t.insert_generics(generics)?)
         } else {
             None
-        });
+        };
         Some(Box::new(Self {
-            params: TypeList(params),
+            params,
             output: self.output.insert_generics(generics)?,
             generic: self.generic.clone(),
             owner_t,
@@ -238,18 +242,17 @@ impl Type for FuncT {
             .into_iter()
             .chain(
                 self.params
-                    .0
                     .iter()
                     .map(|p| p.get_generics().into_iter())
                     .flatten(),
             )
-            .filter(|g| !self.generic.0.contains(g))
+            .filter(|g| !self.generic.contains(g))
             .collect()
     }
     fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
         let other = other.downcast::<Self>()?;
-        let mut generics = self.get_generics(other.params.0, &Some(other.output))?;
-        match (&self.owner_t.0, &other.owner_t.0) {
+        let mut generics = self.get_generics(other.params, &Some(other.output))?;
+        match (&self.owner_t, &other.owner_t) {
             (Some(l), Some(r)) => {
                 for (k, v) in l.try_match(r)? {
                     if let Some(val) = generics.get(&k) {

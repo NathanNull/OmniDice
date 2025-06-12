@@ -1,5 +1,8 @@
 use std::{
-    any::Any, collections::HashMap, fmt::{Debug, Display}, sync::Arc
+    any::Any,
+    collections::HashMap,
+    fmt::{Debug, Display},
+    sync::Arc,
 };
 
 use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op};
@@ -26,7 +29,7 @@ mod ref_t;
 pub use ref_t::{Ref, RefT};
 
 mod function;
-pub use function::{Func, FuncT, InnerFunc, MaybeOwnerTy};
+pub use function::{Func, FuncT, InnerFunc};
 
 // mod rust_function;
 // pub use rust_function::{RustFunc, RustFuncT};
@@ -98,8 +101,12 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             self.real_post_op_result(op)
         }
     }
-    fn call_result(&self, params: Vec<Datatype>, expected_output: Option<Datatype>) -> Option<Datatype> {
-        if !self.get_generics().is_empty() || params.iter().any(|p|!p.get_generics().is_empty()) {
+    fn call_result(
+        &self,
+        params: Vec<Datatype>,
+        expected_output: Option<Datatype>,
+    ) -> Option<Datatype> {
+        if !self.get_generics().is_empty() || params.iter().any(|p| !p.get_generics().is_empty()) {
             Some(Box::new(TypeVar::Call(self.dup(), params, expected_output)))
         } else {
             self.real_call_result(params, expected_output)
@@ -120,7 +127,11 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn real_post_op_result(&self, _op: Op) -> Option<Datatype> {
         None
     }
-    fn real_call_result(&self, _params: Vec<Datatype>, _expected_output: Option<Datatype>) -> Option<Datatype> {
+    fn real_call_result(
+        &self,
+        _params: Vec<Datatype>,
+        _expected_output: Option<Datatype>,
+    ) -> Option<Datatype> {
         None
     }
     fn possible_call(&self) -> bool {
@@ -145,6 +156,9 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     }
     fn assert_same(&self, other: &Datatype) -> Datatype {
         let dt = self.dup();
+        if let Some(o) = other.downcast::<TypeVar>() {
+            return o.assert_same(&dt);
+        }
         assert_eq!(&dt, other, "Expected type {self} but saw {other}");
         dt
     }
@@ -185,7 +199,12 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn post_op(&self, _op: Op) -> Value {
         unreachable!("Type '{}' has no postfix operations.", self.get_name())
     }
-    fn call(&self, _params: Vec<Value>, _interpreter: &mut Interpreter, _expected_output: Option<Datatype>) -> Value {
+    fn call(
+        &self,
+        _params: Vec<Value>,
+        _interpreter: &mut Interpreter,
+        _expected_output: Option<Datatype>,
+    ) -> Value {
         unreachable!("Type '{}' cannot be called.", self.get_name())
     }
     fn get_type(&self) -> Datatype {
@@ -258,11 +277,37 @@ macro_rules! mut_type_init {
 
 #[macro_export]
 macro_rules! _make_type {
-    ($ty: ident $(, $noeq: literal)?) => {
+    ($ty: ident, $repr: literal) => {
+        #[derive(Debug, Clone)]
+        pub struct $ty;
+        impl Display for $ty {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", $repr.to_string())
+            }
+        }
+    };
+    ($ty: ident, $repr: literal, [$($tvar: ident, $tty: ty),*]) => {
+        #[derive(Debug, Clone)]
+        pub struct $ty {
+            $(pub $tvar: $tty),*
+        }
+        impl Display for $ty {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", $repr.to_string()+format!(
+                    "<{}>",
+                    vec![$(format!("{}", &self.$tvar)),*]
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ).as_str())
+            }
+        }
+    };
+    ($ty: ident nodisplay, $repr: literal) => {
         #[derive(Debug, Clone)]
         pub struct $ty;
     };
-    ($ty: ident, [$($tvar: ident, $tty: ty),*]) => {
+    ($ty: ident nodisplay, $repr: literal, [$($tvar: ident, $tty: ty),*]) => {
         #[derive(Debug, Clone)]
         pub struct $ty {
             $(pub $tvar: $tty),*
@@ -272,17 +317,11 @@ macro_rules! _make_type {
 
 #[macro_export]
 macro_rules! type_init {
-    ($ty: ident, $val: ty, $repr: expr $(, $(($ref_t: ty), )? $($tvar: ident : $tty: ty),*)?) => {
-        crate::_make_type!($ty $(, [$($tvar, $tty),*])?);
+    ($ty: ident $({$nodisplay: ident})?, $val: ty, $repr: expr $(, $(($ref_t: ty), )? $($tvar: ident : $tty: ty),*)?) => {
+        crate::_make_type!($ty $($nodisplay)?, $repr $(, [$($tvar, $tty),*])?);
         impl BaseType for $ty {
             fn name(&self) -> String {
-                $repr.to_string()$(+format!(
-                    "<{}>",
-                    vec![$(format!("{}", &self.$tvar)),*]
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ).as_str())?
+                format!("{:?}", self)
             }
             fn dup(&self) -> Datatype {
                 Box::new(self.clone())
@@ -306,64 +345,11 @@ macro_rules! type_init {
                 }
             }
         }
-        impl Display for $ty {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.name())
-            }
-        }
     };
 }
 
 pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TypeList(pub Vec<Datatype>);
-
-impl Display for TypeList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        //write!(f, "[")?;
-        let len = self.0.len();
-        for (i, ele) in self.0.iter().enumerate() {
-            write!(f, "{}", ele)?;
-            if i != len - 1 {
-                write!(f, ", ")?;
-            }
-        }
-        Ok(())
-        //write!(f, "]")
-    }
-}
-
-impl FromIterator<Datatype> for TypeList {
-    fn from_iter<T: IntoIterator<Item = Datatype>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct GenericList(pub Vec<String>);
-
-impl Display for GenericList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        //write!(f, "[")?;
-        let len = self.0.len();
-        for (i, ele) in self.0.iter().enumerate() {
-            write!(f, "{}", ele)?;
-            if i != len - 1 {
-                write!(f, ", ")?;
-            }
-        }
-        Ok(())
-        //write!(f, "]")
-    }
-}
-
-impl FromIterator<String> for GenericList {
-    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
-    }
-}
 
 impl PartialEq<dyn Type> for Datatype {
     fn eq(&self, other: &dyn Type) -> bool {

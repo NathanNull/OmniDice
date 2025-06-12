@@ -1,9 +1,14 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    builtins::BUILTINS, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
-        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, GenericList, IntT, IterT, MaybeOwnerTy, MaybeT, RefT, StringT, TupT, TypeList, TypeVar, Void
-    }, TokenIter
+    TokenIter,
+    builtins::BUILTINS,
+    interpreter::VarScope,
+    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
+    types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
+        TupT, TypeVar, Void,
+    },
 };
 
 pub mod expr;
@@ -168,7 +173,7 @@ impl Parser {
                 params: func.params.iter().map(|(_, t)| t.clone()).collect(),
                 output: func.contents.output.clone(),
                 generic: func.generic.clone(),
-                owner_t: MaybeOwnerTy(None),
+                owner_t: None,
             }),
             ExprContents::Call(call) => {
                 let params: Vec<Datatype> = call.params.iter().map(|p| p.output.clone()).collect();
@@ -176,9 +181,9 @@ impl Parser {
                     .output
                     .call_result(params.clone(), expected_type.clone())
                     .expect(&format!(
-                        "Can't call {} with params ({}){}",
+                        "Can't call {} with params ({:?}){}",
                         call.base.output,
-                        TypeList(params),
+                        params,
                         if let Some(e) = expected_type.as_ref() {
                             format!(" and expect output {e}")
                         } else {
@@ -218,14 +223,8 @@ impl Parser {
         while self.tokens.peek().unwrap() != expected_end.last().unwrap() {
             let contents = self.parse_expr(0, &expected_end, true, false);
             let is_last = self.tokens.peek().unwrap() == expected_end.last().unwrap();
-            exprs.push(*self.new_expr(
-                contents,
-                if is_last {
-                    expected_type.clone()
-                } else {
-                    None
-                },
-            ));
+            exprs
+                .push(*self.new_expr(contents, if is_last { expected_type.clone() } else { None }));
             just_parsed = true;
             assert!(
                 expected_end.contains(self.tokens.peek().unwrap()),
@@ -682,33 +681,30 @@ impl Parser {
     }
 
     fn parse_func(&mut self) -> ExprContents {
-        let generic = GenericList(
-            if self.tokens.eat([Token::OpLike(OpLike::Less)]).is_some() {
-                let mut generic = vec![];
-                while self.tokens.eat([Token::OpLike(OpLike::Greater)]).is_none() {
-                    generic.push(match self.tokens.next() {
-                        Some(Token::Identifier(s)) => s,
-                        tk => panic!("Expected identifier, found {tk:?}"),
-                    });
-                    match self.tokens.next() {
-                        Some(Token::OpLike(OpLike::Comma)) => continue,
-                        Some(Token::OpLike(OpLike::Greater)) => break,
-                        tk => panic!("Unexpected token {tk:?}"),
-                    }
+        let generic = if self.tokens.eat([Token::OpLike(OpLike::Less)]).is_some() {
+            let mut generic = vec![];
+            while self.tokens.eat([Token::OpLike(OpLike::Greater)]).is_none() {
+                generic.push(match self.tokens.next() {
+                    Some(Token::Identifier(s)) => s,
+                    tk => panic!("Expected identifier, found {tk:?}"),
+                });
+                match self.tokens.next() {
+                    Some(Token::OpLike(OpLike::Comma)) => continue,
+                    Some(Token::OpLike(OpLike::Greater)) => break,
+                    tk => panic!("Unexpected token {tk:?}"),
                 }
-                assert!(
-                    generic.iter().all(|g| self.get_typedef(g).is_none()),
-                    "Can't reuse generic variable"
-                );
-                generic
-            } else {
-                vec![]
-            },
-        );
+            }
+            assert!(
+                generic.iter().all(|g| self.get_typedef(g).is_none()),
+                "Can't reuse generic variable"
+            );
+            generic
+        } else {
+            vec![]
+        };
         self.typedefs.push(VarScope {
             vars: HashMap::from_iter(
                 generic
-                    .0
                     .iter()
                     .map(|n| (n.clone(), Box::new(TypeVar::Var(n.clone())) as Datatype)),
             ),
@@ -807,10 +803,10 @@ impl Parser {
                 self.tokens.expect(Token::Arrow);
                 let output = self.parse_type();
                 Box::new(FuncT {
-                    params: TypeList(params),
+                    params,
                     output,
-                    generic: GenericList(vec![]),
-                    owner_t: MaybeOwnerTy(None),
+                    generic: vec![],
+                    owner_t: None,
                 })
             }
             Some(Token::OpLike(OpLike::Bracket(b))) => match b {
@@ -832,9 +828,7 @@ impl Parser {
                                 None => panic!("Unexpected EOF"),
                             }
                         }
-                        Box::new(TupT {
-                            entries: TypeList(entries),
-                        })
+                        Box::new(TupT { entries })
                     }
                 }
                 Bracket::LSquare => {

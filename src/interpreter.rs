@@ -6,7 +6,7 @@ use crate::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
         Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
     },
-    types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, MaybeOwnerTy, Tuple, Value, Void},
+    types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, Tuple, Value, Void},
 };
 
 pub struct VarScope<T: Debug> {
@@ -286,7 +286,7 @@ impl Interpreter {
             params: func.params.iter().map(|(_, t)| t.clone()).collect(),
             output: func.contents.output.clone(),
             generic: func.generic.clone(),
-            owner_t: MaybeOwnerTy(None),
+            owner_t: None,
             contents: InnerFunc::Code(
                 *func.contents.clone(),
                 func.params.iter().map(|(n, _)| n.clone()).collect(),
