@@ -11,7 +11,6 @@ pub enum Token {
     EOL,
     EOF,
     Arrow,
-    Comma,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,55 +38,36 @@ pub enum Bracket {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpLike {
-    Plus,
-    Minus,
-    Times,
-    Divided,
-    Mod,
-    D,
-    Range,
-    Equal,
-    NotEqual,
-    Greater,
-    Less,
-    Geq,
-    Leq,
-    And,
-    Or,
-    Not,
+    Op(Op),
     Assign,
     OpAssign(Op),
     Access,
     Bracket(Bracket),
     Colon,
+    Comma,
 }
 
 impl Debug for OpLike {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c = match self {
-            Self::Plus => "+",
-            Self::Minus => "-",
-            Self::Times => "*",
-            Self::Divided => "/",
-            Self::Mod => "%",
-            Self::D => "d",
-            Self::Range => "..",
-            Self::Equal => "==",
-            Self::NotEqual => "!=",
-            Self::Greater => ">",
-            Self::Less => "<",
-            Self::Geq => ">=",
-            Self::Leq => "<=",
-            Self::And => "&&",
-            Self::Or => "||",
-            Self::Not => "!",
+            Self::Op(op) => &format!("{op:?}"),
             Self::Assign => "=",
             Self::OpAssign(op) => &format!("{op:?}="),
             Self::Access => ".",
             Self::Bracket(b) => &format!("{b:?}"),
             Self::Colon => ":",
+            Self::Comma => ",",
         };
         write!(f, "{c}")
+    }
+}
+
+impl OpLike {
+    pub fn as_op(&self) -> Op {
+        match self {
+            OpLike::Op(op) => *op,
+            _ => panic!("Wasn't an op"),
+        }
     }
 }
 
@@ -261,22 +241,22 @@ impl<'a> Lexer<'a> {
     fn lex_special(&mut self) -> Option<Token> {
         for (pattern, res) in [
             ("->", Token::Arrow),
-            ("+", Token::OpLike(OpLike::Plus)),
-            ("-", Token::OpLike(OpLike::Minus)),
-            ("*", Token::OpLike(OpLike::Times)),
-            ("/", Token::OpLike(OpLike::Divided)),
-            ("d", Token::OpLike(OpLike::D)),
-            ("%", Token::OpLike(OpLike::Mod)),
-            ("..", Token::OpLike(OpLike::Range)),
-            ("==", Token::OpLike(OpLike::Equal)),
-            ("!=", Token::OpLike(OpLike::NotEqual)),
-            (">=", Token::OpLike(OpLike::Geq)),
-            ("<=", Token::OpLike(OpLike::Leq)),
-            (">", Token::OpLike(OpLike::Greater)),
-            ("<", Token::OpLike(OpLike::Less)),
-            ("&&", Token::OpLike(OpLike::And)),
-            ("||", Token::OpLike(OpLike::Or)),
-            ("!", Token::OpLike(OpLike::Not)),
+            ("+", Token::OpLike(OpLike::Op(Op::Plus))),
+            ("-", Token::OpLike(OpLike::Op(Op::Minus))),
+            ("*", Token::OpLike(OpLike::Op(Op::Times))),
+            ("/", Token::OpLike(OpLike::Op(Op::Divided))),
+            ("d", Token::OpLike(OpLike::Op(Op::D))),
+            ("%", Token::OpLike(OpLike::Op(Op::Mod))),
+            ("..", Token::OpLike(OpLike::Op(Op::Range))),
+            ("==", Token::OpLike(OpLike::Op(Op::Equal))),
+            ("!=", Token::OpLike(OpLike::Op(Op::NotEqual))),
+            (">=", Token::OpLike(OpLike::Op(Op::Geq))),
+            ("<=", Token::OpLike(OpLike::Op(Op::Leq))),
+            (">", Token::OpLike(OpLike::Op(Op::Greater))),
+            ("<", Token::OpLike(OpLike::Op(Op::Less))),
+            ("&&", Token::OpLike(OpLike::Op(Op::And))),
+            ("||", Token::OpLike(OpLike::Op(Op::Or))),
+            ("!", Token::OpLike(OpLike::Op(Op::Not))),
             ("(", Token::OpLike(OpLike::Bracket(Bracket::LBracket))),
             (")", Token::OpLike(OpLike::Bracket(Bracket::RBracket))),
             ("{", Token::OpLike(OpLike::Bracket(Bracket::LCurly))),
@@ -285,16 +265,14 @@ impl<'a> Lexer<'a> {
             ("]", Token::OpLike(OpLike::Bracket(Bracket::RSquare))),
             ("=", Token::OpLike(OpLike::Assign)),
             (".", Token::OpLike(OpLike::Access)),
-            (",", Token::Comma),
+            (",", Token::OpLike(OpLike::Comma)),
             (":", Token::OpLike(OpLike::Colon)),
             (";", Token::EOL),
         ] {
             if self.code.eat_str(pattern) {
-                if let Token::OpLike(op) = res {
-                    let as_op = TryInto::<Op>::try_into(op);
-                    // If it's a valid (real) operation and is followed by =, e.g. +=
-                    if as_op.is_ok() && self.code.eat_str("=") {
-                        return Some(Token::OpLike(OpLike::OpAssign(as_op.unwrap())));
+                if let Token::OpLike(OpLike::Op(op)) = res {
+                    if self.code.eat_str("=") {
+                        return Some(Token::OpLike(OpLike::OpAssign(op)));
                     }
                 }
                 return Some(res);

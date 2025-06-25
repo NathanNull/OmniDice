@@ -1,4 +1,4 @@
-use std::fs;
+use std::{env, fs};
 
 use interpreter::Interpreter;
 use lexer::Lexer;
@@ -12,7 +12,11 @@ mod parser;
 mod types;
 
 fn main() {
-    let code = fs::read_to_string("./code.od").expect("Couldn't read code file");
+    let args = env::args().collect::<Vec<_>>();
+    let filename = args.get(1).expect("Must pass file name to run");
+    println!("Filename is {filename}");
+    let code = fs::read_to_string(filename)
+        .expect("Couldn't read code file");
     println!("Raw code: {code}");
     let tokens = Lexer::new(&code).lex();
     println!("Tokens: {tokens:?}");

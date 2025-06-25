@@ -6,10 +6,7 @@ use std::{
 
 use strum::EnumIter;
 
-use crate::{
-    lexer::OpLike,
-    types::{Datatype, Value},
-};
+use crate::types::{Datatype, Value};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum OpType {
@@ -61,37 +58,6 @@ impl Debug for Op {
         write!(f, "{c}")
     }
 }
-
-// Convenient little macro so I don't have to manually write every conversion between Op and OpLike
-macro_rules! convert_op_tokens {
-    ($($op: ident),+) => {
-        impl TryFrom<OpLike> for Op {
-            type Error = String;
-
-            fn try_from(value: OpLike) -> Result<Self, Self::Error> {
-                Ok(match value {
-                    $(OpLike::$op => Self::$op,)+
-                    _ => {
-                        return Err(format!("Invalid operation {value:?}"));
-                    }
-                })
-            }
-        }
-
-        impl Into<OpLike> for Op {
-            fn into(self) -> OpLike {
-                match self {
-                    $(Self::$op => OpLike::$op,)+
-                }
-            }
-        }
-    };
-}
-
-convert_op_tokens!(
-    Plus, Minus, Times, Divided, Mod, D, Range, Equal, NotEqual, Greater, Less, Geq, Leq, And, Or,
-    Not
-);
 
 pub type Scope = Vec<Expr>;
 
@@ -178,7 +144,12 @@ impl Display for Expr {
                 (format!("{:?} post", postfix.op), vec![&postfix.lhs])
             }
             ExprContents::Assign(assign) => (
-                format!("{} {:?} ({})", assign.a_type, assign.assignee, self.output.clone()),
+                format!(
+                    "{} {:?} ({})",
+                    assign.a_type,
+                    assign.assignee,
+                    self.output.clone()
+                ),
                 vec![&assign.val],
             ),
             ExprContents::Accessor(accessor) => match accessor {

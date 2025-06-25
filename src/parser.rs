@@ -52,19 +52,20 @@ impl Parser {
         Box::new(Expr { output, contents })
     }
 
-    fn set_var_type(&mut self, name: String, dtype: Datatype, mutable: bool) {
-        if let Some(old) = self.get_var_type(&name) {
-            assert_eq!(
-                &old, &dtype,
-                "Can't reassign variable {name} of type {old:?} to type {dtype:?}",
-            );
-        } else {
-            if self.var_types.is_empty() {
-                panic!("Tried to access variable type while no scope alive");
+    fn set_var_type(&mut self, name: String, dtype: Datatype, mutable: bool, initialize: bool) {
+        if !initialize {
+            if let Some(old) = self.get_var_type(&name) {
+                assert_eq!(
+                    &old, &dtype,
+                    "Can't reassign variable {name} of type {old:?} to type {dtype:?}",
+                );
+            } else {
+                panic!("Tried to assign to uninitialized variable {name}");
             }
+        } else {
             self.var_types
                 .last_mut()
-                .unwrap()
+                .expect("Tried to set variable while no scope alive")
                 .vars
                 .insert(name, (dtype, mutable));
         }
@@ -410,8 +411,13 @@ impl Parser {
                     });
                     continue;
                 }
-                Token::OpLike(op) => op,
-                Token::Comma if allow_join => {
+                Token::OpLike(OpLike::Comma) if allow_join => {
+                    let (l_bp, r_bp) = INFIX_BINDING_POWER
+                        .get(&OpLike::Comma)
+                        .unwrap();
+                    if *l_bp < min_bp {
+                        break;
+                    }
                     let mut elements = vec![*self.new_expr(lhs, None)];
                     self.tokens.next();
                     if expected_end.contains(&self.tokens.peek().unwrap()) {
@@ -419,14 +425,14 @@ impl Parser {
                         break;
                     }
                     let mut new_end = expected_end.clone();
-                    new_end.push(Token::Comma);
+                    new_end.push(Token::OpLike(OpLike::Comma));
                     loop {
                         if !expected_end.contains(self.tokens.peek().unwrap()) {
-                            let next = self.parse_expr(0, &new_end, allow_imply_eol, allow_join);
+                            let next = self.parse_expr(*r_bp, &new_end, allow_imply_eol, allow_join);
                             elements.push(*self.new_expr(next, None));
                         }
                         match self.tokens.next() {
-                            Some(Token::Comma) => (),
+                            Some(Token::OpLike(OpLike::Comma)) => (),
                             Some(tk) if expected_end.contains(&tk) => {
                                 lhs = ExprContents::Tuple(Tuple { elements });
                                 self.tokens.replace(tk);
@@ -437,6 +443,7 @@ impl Parser {
                     }
                     break;
                 }
+                Token::OpLike(op) => op,
                 _ if imply_eol && expected_end.contains(&Token::EOL) => {
                     // automatic semicolon insertion :)
                     self.tokens.replace(Token::EOL);
@@ -554,7 +561,7 @@ impl Parser {
             vars: HashMap::new(),
             blocking: false,
         });
-        self.set_var_type(var.clone(), i_type, false);
+        self.set_var_type(var.clone(), i_type, false, true);
         let sc = ExprContents::Scope(self.parse_scope(true, Some(VOID.output.clone())));
         self.var_types.pop();
         let body = self.new_expr(sc, Some(VOID.output.clone()));
@@ -600,19 +607,6 @@ impl Parser {
         rhs: ExprContents,
         expected_type: Option<Datatype>,
     ) -> ExprContents {
-        /*let val = self.new_expr(rhs);
-        let ty = val.output.clone();
-        let res = ExprContents::Assign(Assign {
-            assignee: Accessor::Variable(ident.clone()),
-            val,
-            a_type: if is_mut {
-                AssignType::Mut
-            } else {
-                AssignType::Immut
-            },
-        });
-        self.set_var_type(ident, ty, is_mut);
-        res */
         let val = self.new_expr(rhs, expected_type);
         let ty = val.output.clone();
         let assignee = match lhs {
@@ -660,7 +654,7 @@ impl Parser {
                 );
             }
             AssignType::Create => match &assignee {
-                Accessor::Variable(v) => self.set_var_type(v.clone(), ty, true),
+                Accessor::Variable(v) => self.set_var_type(v.clone(), ty, true, true),
                 _ => unreachable!(
                     "Let assignments should only be able to parse lhs as a single variable"
                 ),
@@ -688,7 +682,7 @@ impl Parser {
             let expr = self.parse_expr(
                 0,
                 &vec![
-                    Token::Comma,
+                    Token::OpLike(OpLike::Comma),
                     Token::OpLike(OpLike::Bracket(Bracket::RSquare)),
                 ],
                 false,
@@ -698,7 +692,7 @@ impl Parser {
             expected_type = Some(to_push.output.clone());
             elements.push(*to_push);
             match self.tokens.next() {
-                Some(Token::Comma) => (),
+                Some(Token::OpLike(OpLike::Comma)) => (),
                 Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
                 next => panic!("Unexpected token {next:?} in array expression"),
             }
@@ -707,16 +701,24 @@ impl Parser {
     }
 
     fn parse_func(&mut self) -> ExprContents {
-        let generic = if self.tokens.eat([Token::OpLike(OpLike::Less)]).is_some() {
+        let generic = if self
+            .tokens
+            .eat([Token::OpLike(OpLike::Op(Op::Less))])
+            .is_some()
+        {
             let mut generic = vec![];
-            while self.tokens.eat([Token::OpLike(OpLike::Greater)]).is_none() {
+            while self
+                .tokens
+                .eat([Token::OpLike(OpLike::Op(Op::Greater))])
+                .is_none()
+            {
                 generic.push(match self.tokens.next() {
                     Some(Token::Identifier(s)) => s,
                     tk => panic!("Expected identifier, found {tk:?}"),
                 });
                 match self.tokens.next() {
-                    Some(Token::Comma) => continue,
-                    Some(Token::OpLike(OpLike::Greater)) => break,
+                    Some(Token::OpLike(OpLike::Comma)) => continue,
+                    Some(Token::OpLike(OpLike::Op(Op::Greater))) => break,
                     tk => panic!("Unexpected token {tk:?}"),
                 }
             }
@@ -749,7 +751,7 @@ impl Parser {
             let ty = self.parse_type();
             params.push((name, ty));
             match self.tokens.next() {
-                Some(Token::Comma) => (),
+                Some(Token::OpLike(OpLike::Comma)) => (),
                 Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                 tk => panic!("Unexpected token {tk:?}"),
             }
@@ -787,9 +789,9 @@ impl Parser {
                 "float" => Box::new(FloatT),
                 "string" => Box::new(StringT),
                 "ref" | "maybe" | "iter" => {
-                    self.tokens.expect(Token::OpLike(OpLike::Less));
+                    self.tokens.expect(Token::OpLike(OpLike::Op(Op::Less)));
                     let referenced = self.parse_type();
-                    self.tokens.expect(Token::OpLike(OpLike::Greater));
+                    self.tokens.expect(Token::OpLike(OpLike::Op(Op::Greater)));
                     match name.as_str() {
                         "ref" => Box::new(RefT { ty: referenced }),
                         "maybe" => Box::new(MaybeT { output: referenced }),
@@ -820,7 +822,7 @@ impl Parser {
                     }
                     params.push(self.parse_type());
                     match self.tokens.next() {
-                        Some(Token::Comma) => (),
+                        Some(Token::OpLike(OpLike::Comma)) => (),
                         Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                         Some(tk) => panic!("Unexpected token {tk:?} in function type"),
                         None => panic!("Unexpected EOF"),
@@ -848,7 +850,7 @@ impl Parser {
                         loop {
                             entries.push(self.parse_type());
                             match self.tokens.next() {
-                                Some(Token::Comma) => (),
+                                Some(Token::OpLike(OpLike::Comma)) => (),
                                 Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                                 Some(tk) => panic!("Unexpected token {tk:?} in function type"),
                                 None => panic!("Unexpected EOF"),
@@ -879,47 +881,47 @@ impl Parser {
     ) -> ExprContents {
         match (op, op_type) {
             (
-                OpLike::Plus
-                | OpLike::Minus
-                | OpLike::Times
-                | OpLike::Divided
-                | OpLike::Mod
-                | OpLike::D
-                | OpLike::Range
-                | OpLike::Equal
-                | OpLike::NotEqual
-                | OpLike::Greater
-                | OpLike::Less
-                | OpLike::Geq
-                | OpLike::Leq
-                | OpLike::And
-                | OpLike::Or,
+                OpLike::Op(Op::Plus)
+                | OpLike::Op(Op::Minus)
+                | OpLike::Op(Op::Times)
+                | OpLike::Op(Op::Divided)
+                | OpLike::Op(Op::Mod)
+                | OpLike::Op(Op::D)
+                | OpLike::Op(Op::Range)
+                | OpLike::Op(Op::Equal)
+                | OpLike::Op(Op::NotEqual)
+                | OpLike::Op(Op::Greater)
+                | OpLike::Op(Op::Less)
+                | OpLike::Op(Op::Geq)
+                | OpLike::Op(Op::Leq)
+                | OpLike::Op(Op::And)
+                | OpLike::Op(Op::Or),
                 OpType::Infix,
             ) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(lhs, None),
                 rhs: self.new_expr(rhs, None),
-                op: op.try_into().unwrap(),
+                op: op.as_op(),
             }),
-            (OpLike::Minus, OpType::Prefix) => ExprContents::Prefix(Prefix {
-                op: op.try_into().unwrap(),
+            (OpLike::Op(Op::Minus), OpType::Prefix) => ExprContents::Prefix(Prefix {
+                op: op.as_op(),
                 rhs: self.new_expr(rhs, None),
             }),
-            (OpLike::Not, OpType::Prefix) => ExprContents::Prefix(Prefix {
-                op: op.try_into().unwrap(),
+            (OpLike::Op(Op::Not), OpType::Prefix) => ExprContents::Prefix(Prefix {
+                op: op.as_op(),
                 rhs: self.new_expr(rhs, None),
             }),
             // "d6" expands to "1d6"
-            (OpLike::D, OpType::Prefix) => ExprContents::Binop(Binop {
+            (OpLike::Op(Op::D), OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(ExprContents::Literal(Box::new(1)), Some(Box::new(IntT))),
                 rhs: self.new_expr(rhs, Some(Box::new(IntT))),
-                op: op.try_into().unwrap(),
+                op: op.as_op(),
             }),
             (OpLike::Assign, OpType::Infix) => {
                 let prev_type = self.new_expr(lhs.clone(), None).output;
                 self.parse_assign(AssignType::Reassign, lhs, rhs, Some(prev_type))
             }
             (OpLike::OpAssign(op), OpType::Infix) => {
-                let val = self.make_expr(lhs.clone(), rhs, op.into(), op_type);
+                let val = self.make_expr(lhs.clone(), rhs, OpLike::Op(op), op_type);
                 self.make_expr(lhs, val, OpLike::Assign, op_type)
             }
             (OpLike::Access, OpType::Infix) => {
@@ -929,26 +931,26 @@ impl Parser {
                 };
                 ExprContents::Accessor(Accessor::Property(self.new_expr(lhs, None), rhs))
             }
-            (OpLike::Bracket(_) | OpLike::Colon, _) => {
+            (OpLike::Bracket(_) | OpLike::Colon | OpLike::Comma, _) => {
                 unreachable!(
                     "{:?} is not a valid operation and should not parse as such",
                     op
                 )
             }
             (
-                OpLike::Plus
-                | OpLike::Times
-                | OpLike::Divided
-                | OpLike::Mod
-                | OpLike::Range
-                | OpLike::Equal
-                | OpLike::NotEqual
-                | OpLike::Greater
-                | OpLike::Less
-                | OpLike::Geq
-                | OpLike::Leq
-                | OpLike::And
-                | OpLike::Or
+                OpLike::Op(Op::Plus)
+                | OpLike::Op(Op::Times)
+                | OpLike::Op(Op::Divided)
+                | OpLike::Op(Op::Mod)
+                | OpLike::Op(Op::Range)
+                | OpLike::Op(Op::Equal)
+                | OpLike::Op(Op::NotEqual)
+                | OpLike::Op(Op::Greater)
+                | OpLike::Op(Op::Less)
+                | OpLike::Op(Op::Geq)
+                | OpLike::Op(Op::Leq)
+                | OpLike::Op(Op::And)
+                | OpLike::Op(Op::Or)
                 | OpLike::Assign
                 | OpLike::OpAssign(_)
                 | OpLike::Access,
@@ -956,7 +958,7 @@ impl Parser {
             ) => {
                 unreachable!("Invalid prefix operation {op:?}")
             }
-            (OpLike::Not, OpType::Infix) => unreachable!("Invalid infix operation {op:?}"),
+            (OpLike::Op(Op::Not), OpType::Infix) => unreachable!("Invalid infix operation {op:?}"),
             (_, OpType::Postfix) => unreachable!("Invalid postfix operation {op:?}"),
         }
     }
@@ -965,6 +967,7 @@ impl Parser {
 // Ordered from lowest to highest binding power
 static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
     vec![
+        (vec![OpLike::Comma], OpType::Infix, false),
         (
             Op::iter()
                 .map(|op| OpLike::OpAssign(op))
@@ -973,17 +976,34 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             OpType::Infix,
             true,
         ),
-        (vec![OpLike::Range], OpType::Infix, false),
-        (vec![OpLike::And, OpLike::Or], OpType::Infix, false),
-        (vec![OpLike::Equal], OpType::Infix, false),
+        (vec![OpLike::Op(Op::Range)], OpType::Infix, false),
         (
-            vec![OpLike::Greater, OpLike::Less, OpLike::Geq, OpLike::Leq],
+            vec![OpLike::Op(Op::And), OpLike::Op(Op::Or)],
             OpType::Infix,
             false,
         ),
-        (vec![OpLike::Plus, OpLike::Minus], OpType::Infix, false),
+        (vec![OpLike::Op(Op::Equal)], OpType::Infix, false),
         (
-            vec![OpLike::Times, OpLike::Divided, OpLike::Mod],
+            vec![
+                OpLike::Op(Op::Greater),
+                OpLike::Op(Op::Less),
+                OpLike::Op(Op::Geq),
+                OpLike::Op(Op::Leq),
+            ],
+            OpType::Infix,
+            false,
+        ),
+        (
+            vec![OpLike::Op(Op::Plus), OpLike::Op(Op::Minus)],
+            OpType::Infix,
+            false,
+        ),
+        (
+            vec![
+                OpLike::Op(Op::Times),
+                OpLike::Op(Op::Divided),
+                OpLike::Op(Op::Mod),
+            ],
             OpType::Infix,
             false,
         ),
@@ -996,10 +1016,10 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             false,
         ),
         (vec![OpLike::Access], OpType::Infix, false),
-        (vec![OpLike::D], OpType::Infix, false),
-        (vec![OpLike::D], OpType::Prefix, false),
-        (vec![OpLike::Not], OpType::Prefix, false),
-        (vec![OpLike::Minus], OpType::Prefix, false),
+        (vec![OpLike::Op(Op::D)], OpType::Infix, false),
+        (vec![OpLike::Op(Op::D)], OpType::Prefix, false),
+        (vec![OpLike::Op(Op::Not)], OpType::Prefix, false),
+        (vec![OpLike::Op(Op::Minus)], OpType::Prefix, false),
     ]
 });
 
