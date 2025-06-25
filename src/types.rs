@@ -173,9 +173,6 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
 trait BaseVal {
     fn base_dup(&self) -> Value;
     fn base_get_type(&self) -> Datatype;
-    fn get_name(&self) -> String {
-        self.base_get_type().name()
-    }
     fn eq(&self, other: &Value) -> bool;
 }
 

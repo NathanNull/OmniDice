@@ -67,7 +67,7 @@ impl Interpreter {
     fn eval_expr(&mut self, expr: &Expr) -> Value {
         let res = match &expr.contents {
             ExprContents::Accessor(acc) => self.eval_accessor(acc),
-            ExprContents::Literal(val) => val.clone(),
+            ExprContents::Value(val) => val.clone(),
             ExprContents::Binop(binop) => self.eval_binop(binop),
             ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
             ExprContents::Postfix(postfix) => self.eval_postfix(postfix),

@@ -22,12 +22,12 @@ pub struct Parser {
 }
 
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
-    contents: ExprContents::Literal(Box::new(Void)),
+    contents: ExprContents::Value(Box::new(Void)),
     output: Box::new(Void),
 });
 
 static BOOL: LazyLock<Expr> = LazyLock::new(|| Expr {
-    contents: ExprContents::Literal(Box::new(false)),
+    contents: ExprContents::Value(Box::new(false)),
     output: Box::new(BoolT),
 });
 
@@ -43,7 +43,10 @@ impl Parser {
                 ),
                 blocking: true,
             }],
-            typedefs: vec![],
+            typedefs: vec![VarScope {
+                vars: HashMap::new(),
+                blocking: true,
+            }],
         }
     }
 
@@ -124,7 +127,7 @@ impl Parser {
                         .expect(&format!("Invalid index {:?} for type {ty:?}", index.output))
                 }
             },
-            ExprContents::Literal(literal) => literal.get_type(),
+            ExprContents::Value(literal) => literal.get_type(),
             ExprContents::Binop(binop) => binop
                 .lhs
                 .output
@@ -263,9 +266,9 @@ impl Parser {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
             Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
-            Token::Literal(lit) => ExprContents::Literal(lit),
-            Token::Keyword(Keyword::True) => ExprContents::Literal(Box::new(true)),
-            Token::Keyword(Keyword::False) => ExprContents::Literal(Box::new(false)),
+            Token::Literal(lit) => ExprContents::Value(lit),
+            Token::Keyword(Keyword::True) => ExprContents::Value(Box::new(true)),
+            Token::Keyword(Keyword::False) => ExprContents::Value(Box::new(false)),
             Token::OpLike(OpLike::Bracket(Bracket::LBracket)) => {
                 if *self.tokens.peek().unwrap() == Token::OpLike(OpLike::Bracket(Bracket::RBracket))
                 {
@@ -345,6 +348,20 @@ impl Parser {
             Token::Keyword(Keyword::Func) => {
                 imply_eol = allow_imply_eol;
                 self.parse_func()
+            }
+            Token::Keyword(Keyword::Typedef) => {
+                let name = match self.tokens.next() {
+                    Some(Token::Identifier(name)) => name,
+                    tk => panic!("Unexpected token {tk:?} in typedef"),
+                };
+                self.tokens.expect(Token::OpLike(OpLike::Assign));
+                let ty = self.parse_type();
+                self.typedefs
+                    .last_mut()
+                    .expect("No typedef scope active")
+                    .vars
+                    .insert(name, ty);
+                VOID.contents.clone()
             }
             tk => panic!("Expected expression, found {tk:?}"),
         };
@@ -936,7 +953,7 @@ impl Parser {
             }),
             // "d6" expands to "1d6"
             (OpLike::Op(Op::D), OpType::Prefix) => ExprContents::Binop(Binop {
-                lhs: self.new_expr(ExprContents::Literal(Box::new(1)), Some(Box::new(IntT))),
+                lhs: self.new_expr(ExprContents::Value(Box::new(1)), Some(Box::new(IntT))),
                 rhs: self.new_expr(rhs, Some(Box::new(IntT))),
                 op: op.as_op(),
             }),

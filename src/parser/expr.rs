@@ -63,7 +63,7 @@ pub type Scope = Vec<Expr>;
 
 #[derive(Clone)]
 pub enum ExprContents {
-    Literal(Value),
+    Value(Value),
     Binop(Binop),
     Prefix(Prefix),
     Postfix(Postfix),
@@ -92,7 +92,7 @@ pub struct Expr {
 impl Debug for ExprContents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Literal(num) => write!(f, "{:?}", num),
+            Self::Value(num) => write!(f, "{:?}", num),
             Self::Binop(Binop { op, lhs, rhs }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
             Self::Prefix(Prefix { op: prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
             Self::Postfix(Postfix { op: postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
@@ -145,7 +145,7 @@ impl Debug for Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (str, children): (_, Vec<&Expr>) = match &self.contents {
-            ExprContents::Literal(literal) => {
+            ExprContents::Value(literal) => {
                 (format!("{} {}", literal.get_type(), literal), vec![])
             }
             ExprContents::Binop(binop) => {
@@ -242,7 +242,7 @@ impl Display for Expr {
 impl Expr {
     pub fn used_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         match &self.contents {
-            ExprContents::Literal(_) => Box::new([].into_iter()),
+            ExprContents::Value(_) => Box::new([].into_iter()),
             ExprContents::Binop(binop) => {
                 let l_created = binop.lhs.assigned_variables().collect::<Vec<_>>();
                 Box::new(
@@ -383,7 +383,7 @@ impl Expr {
 
     pub fn assigned_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
         match &self.contents {
-            ExprContents::Literal(_) => Box::new([].into_iter()),
+            ExprContents::Value(_) => Box::new([].into_iter()),
             ExprContents::Binop(binop) => Box::new(
                 binop
                     .lhs
@@ -449,7 +449,7 @@ impl Expr {
             .insert_generics(&generics)
             .expect("Invalid type");
         let new_contents = match &self.contents {
-            ExprContents::Literal(val) => ExprContents::Literal(val.clone()),
+            ExprContents::Value(val) => ExprContents::Value(val.clone()),
             ExprContents::Binop(binop) => ExprContents::Binop(Binop {
                 lhs: binop.lhs.replace_generics(generics),
                 rhs: binop.rhs.replace_generics(generics),

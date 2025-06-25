@@ -24,6 +24,7 @@ pub enum Keyword {
     In,
     Let,
     Func,
+    Typedef,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -165,6 +166,7 @@ impl<'a> Lexer<'a> {
                 "in" => Keyword::In,
                 "let" => Keyword::Let,
                 "func" => Keyword::Func,
+                "typedef" => Keyword::Typedef,
                 _ => return Some(Token::Identifier(name_str)),
             }))
         } else {
