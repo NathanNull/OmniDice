@@ -52,7 +52,18 @@ impl Parser {
 
     fn new_expr(&mut self, contents: ExprContents, expected_type: Option<Datatype>) -> Box<Expr> {
         let output = self.decide_type(&contents, expected_type);
-        Box::new(Expr { output, contents })
+        let expr = Box::new(Expr {
+            output: output.clone(),
+            contents,
+        });
+        if let Some(val) = expr.try_const_eval() {
+            Box::new(Expr {
+                contents: ExprContents::Value(val),
+                output,
+            })
+        } else {
+            expr
+        }
     }
 
     fn set_var_type(&mut self, name: String, dtype: Datatype, mutable: bool, initialize: bool) {

@@ -1,10 +1,12 @@
 use std::{
-    collections::BTreeMap, fmt::Display, ops::{Add, Div, Mul, Sub}
+    collections::BTreeMap,
+    fmt::{Debug, Display},
+    ops::{Add, Div, Mul, Sub},
 };
 
 use ordered_float::OrderedFloat;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Distribution {
     values: BTreeMap<i32, f32>,
 }
@@ -71,6 +73,16 @@ impl Distribution {
             .map(|(val, prob)| *val as f32 * prob)
             .sum::<f32>()
     }
+
+    pub fn stddev(&self) -> f32 {
+        let mean = self.mean();
+        let variance = self
+            .values
+            .iter()
+            .map(|(val, prob)| (*val as f32 - mean) * (*val as f32 - mean) * prob)
+            .sum::<f32>();
+        variance.sqrt()
+    }
 }
 
 const OUT_WIDTH: usize = 50;
@@ -96,6 +108,19 @@ impl Display for Distribution {
             write!(f, "{val: <5}: {bar}\n")?;
         }
         Ok(())
+    }
+}
+
+impl Debug for Distribution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "d[{}-{}, mean {}, stddev {}]",
+            self.min(),
+            self.max(),
+            self.mean(),
+            self.stddev()
+        )
     }
 }
 

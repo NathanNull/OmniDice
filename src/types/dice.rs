@@ -18,7 +18,7 @@ impl Type for DiceT {
     }
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "mean" => Some(Box::new(FloatT)),
+            "mean" | "stddev" => Some(Box::new(FloatT)),
             "max" | "min" => Some(Box::new(IntT)),
             _ => None,
         }
@@ -57,6 +57,7 @@ impl Val for Distribution {
     fn get_prop(&self, name: &str) -> Value {
         match name {
             "mean" => Box::new(self.mean()),
+            "stddev" => Box::new(self.stddev()),
             "min" => Box::new(self.min()),
             "max" => Box::new(self.max()),
             _ => invalid!("Prop", self, name),

@@ -68,3 +68,4 @@ typedef num = int;
 let a = fn::<num, num>(1, 5);
 printf("{}", a);
 printf("1: {}, 2: {}, 3: {}", (1,2,3));
+printf("This is computed at compile time: {}, {},\n{}", ([1,2,3], 1+2+3/4/5.0, 3d6));

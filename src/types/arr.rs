@@ -3,7 +3,7 @@ use std::sync::{LazyLock, RwLockReadGuard};
 use super::*;
 use crate::{gen_fn_map, invalid, mut_type_init, type_init};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct _InnerArr {
     entry: Datatype,
     elements: Vec<Value>,
@@ -15,6 +15,20 @@ impl Display for _InnerArr {
         let len = self.elements.len();
         for (i, ele) in self.elements.iter().enumerate() {
             write!(f, "{}", ele)?;
+            if i != len - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]")
+    }
+}
+
+impl Debug for _InnerArr {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let len = self.elements.len();
+        for (i, ele) in self.elements.iter().enumerate() {
+            write!(f, "{:?}", ele)?;
             if i != len - 1 {
                 write!(f, ", ")?;
             }

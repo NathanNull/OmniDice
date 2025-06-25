@@ -6,7 +6,7 @@ use std::{
 
 use strum::EnumIter;
 
-use crate::types::{Datatype, Value};
+use crate::types::{Arr, ArrT, Datatype, Downcast, Tuple as Tup, Value};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum OpType {
@@ -145,9 +145,7 @@ impl Debug for Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (str, children): (_, Vec<&Expr>) = match &self.contents {
-            ExprContents::Value(literal) => {
-                (format!("{} {}", literal.get_type(), literal), vec![])
-            }
+            ExprContents::Value(literal) => (format!("{} {:?}", literal.get_type(), literal), vec![]),
             ExprContents::Binop(binop) => {
                 (format!("{:?} b", binop.op), vec![&binop.lhs, &binop.rhs])
             }
@@ -534,6 +532,72 @@ impl Expr {
             contents: new_contents,
             output: new_type,
         })
+    }
+
+    pub fn try_const_eval(&self) -> Option<Value> {
+        match &self.contents {
+            ExprContents::Value(val) => Some(val.clone()),
+            ExprContents::Binop(binop) => {
+                if let Some((lhs, rhs)) = binop
+                    .lhs
+                    .try_const_eval()
+                    .and_then(|l| binop.rhs.try_const_eval().map(|r| (l, r)))
+                {
+                    Some(lhs.bin_op(&rhs, binop.op))
+                } else {
+                    None
+                }
+            }
+            ExprContents::Prefix(prefix) => {
+                prefix.rhs.try_const_eval().map(|rhs| rhs.pre_op(prefix.op))
+            }
+            ExprContents::Postfix(postfix) => postfix
+                .lhs
+                .try_const_eval()
+                .map(|lhs| lhs.post_op(postfix.op)),
+            ExprContents::Assign(_) => None,
+            ExprContents::Accessor(accessor) => match accessor {
+                Accessor::Variable(_) => None,
+                Accessor::Property(base, prop) => base.try_const_eval().map(|b| b.get_prop(prop)),
+                Accessor::Index(base, index) => {
+                    if let Some((b,i)) = base
+                        .try_const_eval()
+                        .and_then(|l| index.try_const_eval().map(|r| (l, r)))
+                    {
+                        Some(b.get_index(i))
+                    } else {
+                        None
+                    }
+                }
+            },
+            ExprContents::Scope(_) => None,
+            ExprContents::Conditional(_) => None,
+            ExprContents::While(_) => None,
+            ExprContents::For(_) => None,
+            ExprContents::Array(array) => {
+                fn arr_eval(arr: &Array, out: Datatype) -> Option<Arr> {
+                    let mut vals = vec![];
+                    for expr in &arr.elements {
+                        vals.push(expr.try_const_eval()?)
+                    }
+                    Some(Arr::new(vals, out))
+                }
+                arr_eval(array, self.output.downcast::<ArrT>().unwrap().entry).map(|a|Box::new(a) as Value)
+            },
+            ExprContents::Tuple(tuple) => {
+                fn tup_eval(tup: &Tuple) -> Option<Tup> {
+                    let mut vals = vec![];
+                    for expr in &tup.elements {
+                        vals.push(expr.try_const_eval()?)
+                    }
+                    Some(Tup::new(vals))
+                }
+                tup_eval(tuple).map(|t|Box::new(t) as Value)
+            },
+            ExprContents::Function(_) => None,
+            ExprContents::Call(_) => None,
+            ExprContents::GenericSpecify(_) => None,
+        }
     }
 }
 

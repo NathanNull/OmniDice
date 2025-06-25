@@ -4,7 +4,7 @@ use crate::{invalid, mut_type_init, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct _InnerTuple {
     entries: Vec<Datatype>,
     pub elements: Vec<Value>,
@@ -16,6 +16,20 @@ impl Display for _InnerTuple {
         let len = self.elements.len();
         for (i, ele) in self.elements.iter().enumerate() {
             write!(f, "{}", ele)?;
+            if i != len - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ")")
+    }
+}
+
+impl Debug for _InnerTuple {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        let len = self.elements.len();
+        for (i, ele) in self.elements.iter().enumerate() {
+            write!(f, "{:?}", ele)?;
             if i != len - 1 {
                 write!(f, ", ")?;
             }
