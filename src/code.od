@@ -64,6 +64,6 @@ for next in iter(func() -> maybe<int> {
 let fn = func<T,U>(p1: T, p2: U) -> T {
     p1+p2
 };
-let a = fn(1, 5);
+let a = fn::<int, int>(1, 5);
 printf("{}", a);
 printf("1: {}, 2: {}, 3: {}", (1,2,3));

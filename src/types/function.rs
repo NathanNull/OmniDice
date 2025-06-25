@@ -50,6 +50,17 @@ impl InnerFunc {
             }
         }
     }
+
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Self {
+        match self {
+            InnerFunc::Code(expr, param_names, captured_scope) => InnerFunc::Code(
+                *expr.replace_generics(generics),
+                param_names.clone(),
+                captured_scope.clone(),
+            ),
+            InnerFunc::Rust(_, _) => self.clone(),
+        }
+    }
 }
 
 impl Display for Func {
@@ -269,6 +280,34 @@ impl Type for FuncT {
         }
         Some(generics)
     }
+
+    fn specify_generics(&self, generics: &Vec<Datatype>) -> Option<Datatype> {
+        if generics.len() != self.generic.len() {
+            return None;
+        }
+        let g_map = HashMap::from_iter(
+            self.generic
+                .iter()
+                .zip(generics.iter())
+                .map(|(n, t)| (n.clone(), t.clone())),
+        );
+        let mut new_params = vec![];
+        for p in &self.params {
+            new_params.push(p.insert_generics(&g_map)?);
+        }
+        let new_output = self.output.insert_generics(&g_map)?;
+        let new_owner_t = if let Some(t) = self.owner_t.as_ref() {
+            Some(t.insert_generics(&g_map)?)
+        } else {
+            None
+        };
+        Some(Box::new(FuncT {
+            params: new_params,
+            output: new_output,
+            generic: vec![],
+            owner_t: new_owner_t,
+        }))
+    }
 }
 impl Val for Func {
     fn call(
@@ -296,5 +335,25 @@ impl Val for Func {
         } else {
             invalid!(op, self, other);
         }
+    }
+    fn insert_generics(&self, generics: &Vec<Datatype>) -> Value {
+        let new_ty = self
+            .get_type()
+            .specify_generics(generics)
+            .expect("Invalid generic specification")
+            .downcast::<FuncT>()
+            .unwrap();
+        Box::new(Func {
+            params: new_ty.params,
+            owner_t: new_ty.owner_t,
+            output: new_ty.output,
+            generic: vec![],
+            contents: self.contents.insert_generics(&HashMap::from_iter(
+                self.generic
+                    .iter()
+                    .zip(generics.iter())
+                    .map(|(n, t)| (n.clone(), t.clone())),
+            )),
+        })
     }
 }

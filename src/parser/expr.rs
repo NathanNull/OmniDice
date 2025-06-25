@@ -80,6 +80,7 @@ pub enum ExprContents {
     Tuple(Tuple),
     Function(Function),
     Call(Call),
+    GenericSpecify(GenericSpecify),
 }
 
 #[derive(Clone)]
@@ -117,6 +118,17 @@ impl Debug for ExprContents {
                 call.params
                     .iter()
                     .map(|p| format!("{p:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Self::GenericSpecify(gspec) => write!(
+                f,
+                "{:?}::<{}>",
+                gspec.base,
+                gspec
+                    .types
+                    .iter()
+                    .map(|t| format!("{t:?}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -187,10 +199,22 @@ impl Display for Expr {
             ),
             ExprContents::Call(call) => (
                 format!("call -> {}", self.output),
-                vec![call.base.deref()]
+                [call.base.deref()]
                     .into_iter()
                     .chain(call.params.iter().map(|p| &*p))
                     .collect(),
+            ),
+            ExprContents::GenericSpecify(gspec) => (
+                format!(
+                    "gspec <{}>",
+                    gspec
+                        .types
+                        .iter()
+                        .map(|t| format!("{t:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                vec![&gspec.base],
             ),
         };
         writeln!(f, "{str}")?;
@@ -353,6 +377,7 @@ impl Expr {
                 }
                 Box::new(used.into_iter())
             }
+            ExprContents::GenericSpecify(gspec) => gspec.base.used_variables(),
         }
     }
 
@@ -414,6 +439,7 @@ impl Expr {
                     .flatten()
                     .chain(call.base.assigned_variables()),
             ),
+            ExprContents::GenericSpecify(gspec) => gspec.base.assigned_variables(),
         }
     }
 
@@ -498,6 +524,10 @@ impl Expr {
                     .iter()
                     .map(|p| *p.replace_generics(generics))
                     .collect(),
+            }),
+            ExprContents::GenericSpecify(gspec) => ExprContents::GenericSpecify(GenericSpecify {
+                base: gspec.base.replace_generics(generics),
+                types: gspec.types.clone(),
             }),
         };
         Box::new(Self {
@@ -698,8 +728,14 @@ pub struct Function {
     pub generic: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Call {
     pub base: Box<Expr>,
     pub params: Vec<Expr>,
+}
+
+#[derive(Clone)]
+pub struct GenericSpecify {
+    pub base: Box<Expr>,
+    pub types: Vec<Datatype>,
 }

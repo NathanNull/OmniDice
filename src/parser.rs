@@ -192,6 +192,9 @@ impl Parser {
                         }
                     ))
             }
+            ExprContents::GenericSpecify(gspec) => {
+                gspec.base.output.specify_generics(&gspec.types).expect("Couldn't specify generics for this type")
+            }
         };
         if let Some(ty) = expected_type {
             ty.assert_same(&res)
@@ -412,9 +415,7 @@ impl Parser {
                     continue;
                 }
                 Token::OpLike(OpLike::Comma) if allow_join => {
-                    let (l_bp, r_bp) = INFIX_BINDING_POWER
-                        .get(&OpLike::Comma)
-                        .unwrap();
+                    let (l_bp, r_bp) = INFIX_BINDING_POWER.get(&OpLike::Comma).unwrap();
                     if *l_bp < min_bp {
                         break;
                     }
@@ -428,7 +429,8 @@ impl Parser {
                     new_end.push(Token::OpLike(OpLike::Comma));
                     loop {
                         if !expected_end.contains(self.tokens.peek().unwrap()) {
-                            let next = self.parse_expr(*r_bp, &new_end, allow_imply_eol, allow_join);
+                            let next =
+                                self.parse_expr(*r_bp, &new_end, allow_imply_eol, allow_join);
                             elements.push(*self.new_expr(next, None));
                         }
                         match self.tokens.next() {
@@ -442,6 +444,23 @@ impl Parser {
                         }
                     }
                     break;
+                }
+                Token::OpLike(OpLike::LTurbofish) => {
+                    self.tokens.next();
+                    let mut types = vec![];
+                    loop {
+                        types.push(self.parse_type());
+                        match self.tokens.next().expect("Unexpected EOF") {
+                            Token::OpLike(OpLike::Op(Op::Greater)) => break,
+                            Token::OpLike(OpLike::Comma) => continue,
+                            tk => panic!("Unexpected token {tk:?} in generic specification"),
+                        }
+                    }
+                    lhs = ExprContents::GenericSpecify(GenericSpecify {
+                        base: self.new_expr(lhs, None),
+                        types,
+                    });
+                    continue;
                 }
                 Token::OpLike(op) => op,
                 _ if imply_eol && expected_end.contains(&Token::EOL) => {
@@ -931,7 +950,7 @@ impl Parser {
                 };
                 ExprContents::Accessor(Accessor::Property(self.new_expr(lhs, None), rhs))
             }
-            (OpLike::Bracket(_) | OpLike::Colon | OpLike::Comma, _) => {
+            (OpLike::Bracket(_) | OpLike::Colon | OpLike::Comma | OpLike::LTurbofish, _) => {
                 unreachable!(
                     "{:?} is not a valid operation and should not parse as such",
                     op

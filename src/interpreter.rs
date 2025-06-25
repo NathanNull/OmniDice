@@ -4,7 +4,7 @@ use crate::{
     builtins::BUILTINS,
     parser::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
-        Function, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
+        Function, GenericSpecify, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
     },
     types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, Tuple, Value, Void},
 };
@@ -87,6 +87,7 @@ impl Interpreter {
             ExprContents::Tuple(tup) => self.eval_tuple(tup),
             ExprContents::Function(func) => self.eval_function(func),
             ExprContents::Call(call) => self.eval_call(call, expr.output.clone()),
+            ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec),
         };
         assert_eq!(
             &res.get_type(),
@@ -321,5 +322,9 @@ impl Interpreter {
         let res = self.eval_expr(func);
         self.variables.pop();
         res
+    }
+
+    fn eval_specify_generics(&mut self, gspec: &GenericSpecify) -> Value {
+        self.eval_expr(&gspec.base).insert_generics(&gspec.types)
     }
 }

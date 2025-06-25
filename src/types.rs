@@ -165,6 +165,9 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn get_generics(&self) -> Vec<String> {
         vec![]
     }
+    fn specify_generics(&self, _generics: &Vec<Datatype>) -> Option<Datatype> {
+        None
+    }
 }
 
 trait BaseVal {
@@ -179,25 +182,25 @@ trait BaseVal {
 #[allow(private_bounds)]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn get_prop(&self, _name: &str) -> Value {
-        unreachable!("Type '{}' has no properties.", self.get_name())
+        unreachable!("Type '{}' has no properties.", self.get_type())
     }
     fn set_prop(&self, _prop: &str, _value: Value) {
-        unreachable!("Type '{}' has no properties.", self.get_name())
+        unreachable!("Type '{}' has no properties.", self.get_type())
     }
     fn get_index(&self, _index: Value) -> Value {
-        unreachable!("Type '{}' can't be indexed.", self.get_name())
+        unreachable!("Type '{}' can't be indexed.", self.get_type())
     }
     fn set_index(&self, _index: Value, _value: Value) {
-        unreachable!("Type '{}' can't be indexed.", self.get_name())
+        unreachable!("Type '{}' can't be indexed.", self.get_type())
     }
     fn bin_op(&self, _other: &Value, _op: Op) -> Value {
-        unreachable!("Type '{}' has no binary operations.", self.get_name())
+        unreachable!("Type '{}' has no binary operations.", self.get_type())
     }
     fn pre_op(&self, _op: Op) -> Value {
-        unreachable!("Type '{}' has no prefix operations.", self.get_name())
+        unreachable!("Type '{}' has no prefix operations.", self.get_type())
     }
     fn post_op(&self, _op: Op) -> Value {
-        unreachable!("Type '{}' has no postfix operations.", self.get_name())
+        unreachable!("Type '{}' has no postfix operations.", self.get_type())
     }
     fn call(
         &self,
@@ -205,13 +208,16 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
         _interpreter: &mut Interpreter,
         _expected_output: Option<Datatype>,
     ) -> Value {
-        unreachable!("Type '{}' cannot be called.", self.get_name())
+        unreachable!("Type '{}' cannot be called.", self.get_type())
     }
     fn get_type(&self) -> Datatype {
         self.base_get_type()
     }
     fn dup(&self) -> Value {
         self.base_dup()
+    }
+    fn insert_generics(&self, _generics: &Vec<Datatype>) -> Value {
+        unreachable!("Type '{}' cannot have generics inserted", self.get_type())
     }
 }
 

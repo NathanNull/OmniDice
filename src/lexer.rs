@@ -45,6 +45,7 @@ pub enum OpLike {
     Bracket(Bracket),
     Colon,
     Comma,
+    LTurbofish,
 }
 
 impl Debug for OpLike {
@@ -57,6 +58,7 @@ impl Debug for OpLike {
             Self::Bracket(b) => &format!("{b:?}"),
             Self::Colon => ":",
             Self::Comma => ",",
+            Self::LTurbofish => "::<",
         };
         write!(f, "{c}")
     }
@@ -241,6 +243,7 @@ impl<'a> Lexer<'a> {
     fn lex_special(&mut self) -> Option<Token> {
         for (pattern, res) in [
             ("->", Token::Arrow),
+            ("::<", Token::OpLike(OpLike::LTurbofish)),
             ("+", Token::OpLike(OpLike::Op(Op::Plus))),
             ("-", Token::OpLike(OpLike::Op(Op::Minus))),
             ("*", Token::OpLike(OpLike::Op(Op::Times))),
