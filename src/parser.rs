@@ -192,9 +192,11 @@ impl Parser {
                         }
                     ))
             }
-            ExprContents::GenericSpecify(gspec) => {
-                gspec.base.output.specify_generics(&gspec.types).expect("Couldn't specify generics for this type")
-            }
+            ExprContents::GenericSpecify(gspec) => gspec
+                .base
+                .output
+                .specify_generics(&gspec.types)
+                .expect("Couldn't specify generics for this type"),
         };
         if let Some(ty) = expected_type {
             ty.assert_same(&res)
@@ -775,8 +777,11 @@ impl Parser {
                 tk => panic!("Unexpected token {tk:?}"),
             }
         }
-        self.tokens.expect(Token::Arrow);
-        let output = self.parse_type();
+        let output = if self.tokens.eat([Token::Arrow]).is_some() {
+            self.parse_type()
+        } else {
+            VOID.output.clone()
+        };
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)));
         self.var_types.push(VarScope {
