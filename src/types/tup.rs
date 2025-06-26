@@ -117,6 +117,10 @@ impl Type for TupT {
             .flatten()
             .collect()
     }
+
+    fn is_hashable(&self) -> bool {
+        self.entries.iter().all(|e|e.is_hashable())
+    }
 }
 impl Val for Tuple {
     fn get_prop(&self, name: &str) -> Value {
@@ -133,5 +137,9 @@ impl Val for Tuple {
         } else {
             invalid!("Prop", self, ());
         }
+    }
+
+    fn hash(&self, h: &mut dyn Hasher) {
+        self.inner().elements.iter().for_each(|e|e.as_ref().hash(h));
     }
 }

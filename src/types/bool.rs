@@ -20,6 +20,9 @@ impl Type for BoolT {
             _ => None,
         }
     }
+    fn is_hashable(&self) -> bool {
+        true
+    }
 }
 impl Val for bool {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
@@ -41,5 +44,9 @@ impl Val for bool {
             Op::Not => Box::new(!self),
             _ => invalid!(op, self, ()),
         }
+    }
+
+    fn hash(&self, h: &mut dyn Hasher) {
+        h.write_u8(*self as u8)
     }
 }

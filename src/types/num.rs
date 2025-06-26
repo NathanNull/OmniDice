@@ -18,6 +18,9 @@ impl Type for FloatT {
             _ => None,
         }
     }
+    fn is_hashable(&self) -> bool {
+        true
+    }
 }
 impl Val for f32 {
     fn bin_op(&self, other: &Value, op: Op) -> Value {
@@ -53,6 +56,9 @@ impl Val for f32 {
             _ => invalid!(op, self, ()),
         }
     }
+    fn hash(&self, h: &mut dyn Hasher) {
+        h.write_u32(self.to_bits());
+    }
 }
 
 type_init!(IntT, i32, "int");
@@ -81,6 +87,9 @@ impl Type for IntT {
             Op::Minus => Some(Box::new(IntT)),
             _ => None,
         }
+    }
+    fn is_hashable(&self) -> bool {
+        true
     }
 }
 impl Val for i32 {
@@ -120,5 +129,8 @@ impl Val for i32 {
             Op::Minus => Box::new(-self),
             _ => invalid!(op, self, ()),
         }
+    }
+    fn hash(&self, h: &mut dyn Hasher) {
+        h.write_i32(*self)
     }
 }

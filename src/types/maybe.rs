@@ -77,6 +77,9 @@ impl Type for MaybeT {
     fn get_generics(&self) -> Vec<String> {
         self.output.get_generics()
     }
+    fn is_hashable(&self) -> bool {
+        self.output.is_hashable()
+    }
 }
 impl Val for Maybe {
     fn get_prop(&self, name: &str) -> Value {
@@ -84,6 +87,11 @@ impl Val for Maybe {
             "unwrap" => Box::new(UNWRAP_SIG.clone().make_rust_member(unwrap_fn, self.dup())),
             "filled" => Box::new(self.contents.is_some()),
             _ => invalid!("Prop", self, name),
+        }
+    }
+    fn hash(&self, h: &mut dyn Hasher) {
+        if let Some(c) = &self.contents {
+            c.as_ref().hash(h)
         }
     }
 }

@@ -2,6 +2,7 @@ use std::{
     any::Any,
     collections::HashMap,
     fmt::{Debug, Display},
+    hash::{Hash, Hasher},
     sync::Arc,
 };
 
@@ -31,9 +32,6 @@ pub use ref_t::{Ref, RefT};
 mod function;
 pub use function::{Func, FuncT, InnerFunc};
 
-// mod rust_function;
-// pub use rust_function::{RustFunc, RustFuncT};
-
 mod func_sum;
 pub use func_sum::{FuncSum, FuncSumT};
 
@@ -48,6 +46,9 @@ pub use range::{Range, RangeT};
 
 mod typevar;
 pub use typevar::TypeVar;
+
+mod map;
+pub use map::{Map, MapT};
 
 trait GetRef<'a, T> {
     fn get_ref(&'a self) -> T;
@@ -168,6 +169,9 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn specify_generics(&self, _generics: &Vec<Datatype>) -> Option<Datatype> {
         None
     }
+    fn is_hashable(&self) -> bool {
+        false
+    }
 }
 
 trait BaseVal {
@@ -215,6 +219,9 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     }
     fn insert_generics(&self, _generics: &Vec<Datatype>) -> Value {
         unreachable!("Type '{}' cannot have generics inserted", self.get_type())
+    }
+    fn hash(&self, h: &mut dyn Hasher) {
+        unreachable!("Type '{}' cannot be hashed", self.get_type())
     }
 }
 
@@ -384,6 +391,14 @@ impl PartialEq for Value {
     }
 }
 
+impl Eq for Value {}
+
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_ref().hash(state);
+    }
+}
+
 impl Clone for Value {
     fn clone(&self) -> Self {
         self.dup()
@@ -417,7 +432,9 @@ impl Downcast for Datatype {
 
 type_init!(Void, Void, "()");
 impl Type for Void {}
-impl Val for Void {}
+impl Val for Void {
+    fn hash(&self, _: &mut dyn Hasher) {}
+}
 
 impl PartialEq for Void {
     fn eq(&self, _other: &Self) -> bool {

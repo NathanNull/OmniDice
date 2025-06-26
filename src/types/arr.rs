@@ -24,7 +24,7 @@ impl Display for _InnerArr {
 }
 
 impl Debug for _InnerArr {
-     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
         let len = self.elements.len();
         for (i, ele) in self.elements.iter().enumerate() {
@@ -137,7 +137,7 @@ static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
-static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+pub static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
     output: Box::new(MaybeT {
         output: TV1.clone(),
@@ -164,14 +164,7 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
     invalid!("Call", "iter", params);
 }
 
-// fn iter_ret_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut it = params.iter().cloned();
-//     let me = it.next_as::<TupT>()?;
-//     let arr = me.entries.0.get(1).and_then(|v| v.downcast::<ArrT>())?;
-//     Some(Box::new(MaybeT { output: arr.entry }))
-// }
-
-fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+pub fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
     let mut it = params.iter().cloned();
     let me = it.next_as::<Tuple>().expect("Invalid function call");
     let idx = me.inner().elements[0]
@@ -238,6 +231,8 @@ impl Type for ArrT {
             } else {
                 None
             }
+        } else if index == &RangeT {
+            Some(self.dup())
         } else {
             None
         }
@@ -253,6 +248,9 @@ impl Type for ArrT {
     }
     fn get_generics(&self) -> Vec<String> {
         self.entry.get_generics()
+    }
+    fn is_hashable(&self) -> bool {
+        self.entry.is_hashable()
     }
 }
 
@@ -315,6 +313,14 @@ impl Val for Arr {
                     .collect(),
                 self.inner().entry.clone(),
             ))
+        } else if let Some(range) = index.downcast::<Range>() {
+            let eles = &self.inner().elements;
+            Box::new(Self::new(
+                (range.inner().curr+1..range.inner().last)
+                    .map(|idx| eles.get(idx as usize).expect(&format!("Invalid index {idx}")).dup())
+                    .collect(),
+                self.inner().entry.clone(),
+            ))
         } else {
             invalid!("Index", self, index.get_type())
         }
@@ -350,5 +356,12 @@ impl Val for Arr {
         } else {
             invalid!("Index", self, index.get_type())
         }
+    }
+
+    fn hash(&self, h: &mut dyn Hasher) {
+        self.inner()
+            .elements
+            .iter()
+            .for_each(|e| e.as_ref().hash(h));
     }
 }

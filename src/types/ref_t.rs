@@ -85,6 +85,9 @@ impl Type for RefT {
     fn get_generics(&self) -> Vec<String> {
         self.ty.get_generics()
     }
+    fn is_hashable(&self) -> bool {
+        self.ty.is_hashable()
+    }
 }
 
 impl Val for Ref {
@@ -126,5 +129,8 @@ impl Val for Ref {
 
     fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter, expected_output: Option<Datatype>) -> Value {
         self.inner().val.call(params, interpreter, expected_output)
+    }
+    fn hash(&self, h: &mut dyn Hasher) {
+        self.inner().val.as_ref().hash(h);
     }
 }

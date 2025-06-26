@@ -101,6 +101,9 @@ impl Type for RangeT {
             _ => None,
         }
     }
+    fn is_hashable(&self) -> bool {
+        true
+    }
 }
 impl Val for Range {
     fn get_prop(&self, name: &str) -> Value {
@@ -113,5 +116,9 @@ impl Val for Range {
             ),
             _ => invalid!("Prop", self, name),
         }
+    }
+    fn hash(&self, h: &mut dyn Hasher) {
+        h.write_i32(self.inner().curr);
+        h.write_i32(self.inner().last);
     }
 }

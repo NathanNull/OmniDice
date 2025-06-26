@@ -22,6 +22,10 @@ impl Type for StringT {
             _ => None,
         }
     }
+
+    fn is_hashable(&self) -> bool {
+        true
+    }
 }
 
 impl Val for String {
@@ -43,5 +47,9 @@ impl Val for String {
             "length" => todo!("how make mutable"),//&mut (Box::new(self.len() as i32) as Box<dyn Val>),
             _ => invalid!("Prop", self, name),
         }
+    }
+
+    fn hash(&self, h: &mut dyn Hasher) {
+        h.write(self.as_bytes());
     }
 }

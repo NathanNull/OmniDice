@@ -61,11 +61,15 @@ for next in iter(func() -> maybe<int> {
     printf("{}", next);
 }*/
 
-let fn = func<T,U>(p1: T, p2: U) -> T {
+/*let fn = func<T,U>(p1: T, p2: U) -> T {
     p1+p2
 };
 typedef num = int;
 let a = fn::<num, num>(1, 5);
 printf("{}", a);
 printf("1: {}, 2: {}, 3: {}", (1,2,3));
-printf("This is computed at compile time: {}, {},\n{}", ([1,2,3], 1+2+3/4/5.0, 3d6));
+printf("This is computed at compile time: {}, {},\n{}", ([1,2,3], 1+2+3/4/5.0, 3d6));*/
+
+let arr = [1,2,3,4,5];
+arr[1,2,3] = [4,5,6];
+printf("{}", arr[0..5]);
