@@ -252,6 +252,7 @@ impl<'a> Lexer<'a> {
             ("/", Token::OpLike(OpLike::Op(Op::Divided))),
             ("d", Token::OpLike(OpLike::Op(Op::D))),
             ("%", Token::OpLike(OpLike::Op(Op::Mod))),
+            ("..=", Token::OpLike(OpLike::Op(Op::RangeEq))),
             ("..", Token::OpLike(OpLike::Op(Op::Range))),
             ("==", Token::OpLike(OpLike::Op(Op::Equal))),
             ("!=", Token::OpLike(OpLike::Op(Op::NotEqual))),

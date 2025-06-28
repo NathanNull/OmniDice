@@ -71,13 +71,24 @@ impl Type for IntT {
                 Some(Box::new(BoolT))
             } else if other == &IntT && op == Op::D {
                 Some(Box::new(DiceT))
-            } else if other == &IntT && op == Op::Range {
+            } else if other == &IntT && (op == Op::Range || op == Op::RangeEq) {
                 Some(Box::new(RangeT))
             } else {
                 None
             }
         } else if other == &FloatT && NUM_OPS.contains(&op) {
             Some(Box::new(FloatT))
+        } else if other
+            == &(ArrT {
+                entry: Box::new(IntT),
+            })
+            || other
+                == &(MapT {
+                    key: Box::new(IntT),
+                    value: Box::new(IntT),
+                })
+        {
+            Some(Box::new(DiceT))
         } else {
             None
         }
@@ -108,7 +119,8 @@ impl Val for i32 {
                 Op::Leq => Box::new(self <= &rhs),
                 Op::Mod => Box::new(self % rhs),
                 Op::D => Box::new(Distribution::n_die_m(*self as usize, rhs as usize)),
-                Op::Range => Box::new(Range::new(*self, rhs)),
+                Op::Range => Box::new(Range::new(*self, rhs - 1)),
+                Op::RangeEq => Box::new(Range::new(*self, rhs)),
                 _ => invalid!(op, self, other),
             }
         } else if let Some(rhs) = other.downcast::<f32>() {
@@ -119,6 +131,33 @@ impl Val for i32 {
                 Op::Divided => Box::new(*self as f32 / rhs),
                 _ => invalid!(op, self, other),
             }
+        } else if let Some(rhs) = other.downcast::<Arr>() {
+            Box::new(
+                Distribution::from_vec(
+                    rhs.inner()
+                        .elements
+                        .iter()
+                        .map(|e| e.downcast::<i32>().unwrap())
+                        .collect(),
+                )
+                .multiroll(*self as usize),
+            )
+        } else if let Some(rhs) = other.downcast::<Map>() {
+            Box::new(
+                Distribution::from_weights(
+                    rhs.inner()
+                        .elements
+                        .iter()
+                        .map(|(k, v)| {
+                            (
+                                k.downcast::<i32>().unwrap(),
+                                v.downcast::<i32>().unwrap() as usize,
+                            )
+                        })
+                        .collect(),
+                )
+                .multiroll(*self as usize),
+            )
         } else {
             invalid!(op, self, other)
         }

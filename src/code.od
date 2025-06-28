@@ -70,11 +70,15 @@ printf("{}", a);
 printf("1: {}, 2: {}, 3: {}", (1,2,3));
 printf("This is computed at compile time: {}, {},\n{}", ([1,2,3], 1+2+3/4/5.0, 3d6));*/
 
-let map = (0..50).iter().map(func(i: int) -> (string, int) {(format("{}", i), i)}).to_map();
+/*let map = (0..50).iter().map(func(i: int) -> (string, int) {(format("{}", i), i)}).to_map();
 map.set("456", 456);
 printf("{}", map.get("12"));
 printf("{}", map);
 
 for kvp in map {
     printf("{}: {}", (kvp.i0, kvp.i1));
-}
+}*/
+
+printf("{}", 2d[1,2,3,4,5,6]);
+let map = (1..11).iter().map(func(i:int) -> (int, int) {(i,i)}).to_map();
+printf("{}", 1d(map));

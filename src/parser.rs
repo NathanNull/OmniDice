@@ -940,6 +940,7 @@ impl Parser {
                 | OpLike::Op(Op::Mod)
                 | OpLike::Op(Op::D)
                 | OpLike::Op(Op::Range)
+                | OpLike::Op(Op::RangeEq)
                 | OpLike::Op(Op::Equal)
                 | OpLike::Op(Op::NotEqual)
                 | OpLike::Op(Op::Greater)
@@ -965,7 +966,7 @@ impl Parser {
             // "d6" expands to "1d6"
             (OpLike::Op(Op::D), OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(ExprContents::Value(Box::new(1)), Some(Box::new(IntT))),
-                rhs: self.new_expr(rhs, Some(Box::new(IntT))),
+                rhs: self.new_expr(rhs, None),
                 op: op.as_op(),
             }),
             (OpLike::Assign, OpType::Infix) => {
@@ -995,6 +996,7 @@ impl Parser {
                 | OpLike::Op(Op::Divided)
                 | OpLike::Op(Op::Mod)
                 | OpLike::Op(Op::Range)
+                | OpLike::Op(Op::RangeEq)
                 | OpLike::Op(Op::Equal)
                 | OpLike::Op(Op::NotEqual)
                 | OpLike::Op(Op::Greater)
@@ -1028,7 +1030,7 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             OpType::Infix,
             true,
         ),
-        (vec![OpLike::Op(Op::Range)], OpType::Infix, false),
+        (vec![OpLike::Op(Op::Range), OpLike::Op(Op::RangeEq)], OpType::Infix, false),
         (
             vec![OpLike::Op(Op::And), OpLike::Op(Op::Or)],
             OpType::Infix,

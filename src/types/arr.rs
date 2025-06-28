@@ -6,7 +6,7 @@ use crate::{gen_fn_map, invalid, mut_type_init, type_init};
 #[derive(Clone, PartialEq)]
 pub struct _InnerArr {
     entry: Datatype,
-    elements: Vec<Value>,
+    pub elements: Vec<Value>,
 }
 
 impl Display for _InnerArr {

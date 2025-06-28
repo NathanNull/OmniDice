@@ -10,7 +10,7 @@ use crate::{
 pub struct _InnerMap {
     key: Datatype,
     value: Datatype,
-    elements: HashMap<Value, Value>,
+    pub elements: HashMap<Value, Value>,
 }
 
 impl PartialEq for _InnerMap {

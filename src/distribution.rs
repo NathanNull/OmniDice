@@ -59,6 +59,19 @@ impl Distribution {
         Self { values }
     }
 
+    pub fn from_weights(vals: Vec<(i32, usize)>) -> Self {
+        let mut values = BTreeMap::new();
+        let prob = 1.0 / vals.iter().fold(0, |acc, (_, weight)| acc + *weight) as f32;
+        for (v, weight) in vals {
+            if let Some(val) = values.get_mut(&v) {
+                *val += prob * weight as f32;
+            } else {
+                values.insert(v, prob * weight as f32);
+            }
+        }
+        Self { values }
+    }
+
     pub fn min(&self) -> i32 {
         self.values.first_key_value().map(|(k, _)| *k).unwrap_or(0)
     }
