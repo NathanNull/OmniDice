@@ -8,7 +8,7 @@ use ordered_float::OrderedFloat;
 
 #[derive(Clone, PartialEq)]
 pub struct Distribution {
-    values: BTreeMap<i32, f32>,
+    pub values: BTreeMap<i32, f32>,
 }
 
 impl Distribution {
@@ -67,6 +67,19 @@ impl Distribution {
                 *val += prob * weight as f32;
             } else {
                 values.insert(v, prob * weight as f32);
+            }
+        }
+        Self { values }
+    }
+
+    pub fn from_odds(vals: Vec<(i32, f32)>) -> Self {
+        let mut values = BTreeMap::new();
+        let prob = 1.0 / vals.iter().fold(0.0, |acc, (_, weight)| acc + *weight) as f32;
+        for (v, weight) in vals {
+            if let Some(val) = values.get_mut(&v) {
+                *val += prob * weight;
+            } else {
+                values.insert(v, prob * weight);
             }
         }
         Self { values }

@@ -1,9 +1,16 @@
 use std::{collections::HashMap, sync::LazyLock};
 
+use itertools::Itertools;
+
 use crate::{
-    gen_fn_map, interpreter::Interpreter, invalid, types::{
-        BoxIterUtils, Datatype, Downcast, Func, FuncT, Iter, IterT, Maybe, MaybeT, Ref, RefT, StringT, Tuple, TypeVar, Val, Value, Void
-    }
+    distribution::Distribution,
+    gen_fn_map,
+    interpreter::Interpreter,
+    invalid,
+    types::{
+        Arr, ArrT, BoxIterUtils, Datatype, DiceT, Downcast, Func, FuncT, IntT, Iter, IterT, Maybe,
+        MaybeT, Ref, RefT, StringT, Tuple, TypeVar, Val, Value, Void,
+    },
 };
 
 gen_fn_map!(
@@ -15,7 +22,8 @@ gen_fn_map!(
     ("format", FORMAT_SIG, format_fn),
     ("filled", FILLED_SIG, filled_fn),
     ("iter", ITER_SIG, iter_fn),
-    ("null", NULL_SIG, null_fn)
+    ("null", NULL_SIG, null_fn),
+    ("dicemap", DICEMAP_SIG, dicemap_fn)
 );
 
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
@@ -27,15 +35,6 @@ pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
     }))
 });
 
-// fn ref_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     if params.len() == 1 {
-//         Some(Box::new(RefT {
-//             ty: params[0].clone(),
-//         }))
-//     } else {
-//         None
-//     }
-// }
 static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
@@ -54,9 +53,6 @@ fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Val
     }
 }
 
-// fn println_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
-//     format_sig(params, o)
-// }
 static PRINTLN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![Box::new(StringT)],
     output: Box::new(Void),
@@ -82,10 +78,6 @@ fn printf_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Va
     println!("{res}");
     Box::new(Void)
 }
-
-// fn error_sig(_params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     Some(Box::new(Void))
-// }
 
 static ERROR_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![TV1.clone()],
@@ -121,7 +113,9 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     let mut format_args = match next.downcast::<Tuple>() {
         Some(tup) if str.split("{}").count() > 2 => tup.inner().elements.clone(),
         _ => vec![next],
-    }.into_iter().map(|p| format!("{p}"));
+    }
+    .into_iter()
+    .map(|p| format!("{p}"));
     let mut str_pieces = str.split("{}").peekable();
     let mut res = "".to_string();
     while let Some(next_str_piece) = str_pieces.next() {
@@ -135,16 +129,6 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     }
     Box::new(res)
 }
-
-// fn filled_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     if params.len() == 1 {
-//         Some(Box::new(MaybeT {
-//             output: params[0].clone(),
-//         }))
-//     } else {
-//         None
-//     }
-// }
 
 static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![TV1.clone()],
@@ -166,15 +150,6 @@ fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     }
 }
 
-// fn null_sig(params: Vec<Datatype>, o: Option<Datatype>) -> Option<Datatype> {
-//     if params.len() == 0 {
-//         if let Some(ret) = o.and_then(|o| o.downcast::<MaybeT>()) {
-//             return Some(Box::new(ret));
-//         }
-//     }
-//     None
-// }
-
 static NULL_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
     output: Box::new(MaybeT {
@@ -195,19 +170,6 @@ fn null_fn(params: Vec<Value>, _i: &mut Interpreter, o: Option<Datatype>) -> Val
     }
     invalid!("Call", "null", params)
 }
-
-// fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     if params.len() == 1 {
-//         let func = params.first().and_then(|p| p.downcast::<FuncT>())?;
-//         if func.params.0.len() > 0 {
-//             return None;
-//         }
-//         let output = func.output.downcast::<MaybeT>()?.output;
-//         Some(Box::new(IterT { output }))
-//     } else {
-//         None
-//     }
-// }
 
 static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![Box::new(FuncT {
@@ -239,11 +201,83 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
             .downcast::<MaybeT>()
             .expect("Invalid function call")
             .output;
-        Box::new(Iter {
+        return Box::new(Iter {
             output,
             next_fn: func.dup(),
-        })
-    } else {
-        invalid!("Call", "iter", params);
+        });
     }
+    invalid!("Call", "iter", params);
+}
+
+static DICEMAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![
+        Box::new(ArrT {
+            entry: Box::new(DiceT),
+        }),
+        Box::new(FuncT {
+            params: vec![Box::new(ArrT {
+                entry: Box::new(IntT),
+            })],
+            output: Box::new(IntT),
+            generic: vec![],
+            owner_t: None,
+        }),
+    ],
+    output: Box::new(DiceT),
+    generic: vec![],
+    owner_t: None,
+});
+
+fn dicemap_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+    let mut param_iter = params.iter().cloned();
+    if let Some(dice) = param_iter.next_as::<Arr>() {
+        if let Some(func) = param_iter.next_as::<Func>() {
+            let mut roll_iter: Box<dyn Iterator<Item = (Vec<i32>, f32)>> =
+                Box::new(vec![(vec![], 1.0)].into_iter());
+            // Generate all potential combinations of rolls, and their odds
+            for die in dice
+                .inner()
+                .elements
+                .iter()
+                .map(|d| d.downcast::<Distribution>().unwrap())
+            {
+                // For each current result and each possible roll of the new die, multiply their odds
+                // and append the new roll to the result (with some extra nonsense to satisfy memory management)
+                roll_iter = Box::new(
+                    roll_iter
+                        .cartesian_product(
+                            die.values
+                                .iter()
+                                .map(|(k, v)| (*k, *v))
+                                // TODO: is there a way to do this without collecting like this? Probably not but maybe worth considering.
+                                .collect::<Vec<_>>()
+                                .into_iter(),
+                        )
+                        .map(|((mut c_vec, c_odds), (new_v, new_odds))| {
+                            c_vec.push(new_v);
+                            (c_vec, c_odds * new_odds)
+                        }),
+                );
+            }
+
+            let mut results = HashMap::new();
+            for (rolls, odds) in roll_iter {
+                let param = Arr::new(
+                    rolls.into_iter().map(|r| Box::new(r) as Value).collect(),
+                    Box::new(IntT),
+                );
+                let res = func
+                    .call(vec![Box::new(param)], i, Some(Box::new(IntT)))
+                    .downcast::<i32>()
+                    .unwrap();
+                if let Some(o) = results.get_mut(&res) {
+                    *o += odds;
+                } else {
+                    results.insert(res, odds);
+                }
+            }
+            return Box::new(Distribution::from_odds(results.into_iter().collect()));
+        }
+    }
+    invalid!("Call", "dicemap", params);
 }

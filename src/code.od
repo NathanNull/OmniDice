@@ -79,6 +79,10 @@ for kvp in map {
     printf("{}: {}", (kvp.i0, kvp.i1));
 }*/
 
-printf("{}", 2d[1,2,3,4,5,6]);
+/*printf("{}", 2d[1,2,3,4,5,6]);
 let map = (1..11).iter().map(func(i:int) -> (int, int) {(i,i)}).to_map();
-printf("{}", 1d(map));
+printf("{}", 1d(map));*/
+
+printf("{}", dicemap([d6,d6],func(ints:[int])->int{
+    if ints[0] > ints[1] {ints[0]} else {ints[1]}
+}))
