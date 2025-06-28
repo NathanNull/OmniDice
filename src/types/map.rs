@@ -76,23 +76,13 @@ impl Map {
     }
 }
 
-type_init!(MapT, Map, "array", (RwLockReadGuard<_InnerMap>), key: Datatype, value: Datatype);
+type_init!(MapT, Map, "map", (RwLockReadGuard<_InnerMap>), key: Datatype, value: Datatype);
 
 static TV1_NAME: &str = "__T1";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
 static TV2_NAME: &str = "__T2";
-static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
-
-// fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut p_iter = params.iter().cloned();
-//     if let Some(arr) = p_iter.next_as::<MapT>() {
-//         if p_iter.next().is_none() {
-//             return Some(Box::new(IterT { output: arr.entry }));
-//         }
-//     }
-//     None
-// }
+static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME.to_string())));
 
 static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
@@ -137,7 +127,62 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
     invalid!("Call", "iter", params);
 }
 
-gen_fn_map!(MAP_FNS, ("iter", ITER_SIG, iter_fn));
+static SET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![TV1.clone(), TV2.clone()],
+    output: Box::new(Void),
+    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
+    owner_t: Some(Box::new(MapT {
+        key: TV1.clone(),
+        value: TV2.clone(),
+    })),
+});
+
+fn set_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<Map>() {
+        if let Some(key) = p_iter.next() {
+            assert_eq!(arr.inner().key, key.get_type(), "Invalid type");
+            if let Some(val) = p_iter.next() {
+                assert_eq!(arr.inner().value, val.get_type(), "Invalid type");
+                arr.inner_mut().elements.insert(key, val);
+                return Box::new(Void);
+            }
+        }
+    }
+    invalid!("Call", "push", params)
+}
+
+static GET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![TV1.clone()],
+    output: TV2.clone(),
+    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
+    owner_t: Some(Box::new(MapT {
+        key: TV1.clone(),
+        value: TV2.clone(),
+    })),
+});
+
+fn get_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+    let mut p_iter = params.iter().cloned();
+    if let Some(arr) = p_iter.next_as::<Map>() {
+        if let Some(key) = p_iter.next() {
+            return arr
+                .inner_mut()
+                .elements
+                .get(&key)
+                .expect("Can't pop from empty array")
+                .clone();
+        }
+    }
+    invalid!("Call", "push", params)
+}
+
+gen_fn_map!(
+    MAP_FNS,
+    ("iter", ITER_SIG, iter_fn),
+    ("set", SET_SIG, set_fn),
+    ("get", GET_SIG, get_fn)
+);
 
 impl Type for MapT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
@@ -154,14 +199,19 @@ impl Type for MapT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(IntT)),
-            n if MAP_FNS.contains_key(n) => Some(
-                MAP_FNS[n]
-                    .0
-                    .clone()
-                    .with_owner(self.dup())
-                    .expect("Invalid owner")
-                    .dup(),
-            ),
+            n if MAP_FNS.contains_key(n) => {
+                println!("Getting {n}");
+                let ret = Some(
+                    MAP_FNS[n]
+                        .0
+                        .clone()
+                        .with_owner(self.dup())
+                        .expect("Invalid owner")
+                        .dup(),
+                );
+                println!("Got {ret:?}");
+                ret
+            }
             _ => None,
         }
     }

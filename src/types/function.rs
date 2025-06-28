@@ -171,14 +171,14 @@ impl FuncT {
             .expect("Can't make this function into a member");
         let generics = me_owner
             .try_match(&owner)
-            .expect("Invalid owner for this type");
+            .expect(&format!("Invalid owner for this function (expected {}, found {})", me_owner, owner));
         for (name, _) in &generics {
             self.generic.remove(
                 self.generic
                     .iter()
                     .enumerate()
                     .find(|g| (g.1 == name))
-                    .unwrap()
+                    .expect(&format!("Couldn't find generic {:?} in {:?}", name, self.generic))
                     .0,
             );
         }

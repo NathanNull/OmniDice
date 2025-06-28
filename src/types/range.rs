@@ -4,15 +4,21 @@ use crate::{gen_fn_map, invalid, mut_type_init, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct _InnerRange {
     pub curr: i32,
     pub last: i32,
 }
 
+impl Debug for _InnerRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.curr, self.last)
+    }
+}
+
 impl Display for _InnerRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}..{}", self.curr, self.last)
+        write!(f, "{}..{}", self.curr + 1, self.last)
     }
 }
 

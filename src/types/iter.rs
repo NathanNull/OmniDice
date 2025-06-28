@@ -31,6 +31,9 @@ static ITER_T: LazyLock<Datatype> =
 static TV2_NAME: &str = "__T2";
 static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME.to_string())));
 
+static TV3_NAME: &str = "__T3";
+static TV3: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV3_NAME.to_string())));
+
 // fn next_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
 //     let mut it = params.iter().cloned();
 //     if let Some(me) = it.next_as::<IterT>() {
@@ -183,6 +186,42 @@ gen_fn_map!(
     ("iter", IDENT_SIG, ident_fn)
 );
 
+static TO_MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(MapT {
+        key: TV2.clone(),
+        value: TV3.clone(),
+    }),
+    generic: vec![TV2_NAME.to_string(), TV3_NAME.to_string()],
+    owner_t: Some(Box::new(IterT {
+        output: Box::new(TupT {
+            entries: vec![TV2.clone(), TV3.clone()],
+        }),
+    })),
+});
+fn to_map_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+    let iter = params.first().unwrap().downcast::<Iter>().unwrap();
+    let mut map = HashMap::new();
+    let (mut kt, mut vt) = (Box::new(Void) as Datatype, Box::new(Void) as Datatype);
+    loop {
+        let entry = next_fn(vec![Box::new(iter.clone())], i, None)
+            .downcast::<Maybe>()
+            .unwrap();
+        if let Some(val) = entry.contents {
+            let tup = val.downcast::<Tuple>().unwrap();
+            let kvpair = &tup.inner().elements;
+            let key = kvpair[0].clone();
+            let value = kvpair[1].clone();
+            kt = key.get_type();
+            vt = value.get_type();
+            map.insert(key, value);
+        } else {
+            break;
+        }
+    }
+    Box::new(Map::new(map, kt, vt))
+}
+
 impl Type for IterT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
@@ -193,6 +232,13 @@ impl Type for IterT {
                     .with_owner(self.dup())
                     .expect("Invalid owner"),
             )),
+            "to_map" => {
+                println!("Creating to-map");
+                TO_MAP_SIG
+                .clone()
+                .with_owner(self.dup())
+                .map(|f| Box::new(f) as Datatype)
+            },
             _ => None,
         }
     }
@@ -218,6 +264,7 @@ impl Val for Iter {
                     .clone()
                     .make_rust_member(ITER_FNS[n].1, self.dup()),
             ),
+            "to_map" => Box::new(TO_MAP_SIG.clone().make_rust_member(to_map_fn, self.dup())),
             _ => invalid!("Prop", self, name),
         }
     }

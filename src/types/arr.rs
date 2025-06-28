@@ -142,7 +142,7 @@ pub static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     output: Box::new(MaybeT {
         output: TV1.clone(),
     }),
-    generic: vec![],
+    generic: vec![TV1_NAME.to_string()],
     owner_t: Some(Box::new(TupT {
         entries: vec![Box::new(IntT), Box::new(ArrT { entry: TV1.clone() })],
     })),
@@ -316,8 +316,12 @@ impl Val for Arr {
         } else if let Some(range) = index.downcast::<Range>() {
             let eles = &self.inner().elements;
             Box::new(Self::new(
-                (range.inner().curr+1..range.inner().last)
-                    .map(|idx| eles.get(idx as usize).expect(&format!("Invalid index {idx}")).dup())
+                (range.inner().curr + 1..range.inner().last)
+                    .map(|idx| {
+                        eles.get(idx as usize)
+                            .expect(&format!("Invalid index {idx}"))
+                            .dup()
+                    })
                     .collect(),
                 self.inner().entry.clone(),
             ))
@@ -352,6 +356,19 @@ impl Val for Arr {
                     } else {
                         invalid!("Index", self, idx.get_type())
                     }
+                });
+        } else if let Some(range) = index.downcast::<Range>() {
+            let entry = self.inner().entry.clone();
+            let vals = value.downcast::<Arr>().unwrap();
+            assert_eq!(vals.inner().entry, entry);
+            (range.inner().curr + 1..range.inner().last)
+                .zip(vals.inner().elements.iter())
+                .for_each(|(idx, val)| {
+                    *self
+                        .inner_mut()
+                        .elements
+                        .get_mut(idx as usize)
+                        .expect("Invalid index") = val.dup();
                 });
         } else {
             invalid!("Index", self, index.get_type())
