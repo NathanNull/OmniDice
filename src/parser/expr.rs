@@ -147,7 +147,9 @@ impl Debug for Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (str, children): (_, Vec<&Expr>) = match &self.contents {
-            ExprContents::Value(literal) => (format!("{} {:?}", literal.get_type(), literal), vec![]),
+            ExprContents::Value(literal) => {
+                (format!("{} {:?}", literal.get_type(), literal), vec![])
+            }
             ExprContents::Binop(binop) => {
                 (format!("{:?} b", binop.op), vec![&binop.lhs, &binop.rhs])
             }
@@ -443,97 +445,119 @@ impl Expr {
         }
     }
 
-    pub fn replace_generics(&self, generics: &HashMap<String, Datatype>) -> Box<Self> {
-        let new_type = self
-            .output
-            .insert_generics(&generics)
-            .expect("Invalid type");
+    pub fn replace_generics(
+        &self,
+        generics: &HashMap<String, Datatype>,
+    ) -> Result<Box<Self>, String> {
+        let new_type = match self.output.insert_generics(&generics) {
+            Some(nt) => nt,
+            None => return Err("Invalid type".to_string()),
+        };
         let new_contents = match &self.contents {
             ExprContents::Value(val) => ExprContents::Value(val.clone()),
             ExprContents::Binop(binop) => ExprContents::Binop(Binop {
-                lhs: binop.lhs.replace_generics(generics),
-                rhs: binop.rhs.replace_generics(generics),
+                lhs: binop.lhs.replace_generics(generics)?,
+                rhs: binop.rhs.replace_generics(generics)?,
                 op: binop.op,
             }),
             ExprContents::Prefix(prefix) => ExprContents::Prefix(Prefix {
                 op: prefix.op,
-                rhs: prefix.rhs.replace_generics(generics),
+                rhs: prefix.rhs.replace_generics(generics)?,
             }),
             ExprContents::Postfix(postfix) => ExprContents::Postfix(Postfix {
                 op: postfix.op,
-                lhs: postfix.lhs.replace_generics(generics),
+                lhs: postfix.lhs.replace_generics(generics)?,
             }),
             ExprContents::Assign(assign) => ExprContents::Assign(Assign {
-                assignee: accessor_replace_generics(&assign.assignee, generics),
-                val: assign.val.replace_generics(generics),
+                assignee: accessor_replace_generics(&assign.assignee, generics)?,
+                val: assign.val.replace_generics(generics)?,
                 a_type: assign.a_type.clone(),
             }),
             ExprContents::Accessor(accessor) => {
-                ExprContents::Accessor(accessor_replace_generics(accessor, generics))
+                ExprContents::Accessor(accessor_replace_generics(accessor, generics)?)
             }
-            ExprContents::Scope(exprs) => ExprContents::Scope(
-                exprs
-                    .iter()
-                    .map(|e| *e.replace_generics(generics))
-                    .collect(),
-            ),
+            ExprContents::Scope(exprs) => ExprContents::Scope({
+                let mut res = vec![];
+                for i in exprs.iter().map(|e| e.replace_generics(generics)) {
+                    res.push(*i?);
+                }
+                res
+            }),
             ExprContents::Conditional(conditional) => ExprContents::Conditional(Conditional {
-                condition: conditional.condition.replace_generics(generics),
-                result: conditional.result.replace_generics(generics),
-                otherwise: conditional
-                    .otherwise
-                    .as_ref()
-                    .map(|otw| otw.replace_generics(generics)),
+                condition: conditional.condition.replace_generics(generics)?,
+                result: conditional.result.replace_generics(generics)?,
+                otherwise: match conditional.otherwise.as_ref() {
+                    Some(otw) => Some(otw.replace_generics(generics)?),
+                    None => None,
+                },
             }),
             ExprContents::While(wh) => ExprContents::While(While {
-                condition: wh.condition.replace_generics(generics),
-                result: wh.result.replace_generics(generics),
+                condition: wh.condition.replace_generics(generics)?,
+                result: wh.result.replace_generics(generics)?,
             }),
             ExprContents::For(fo) => ExprContents::For(For {
                 var: fo.var.clone(),
-                iter: fo.iter.replace_generics(generics),
-                body: fo.body.replace_generics(generics),
+                iter: fo.iter.replace_generics(generics)?,
+                body: fo.body.replace_generics(generics)?,
             }),
             ExprContents::Array(array) => ExprContents::Array(Array {
-                elements: array
-                    .elements
-                    .iter()
-                    .map(|e| *e.replace_generics(generics))
-                    .collect(),
+                elements: {
+                    let mut res = vec![];
+                    for i in array.elements.iter().map(|e| e.replace_generics(generics)) {
+                        res.push(*i?);
+                    }
+                    res
+                },
             }),
             ExprContents::Tuple(tuple) => ExprContents::Tuple(Tuple {
-                elements: tuple
-                    .elements
-                    .iter()
-                    .map(|e| *e.replace_generics(generics))
-                    .collect(),
+                elements: {
+                    let mut res = vec![];
+                    for i in tuple.elements.iter().map(|e| e.replace_generics(generics)) {
+                        res.push(*i?);
+                    }
+                    res
+                },
             }),
             ExprContents::Function(function) => ExprContents::Function(Function {
-                params: function
-                    .params
-                    .iter()
-                    .map(|(n, t)| (n.clone(), t.insert_generics(generics).expect("Invalid")))
-                    .collect(),
-                contents: function.contents.replace_generics(generics),
+                params: {
+                    let mut res = vec![];
+                    for (n, t) in function
+                        .params
+                        .iter()
+                        .map(|(n, t)| (n.clone(), t.insert_generics(generics)))
+                    {
+                        res.push((
+                            n,
+                            match t {
+                                Some(t) => t,
+                                None => return Err("Invalid".to_string()),
+                            },
+                        ));
+                    }
+                    res
+                },
+                contents: function.contents.replace_generics(generics)?,
                 generic: function.generic.clone(),
             }),
             ExprContents::Call(call) => ExprContents::Call(Call {
-                base: call.base.replace_generics(generics),
-                params: call
-                    .params
-                    .iter()
-                    .map(|p| *p.replace_generics(generics))
-                    .collect(),
+                base: call.base.replace_generics(generics)?,
+                params: {
+                    let mut res = vec![];
+                    for i in call.params.iter().map(|p| p.replace_generics(generics)) {
+                        res.push(*i?);
+                    }
+                    res
+                },
             }),
             ExprContents::GenericSpecify(gspec) => ExprContents::GenericSpecify(GenericSpecify {
-                base: gspec.base.replace_generics(generics),
+                base: gspec.base.replace_generics(generics)?,
                 types: gspec.types.clone(),
             }),
         };
-        Box::new(Self {
+        Ok(Box::new(Self {
             contents: new_contents,
             output: new_type,
-        })
+        }))
     }
 
     pub fn try_const_eval(&self) -> Option<Value> {
@@ -562,7 +586,7 @@ impl Expr {
                 Accessor::Variable(_) => None,
                 Accessor::Property(base, prop) => base.try_const_eval().map(|b| b.get_prop(prop)),
                 Accessor::Index(base, index) => {
-                    if let Some((b,i)) = base
+                    if let Some((b, i)) = base
                         .try_const_eval()
                         .and_then(|l| index.try_const_eval().map(|r| (l, r)))
                     {
@@ -584,8 +608,9 @@ impl Expr {
                     }
                     Some(Arr::new(vals, out))
                 }
-                arr_eval(array, self.output.downcast::<ArrT>().unwrap().entry).map(|a|Box::new(a) as Value)
-            },
+                arr_eval(array, self.output.downcast::<ArrT>().unwrap().entry)
+                    .map(|a| Box::new(a) as Value)
+            }
             ExprContents::Tuple(tuple) => {
                 fn tup_eval(tup: &Tuple) -> Option<Tup> {
                     let mut vals = vec![];
@@ -594,8 +619,8 @@ impl Expr {
                     }
                     Some(Tup::new(vals))
                 }
-                tup_eval(tuple).map(|t|Box::new(t) as Value)
-            },
+                tup_eval(tuple).map(|t| Box::new(t) as Value)
+            }
             ExprContents::Function(_) => None,
             ExprContents::Call(_) => None,
             ExprContents::GenericSpecify(_) => None,
@@ -628,17 +653,17 @@ fn accessor_assigned_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item =
 fn accessor_replace_generics(
     accessor: &Accessor,
     generics: &HashMap<String, Datatype>,
-) -> Accessor {
-    match accessor {
+) -> Result<Accessor, String> {
+    Ok(match accessor {
         Accessor::Variable(_) => accessor.clone(),
         Accessor::Property(base, prop) => {
-            Accessor::Property(base.replace_generics(generics), prop.clone())
+            Accessor::Property(base.replace_generics(generics)?, prop.clone())
         }
         Accessor::Index(base, index) => Accessor::Index(
-            base.replace_generics(generics),
-            index.replace_generics(generics),
+            base.replace_generics(generics)?,
+            index.replace_generics(generics)?,
         ),
-    }
+    })
 }
 
 #[derive(Debug, Clone)]

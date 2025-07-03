@@ -21,12 +21,18 @@ fn main() {
     match Lexer::new(&code).lex() {
         Ok(tokens) => {
             println!("Tokens: {tokens:?}");
-            let ast = Parser::new(tokens).parse();
-            println!("AST: {ast}");
-            println!("Program output:");
-            Interpreter::new(ast).run();
+            match Parser::new(tokens).parse() {
+                Ok(ast) => {
+                    println!("AST: {ast}");
+                    println!("Program output:");
+                    Interpreter::new(*ast).run();
+                }
+                Err(err) => {
+                    println!("\n\n{err}")
+                }
+            }
         }
-        Err(err) => println!("{err:?}"),
+        Err(err) => println!("\n\n{err}"),
     }
 }
 
@@ -66,14 +72,14 @@ impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
         Self {
             inner,
             peeked: vec![],
-            pos: (1, 1),
+            pos: (1, 0),
         }
     }
 
     fn step(&mut self, w: TokenWidth) {
         if w.height != 0 {
             self.pos.0 += w.height;
-                self.pos.1 = 0;
+            self.pos.1 = 0;
         }
         self.pos.1 += w.width;
     }
@@ -117,14 +123,14 @@ impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
         Some(removed)
     }
 
-    pub fn expect(&mut self, ele: I)
+    pub fn expect(&mut self, ele: I) -> Result<(),String>
     where
         I: PartialEq,
     {
         match self.next() {
-            Some(next) if next == ele => (),
-            Some(next) => panic!("Expected {ele:?}, found {next:?}"),
-            None => panic!("Unexpected EOF"),
+            Some(next) if next == ele => Ok(()),
+            Some(next) => Err(format!("Expected {ele:?}, found {next:?}")),
+            None => Err("Unexpected EOF".to_string()),
         }
     }
 }

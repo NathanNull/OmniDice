@@ -1,6 +1,6 @@
 use std::{fmt::Debug, iter::Map, str::Chars};
 
-use crate::{TokenIter, TokenWidth, error::CompileError, parser::Op, types::Value};
+use crate::{TokenIter, TokenWidth, error::LexError, parser::Op, types::Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -94,7 +94,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn lex(&mut self) -> Result<TokenString, CompileError> {
+    pub fn lex(&mut self) -> Result<TokenString, LexError> {
         let mut tokens = vec![];
         let mut last_pos = self.code.pos;
         while {
@@ -134,7 +134,7 @@ impl<'a> Lexer<'a> {
                     .map(|c| c.to_string())
                     .collect::<Vec<_>>()
                     .concat();
-                return Err(CompileError {
+                return Err(LexError {
                     info: format!(
                         "Couldn't tokenize, next is {:?}, rest is {:?}",
                         self.code.peek(),

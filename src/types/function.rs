@@ -39,7 +39,9 @@ impl InnerFunc {
                 {
                     preset_vals.insert(name, val);
                 }
-                let body = expr.replace_generics(&generics);
+                let body = expr
+                    .replace_generics(&generics)
+                    .expect("Couldn't replace generics");
                 interpreter.call_function(preset_vals, &body)
             }
             InnerFunc::Rust(func, owner) => {
@@ -54,7 +56,9 @@ impl InnerFunc {
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Self {
         match self {
             InnerFunc::Code(expr, param_names, captured_scope) => InnerFunc::Code(
-                *expr.replace_generics(generics),
+                *expr
+                    .replace_generics(generics)
+                    .expect("couldn't replace generics"),
                 param_names.clone(),
                 captured_scope.clone(),
             ),
@@ -169,16 +173,20 @@ impl FuncT {
             .owner_t
             .as_ref()
             .expect("Can't make this function into a member");
-        let generics = me_owner
-            .try_match(&owner)
-            .expect(&format!("Invalid owner for this function (expected {}, found {})", me_owner, owner));
+        let generics = me_owner.try_match(&owner).expect(&format!(
+            "Invalid owner for this function (expected {}, found {})",
+            me_owner, owner
+        ));
         for (name, _) in &generics {
             self.generic.remove(
                 self.generic
                     .iter()
                     .enumerate()
                     .find(|g| (g.1 == name))
-                    .expect(&format!("Couldn't find generic {:?} in {:?}", name, self.generic))
+                    .expect(&format!(
+                        "Couldn't find generic {:?} in {:?}",
+                        name, self.generic
+                    ))
                     .0,
             );
         }
