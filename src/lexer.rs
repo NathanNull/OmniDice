@@ -1,6 +1,6 @@
-use std::{fmt::Debug, str::Chars};
+use std::{fmt::Debug, iter::Map, str::Chars};
 
-use crate::{TokenIter, parser::Op, types::Value};
+use crate::{TokenIter, TokenWidth, error::CompileError, parser::Op, types::Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -65,30 +65,38 @@ impl Debug for OpLike {
     }
 }
 
-impl OpLike {
-    pub fn as_op(&self) -> Op {
-        match self {
-            OpLike::Op(op) => *op,
-            _ => panic!("Wasn't an op"),
-        }
-    }
-}
-
 pub struct Lexer<'a> {
-    code: TokenIter<Chars<'a>>,
+    code: TokenIter<char, Map<Chars<'a>, fn(char) -> (char, TokenWidth)>>,
 }
 
-pub type TokenString = Vec<Token>;
+pub type TokenString = Vec<(Token, TokenWidth)>;
 
 impl<'a> Lexer<'a> {
     pub fn new(code: &'a str) -> Self {
+        fn char_width(c: char) -> (char, TokenWidth) {
+            (
+                c,
+                if c == '\n' {
+                    TokenWidth {
+                        width: 0,
+                        height: 1,
+                    }
+                } else {
+                    TokenWidth {
+                        width: 1,
+                        height: 0,
+                    }
+                },
+            )
+        }
         Self {
-            code: TokenIter::new(code.chars()),
+            code: TokenIter::new(code.chars().map(char_width)),
         }
     }
 
-    pub fn lex(&mut self) -> TokenString {
+    pub fn lex(&mut self) -> Result<TokenString, CompileError> {
         let mut tokens = vec![];
+        let mut last_pos = self.code.pos;
         while {
             while self.code.peek().is_some_and(|c| c.is_whitespace()) {
                 self.code.next();
@@ -103,18 +111,55 @@ impl<'a> Lexer<'a> {
                 .or_else(|| self.lex_literal())
                 .or_else(|| self.lex_special())
             {
-                tokens.push(tk)
+                let p = self.code.pos;
+                tokens.push((
+                    tk,
+                    if last_pos.0 == p.0 {
+                        TokenWidth {
+                            width: p.1 - last_pos.1,
+                            height: 0,
+                        }
+                    } else {
+                        TokenWidth {
+                            height: p.0 - last_pos.0,
+                            width: p.1,
+                        }
+                    },
+                ));
+                last_pos = p;
             } else {
-                let str = self.code.inner.as_str();
-                panic!(
-                    "Couldn't tokenize, next is {:?}, rest is {:?}",
-                    self.code.peek(),
-                    str
-                )
+                let str = self
+                    .code
+                    .clone()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .concat();
+                return Err(CompileError {
+                    info: format!(
+                        "Couldn't tokenize, next is {:?}, rest is {:?}",
+                        self.code.peek(),
+                        str
+                    ),
+                    location: self.code.pos,
+                });
             }
         }
-        tokens.push(Token::EOF);
-        tokens
+        let p = self.code.pos;
+        tokens.push((
+            Token::EOF,
+            if last_pos.0 == p.0 {
+                TokenWidth {
+                    width: p.1 - last_pos.1,
+                    height: 0,
+                }
+            } else {
+                TokenWidth {
+                    height: p.0 - last_pos.0,
+                    width: p.1,
+                }
+            },
+        ));
+        Ok(tokens)
     }
 
     fn lex_comment(&mut self) -> bool {
@@ -196,7 +241,8 @@ impl<'a> Lexer<'a> {
         {
             let is_dot = self.code.peek() == Some(&'.');
             if last_was_dot && is_dot {
-                self.code.replace(num.pop().unwrap());
+                let n = num.pop().unwrap();
+                self.code.replace(n);
                 break;
             }
             last_was_dot = is_dot;
@@ -229,14 +275,34 @@ impl<'a> Lexer<'a> {
         let mut string_chars = vec![];
         while !self.code.eat_str("\"") {
             string_chars.push(if self.code.eat_str("\\") {
-                match self.code.next().expect("Expected escape character") {
-                    '\\' => '\\',
-                    '"' => '"',
-                    'n' => '\n',
-                    c => panic!("Expected escape character, found '{c}'"),
+                if let Some(n) = self.code.next() {
+                    match n {
+                        '\\' => '\\',
+                        '"' => '"',
+                        'n' => '\n',
+                        _ => {
+                            for c in string_chars.into_iter().rev() {
+                                self.code.replace(c);
+                            }
+                            return None;
+                        }
+                    }
+                } else {
+                    for c in string_chars.into_iter().rev() {
+                        self.code.replace(c);
+                    }
+                    return None;
                 }
             } else {
-                self.code.next().expect("Expected end of string literal")
+                match self.code.next() {
+                    Some(n) => n,
+                    None => {
+                        for c in string_chars.into_iter().rev() {
+                            self.code.replace(c);
+                        }
+                        return None;
+                    }
+                }
             });
         }
         Some(Token::Literal(Box::new(String::from_iter(string_chars))))

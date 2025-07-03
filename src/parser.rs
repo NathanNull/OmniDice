@@ -1,14 +1,10 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    TokenIter,
-    builtins::BUILTINS,
-    interpreter::VarScope,
-    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{
+    builtins::BUILTINS, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
         ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
         TupT, TypeVar, Void,
-    },
+    }, TokenIter, TokenWidth
 };
 
 pub mod expr;
@@ -16,7 +12,7 @@ pub use expr::*;
 use strum::IntoEnumIterator;
 
 pub struct Parser {
-    tokens: TokenIter<IntoIter<Token>>,
+    tokens: TokenIter<Token, IntoIter<(Token, TokenWidth)>>,
     var_types: Vec<VarScope<(Datatype, bool)>>,
     typedefs: Vec<VarScope<Datatype>>,
 }
@@ -584,7 +580,7 @@ impl Parser {
     fn parse_for(&mut self) -> ExprContents {
         let var = match self.tokens.next() {
             Some(Token::Identifier(id)) => id,
-            Some(t) => panic!("Expected identifier, found {t:?}"),
+            Some(t) => panic!("Expected identifier, found {t:?} (pos {:?})", self.tokens.pos),
             None => panic!("Unexpected EOF"),
         };
         self.tokens.expect(Token::Keyword(Keyword::In));
@@ -953,21 +949,21 @@ impl Parser {
             ) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(lhs, None),
                 rhs: self.new_expr(rhs, None),
-                op: op.as_op(),
+                op: match op {OpLike::Op(o)=>o, _=>unreachable!("Must have been an op to get here")},
             }),
             (OpLike::Op(Op::Minus), OpType::Prefix) => ExprContents::Prefix(Prefix {
-                op: op.as_op(),
+                op: Op::Minus,
                 rhs: self.new_expr(rhs, None),
             }),
             (OpLike::Op(Op::Not), OpType::Prefix) => ExprContents::Prefix(Prefix {
-                op: op.as_op(),
+                op: Op::Not,
                 rhs: self.new_expr(rhs, None),
             }),
             // "d6" expands to "1d6"
             (OpLike::Op(Op::D), OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(ExprContents::Value(Box::new(1)), Some(Box::new(IntT))),
                 rhs: self.new_expr(rhs, None),
-                op: op.as_op(),
+                op: Op::D,
             }),
             (OpLike::Assign, OpType::Infix) => {
                 let prev_type = self.new_expr(lhs.clone(), None).output;

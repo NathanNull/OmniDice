@@ -10,15 +10,6 @@ static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME
 static TV3_NAME: &str = "__T3";
 static TV3: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV3_NAME.to_string())));
 
-// fn next_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut it = params.iter().cloned();
-//     if let Some(me) = it.next_as::<IterT>() {
-//         Some(Box::new(MaybeT { output: me.output }))
-//     } else {
-//         None
-//     }
-// }
-
 pub static NEXT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
     output: Box::new(MaybeT {

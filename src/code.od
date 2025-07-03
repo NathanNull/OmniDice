@@ -87,5 +87,4 @@ printf("{}", 1d(map));*/
     if ints[0] > ints[1] {ints[0]} else {ints[1]}
 }))*/
 
-printf("{}", (0..=10).iter().filter(func(i: int) -> bool {i % 2 == 0}).fold("", func(acc: string, i: int)->string{format("{}, {}", (acc, i))}))
-
+printf("{}", (0..=10).iter().filter(func(i: int) -> bool {i % 2 == 0}).fold("", func(acc: string, i: int)->string{format("{}, {}", (acc, i))}));
