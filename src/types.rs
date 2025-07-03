@@ -220,7 +220,7 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn insert_generics(&self, _generics: &Vec<Datatype>) -> Value {
         unreachable!("Type '{}' cannot have generics inserted", self.get_type())
     }
-    fn hash(&self, h: &mut dyn Hasher) {
+    fn hash(&self, _h: &mut dyn Hasher) {
         unreachable!("Type '{}' cannot be hashed", self.get_type())
     }
 }
@@ -454,7 +454,7 @@ const ORD_OPS: [Op; 6] = [
 
 #[macro_export]
 macro_rules! gen_fn_map {
-    ($name: ident, $(($fname: literal, $fsig: ident, $ffn: ident)),*) => {
+    ($name: ident, $(($fname: literal, $fsig: ident, $ffn: ident)),*$(,)?) => {
         static $name: ::std::sync::LazyLock<
             ::std::collections::HashMap<
                 &'static str,
