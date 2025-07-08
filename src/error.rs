@@ -1,5 +1,7 @@
 use std::fmt::{Debug, Display};
 
+use crate::types::Value;
+
 #[derive(Clone, Copy)]
 pub struct LineIndex(pub usize, pub usize);
 
@@ -37,32 +39,64 @@ pub struct RuntimeError {
     err_loc: Option<LineIndex>,
     call_stack: Vec<LineIndex>,
     info: String,
+    err_type: RuntimeErrorType,
 }
+
+pub enum RuntimeErrorType {
+    Standard,
+    Break,
+    Return(Value),
+}
+
+impl RuntimeErrorType {
+    pub fn is_return(&self) -> bool {
+        match self {
+            Return(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn is_break(&self) -> bool {
+        match self {
+            Break => true,
+            _ => false
+        }
+    }
+}
+
+use RuntimeErrorType::*;
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "Runtime Error {}: {}",
-            match self.err_loc {
-                Some(l) => format!("at {l:?}"),
-                None => "with unknown location".to_string(),
-            },
-            self.info
-        )?;
-        for line in &self.call_stack {
-            writeln!(f, "\t@{line:?}")?;
+        match &self.err_type {
+            Standard => {
+                writeln!(
+                    f,
+                    "Runtime Error {}: {}",
+                    match self.err_loc {
+                        Some(l) => format!("at {l:?}"),
+                        None => "with unknown location".to_string(),
+                    },
+                    self.info
+                )?;
+                for line in &self.call_stack {
+                    writeln!(f, "\t@{line:?}")?;
+                }
+            }
+            Break => writeln!(f, "Break")?,
+            Return(v) => writeln!(f, "Return {v}")?,
         }
         Ok(())
     }
 }
 
 impl RuntimeError {
-    pub fn partial(info: &str)->Self{
+    pub fn partial(info: &str) -> Self {
         Self {
             err_loc: None,
             call_stack: vec![],
             info: info.to_string(),
+            err_type: Standard,
         }
     }
 
@@ -70,7 +104,17 @@ impl RuntimeError {
         Self {
             err_loc: Some(loc),
             call_stack: vec![loc],
-            info: info.to_string()
+            info: info.to_string(),
+            err_type: Standard,
+        }
+    }
+
+    pub fn special(err_type: RuntimeErrorType) -> Self {
+        Self {
+            err_loc: None,
+            call_stack: vec![],
+            info: String::new(),
+            err_type,
         }
     }
 
@@ -80,5 +124,9 @@ impl RuntimeError {
         }
         self.call_stack.push(loc);
         self
+    }
+
+    pub fn err_type(&self) -> &RuntimeErrorType {
+        &self.err_type
     }
 }

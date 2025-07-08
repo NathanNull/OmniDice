@@ -1,4 +1,8 @@
-use std::{fmt::{Debug, Display}, iter::Map, str::Chars};
+use std::{
+    fmt::{Debug, Display},
+    iter::Map,
+    str::Chars,
+};
 
 use crate::{TokenIter, TokenWidth, error::LexError, parser::Op, types::Value};
 
@@ -39,22 +43,30 @@ pub enum Keyword {
     Let,
     Func,
     Typedef,
+    Break,
+    Return,
 }
 
 impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "_k_{}", match self {
-            Keyword::True => "true",
-            Keyword::False => "false",
-            Keyword::If => "if",
-            Keyword::Else => "else",
-            Keyword::While => "while",
-            Keyword::For => "for",
-            Keyword::In => "in",
-            Keyword::Let => "let",
-            Keyword::Func => "func",
-            Keyword::Typedef => "typedef",
-        })
+        write!(
+            f,
+            "_kw_{}",
+            match self {
+                Keyword::True => "true",
+                Keyword::False => "false",
+                Keyword::If => "if",
+                Keyword::Else => "else",
+                Keyword::While => "while",
+                Keyword::For => "for",
+                Keyword::In => "in",
+                Keyword::Let => "let",
+                Keyword::Func => "func",
+                Keyword::Typedef => "typedef",
+                Keyword::Break => "break",
+                Keyword::Return => "return",
+            }
+        )
     }
 }
 
@@ -70,14 +82,18 @@ pub enum Bracket {
 
 impl Display for Bracket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Bracket::LBracket => "(",
-            Bracket::RBracket => ")",
-            Bracket::LCurly => "{",
-            Bracket::RCurly => "}",
-            Bracket::LSquare => "[",
-            Bracket::RSquare => "]",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Bracket::LBracket => "(",
+                Bracket::RBracket => ")",
+                Bracket::LCurly => "{",
+                Bracket::RCurly => "}",
+                Bracket::LSquare => "[",
+                Bracket::RSquare => "]",
+            }
+        )
     }
 }
 
@@ -271,11 +287,13 @@ impl<'a> Lexer<'a> {
                 "let" => Keyword::Let,
                 "func" => Keyword::Func,
                 "typedef" => Keyword::Typedef,
+                "break" => Keyword::Break,
+                "return" => Keyword::Return,
                 _ => return Some(Token::Identifier(name_str)),
             }))
         } else {
             // Put the tokens back so that the last taken one is replaced first
-            // Turns out we didn't actually need them
+            // Turns out we didn't actually need them, since this is a dice constructor and not an identifier/keyword
             for c in name.into_iter().rev() {
                 self.code.replace(c);
             }

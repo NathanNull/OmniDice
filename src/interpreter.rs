@@ -2,10 +2,10 @@ use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     builtins::BUILTINS,
-    error::RuntimeError,
+    error::{RuntimeError, RuntimeErrorType},
     parser::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
-        Function, GenericSpecify, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
+        Function, GenericSpecify, Postfix, Prefix, Return, Scope, Tuple as TupleExpr, While,
     },
     types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, Tuple, Value, Void},
 };
@@ -13,19 +13,21 @@ use crate::{
 pub struct VarScope<T: Debug> {
     pub vars: HashMap<String, T>,
     pub blocking: bool,
+    pub name: &'static str,
 }
 
 impl<T: Debug> Debug for VarScope<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "VarScope([{}], blocking? {})",
+            "{}([{}], blocking? {})",
+            self.name,
             self.vars
                 .iter()
                 .map(|(v, _)| v.clone())
                 .collect::<Vec<_>>()
                 .join(", "),
-            self.blocking
+            self.blocking,
         )
     }
 }
@@ -42,6 +44,7 @@ impl Interpreter {
             variables: vec![VarScope {
                 vars: BUILTINS.clone(),
                 blocking: true,
+                name: "builtins",
             }],
         }
     }
@@ -64,9 +67,12 @@ impl Interpreter {
         self.variables.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
+            name: "scope",
         });
         for expr in scope {
-            last = self.eval_expr(&expr)?;
+            last = self.eval_expr(&expr).inspect_err(|_| {
+                self.variables.pop();
+            })?;
         }
         self.variables.pop();
         Ok(last)
@@ -74,16 +80,16 @@ impl Interpreter {
 
     fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         let res = match &expr.contents {
-            ExprContents::Accessor(acc) => self.eval_accessor(acc)?,
-            ExprContents::Value(val) => val.clone(),
-            ExprContents::Binop(binop) => self.eval_binop(binop)?,
-            ExprContents::Prefix(prefix) => self.eval_prefix(prefix)?,
-            ExprContents::Postfix(postfix) => self.eval_postfix(postfix)?,
-            ExprContents::Assign(assign) => self.eval_assign(assign)?,
-            ExprContents::Scope(scope) => self.eval_scope(scope)?,
-            ExprContents::Conditional(cond) => self.eval_conditional(cond)?,
-            ExprContents::While(wh) => self.eval_while(wh)?,
-            ExprContents::For(fo) => self.eval_for(fo)?,
+            ExprContents::Accessor(acc) => self.eval_accessor(acc),
+            ExprContents::Value(val) => Ok(val.clone()),
+            ExprContents::Binop(binop) => self.eval_binop(binop),
+            ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
+            ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
+            ExprContents::Assign(assign) => self.eval_assign(assign),
+            ExprContents::Scope(scope) => self.eval_scope(scope),
+            ExprContents::Conditional(cond) => self.eval_conditional(cond),
+            ExprContents::While(wh) => self.eval_while(wh),
+            ExprContents::For(fo) => self.eval_for(fo),
             ExprContents::Array(arr) => self.eval_array(
                 arr,
                 expr.output
@@ -91,12 +97,14 @@ impl Interpreter {
                     .expect("Array should be array")
                     .entry
                     .clone(),
-            )?,
-            ExprContents::Tuple(tup) => self.eval_tuple(tup)?,
-            ExprContents::Function(func) => self.eval_function(func)?,
-            ExprContents::Call(call) => self.eval_call(call, expr.output.clone())?,
-            ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec)?,
-        };
+            ),
+            ExprContents::Tuple(tup) => self.eval_tuple(tup),
+            ExprContents::Function(func) => self.eval_function(func),
+            ExprContents::Call(call) => self.eval_call(call, expr.output.clone()),
+            ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec),
+            ExprContents::Return(ret) => self.eval_return(ret),
+            ExprContents::Break(_) => self.eval_break(),
+        }?;
         if res.get_type() != expr.output {
             return Err(RuntimeError::single(
                 &format!(
@@ -272,7 +280,17 @@ impl Interpreter {
         loop {
             if let Some(condition) = self.eval_expr(&wh.condition)?.downcast::<bool>() {
                 if condition {
-                    self.eval_expr(&wh.result)?;
+                    match self.eval_expr(&wh.result) {
+                        Ok(v) if v != Box::new(Void) as Value => {
+                            return Err(RuntimeError::single(
+                                "While loop returned non-void value",
+                                wh.result.location,
+                            ));
+                        }
+                        Ok(_) => (),
+                        Err(e) if e.err_type().is_break() => break,
+                        Err(e) => return Err(e),
+                    }
                 } else {
                     break;
                 }
@@ -295,20 +313,40 @@ impl Interpreter {
         self.variables.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
+            name: "for",
         });
         loop {
             let next_val = iter
                 .get_prop("next")
-                .map_err(|e| e.stack_loc(fo.iter.location))?
-                .call(vec![], self, None)?;
+                .map_err(|e| e.stack_loc(fo.iter.location))
+                .inspect_err(|_| {
+                    self.variables.pop();
+                })?
+                .call(vec![], self, None)
+                .inspect_err(|_| {
+                    self.variables.pop();
+                })?;
             match next_val.downcast::<Maybe>() {
                 Some(Maybe {
                     output: _,
                     contents: Some(c),
                 }) => {
                     self.set_var(fo.var.clone(), c)
-                        .map_err(|e| e.stack_loc(fo.iter.location))?;
-                    self.eval_expr(&fo.body)?;
+                        .map_err(|e| e.stack_loc(fo.iter.location))
+                        .inspect_err(|_| {
+                            self.variables.pop();
+                        })?;
+                    match self.eval_expr(&fo.body) {
+                        Ok(v) if v != Box::new(Void) as Value => {
+                            return Err(RuntimeError::single(
+                                "While loop returned non-void value",
+                                fo.body.location,
+                            ));
+                        }
+                        Ok(_) => (),
+                        Err(e) if e.err_type().is_break() => break,
+                        Err(e) => return Err(e),
+                    }
                 }
                 Some(Maybe {
                     output: _,
@@ -398,13 +436,30 @@ impl Interpreter {
         self.variables.push(VarScope {
             vars: preset_vals,
             blocking: true,
+            name: "func",
         });
         let res = self.eval_expr(func);
         self.variables.pop();
-        res
+        match res {
+            Err(err) if err.err_type().is_return() => match err.err_type() {
+                RuntimeErrorType::Return(v) => Ok(v.clone()),
+                _ => unreachable!("Just checked if it was a Return"),
+            },
+            r => r,
+        }
     }
 
     fn eval_specify_generics(&mut self, gspec: &GenericSpecify) -> Result<Value, RuntimeError> {
         self.eval_expr(&gspec.base)?.insert_generics(&gspec.types)
+    }
+
+    fn eval_return(&mut self, ret: &Return) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::special(RuntimeErrorType::Return(
+            self.eval_expr(&ret.ret)?,
+        )))
+    }
+
+    fn eval_break(&mut self) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::special(RuntimeErrorType::Break))
     }
 }

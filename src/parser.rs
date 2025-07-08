@@ -1,10 +1,15 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    builtins::BUILTINS, error::{LineIndex, ParseError}, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
+    TokenIter, TokenWidth,
+    builtins::BUILTINS,
+    error::{LineIndex, ParseError},
+    interpreter::VarScope,
+    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
+    types::{
         ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
         TupT, TypeVar, Void,
-    }, TokenIter, TokenWidth
+    },
 };
 
 pub mod expr;
@@ -15,6 +20,8 @@ pub struct Parser {
     tokens: TokenIter<Token, IntoIter<(Token, TokenWidth)>>,
     var_types: Vec<VarScope<(Datatype, bool)>>,
     typedefs: Vec<VarScope<Datatype>>,
+    break_t_stack: Vec<bool>,
+    return_t_stack: Vec<Datatype>,
 }
 
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
@@ -40,11 +47,15 @@ impl Parser {
                         .map(|(name, var)| (name.clone(), (var.get_type(), false))),
                 ),
                 blocking: true,
+                name: "builtins",
             }],
             typedefs: vec![VarScope {
                 vars: HashMap::new(),
                 blocking: true,
+                name: "base",
             }],
+            break_t_stack: vec![],
+            return_t_stack: vec![],
         }
     }
 
@@ -213,7 +224,7 @@ impl Parser {
                 .map(|expr| expr.output.clone())
                 .unwrap_or(VOID.output.clone()),
             ExprContents::Conditional(cond) => cond.result.output.clone(),
-            ExprContents::While(_) | ExprContents::For(_) => VOID.output.clone(), // This is always Void
+            ExprContents::While(_) | ExprContents::For(_) => VOID.output.clone(),
             ExprContents::Array(arr) => Box::new(ArrT {
                 entry: match arr
                     .elements
@@ -272,6 +283,8 @@ impl Parser {
                     }
                 }
             }
+            ExprContents::Return(ret) => ret.ret.output.clone(),
+            ExprContents::Break(_) => VOID.output.clone(),
         };
         Ok(if let Some(ty) = expected_type {
             ty.assert_same(&res)
@@ -296,6 +309,7 @@ impl Parser {
         self.var_types.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
+            name: "scope"
         });
         let expected_end = vec![
             Token::EOL,
@@ -444,6 +458,30 @@ impl Parser {
                     Some(v) => v.vars.insert(name, ty),
                 };
                 VOID.contents.clone()
+            }
+            Token::Keyword(Keyword::Return) => {
+                let ret = self.parse_expr(
+                    INFIX_BINDING_POWER[&OpLike::Assign].1,
+                    expected_end,
+                    allow_imply_eol,
+                    allow_join,
+                )?;
+                if let Some(ret_type) = self.return_t_stack.last() {
+                    let expected_type = Some(ret_type.clone());
+                    let ret = self.new_expr(ret, expected_type)?;
+                    ExprContents::Return(Return { ret })
+                } else {
+                    return self.make_error(
+                        "Return statements are invalid in the root context".to_string(),
+                    );
+                }
+            }
+
+            Token::Keyword(Keyword::Break) => {
+                if self.break_t_stack.last().is_none_or(|allowed| !*allowed) {
+                    return self.make_error("Breaking is not valid in this context".to_string());
+                }
+                ExprContents::Break(Break)
             }
             tk => return self.make_error(format!("Expected expression, found {tk:?}")),
         };
@@ -603,7 +641,7 @@ impl Parser {
     }
 
     fn parse_if(&mut self, expected_type: Option<Datatype>) -> Result<ExprContents, ParseError> {
-        let (base_clause, base_expr) = self.parse_conditional_clause(expected_type)?;
+        let (base_clause, base_expr) = self.parse_conditional_clause(expected_type, false)?;
         let else_block =
             if let Some(_) = self.tokens.eat([Token::Keyword(Keyword::Else)].into_iter()) {
                 Some(
@@ -644,7 +682,7 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> Result<ExprContents, ParseError> {
-        let (clause, result) = self.parse_conditional_clause(Some(VOID.output.clone()))?;
+        let (clause, result) = self.parse_conditional_clause(Some(VOID.output.clone()), true)?;
         Ok(ExprContents::While(While {
             condition: clause,
             result: result,
@@ -690,9 +728,12 @@ impl Parser {
         self.var_types.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
+            name: "for"
         });
         self.set_var_type(var.clone(), i_type, false, true)?;
+        self.break_t_stack.push(true);
         let sc = ExprContents::Scope(self.parse_scope(true, Some(VOID.output.clone()))?);
+        self.break_t_stack.pop();
         self.var_types.pop();
         let body = self.new_expr(sc, Some(VOID.output.clone()))?;
         self.tokens
@@ -704,6 +745,7 @@ impl Parser {
     fn parse_conditional_clause(
         &mut self,
         expected_type: Option<Datatype>,
+        allow_break: bool,
     ) -> Result<(Box<Expr>, Box<Expr>), ParseError> {
         let expr = self.parse_expr(
             0,
@@ -715,7 +757,13 @@ impl Parser {
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)))
             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+        if allow_break {
+            self.break_t_stack.push(true);
+        }
         let scope = self.parse_scope(true, expected_type.clone())?;
+        if allow_break {
+            self.break_t_stack.pop();
+        }
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
@@ -872,6 +920,7 @@ impl Parser {
                     .map(|n| (n.clone(), Box::new(TypeVar::Var(n.clone())) as Datatype)),
             ),
             blocking: false,
+            name: "func"
         });
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)))
@@ -909,14 +958,19 @@ impl Parser {
                     .map(|(name, ty)| (name.clone(), (ty.clone(), false))),
             ),
             blocking: false,
+            name: "func"
         });
+        self.return_t_stack.push(output.clone());
+        self.break_t_stack.push(false);
         let sc = ExprContents::Scope(self.parse_scope(true, Some(output.clone()))?);
         let contents = self.new_expr(sc, Some(output.clone()))?;
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
-        // Generics defined in this function go out of scope
+        // Generics defined in this function go out of scope, as does the expectation of a return/break.
         self.typedefs.pop();
+        self.return_t_stack.pop();
+        self.break_t_stack.pop();
         Ok(ExprContents::Function(Function {
             params,
             contents,

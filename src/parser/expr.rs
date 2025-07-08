@@ -7,7 +7,7 @@ use std::{
 use strum::EnumIter;
 
 use crate::{
-    error::{LineIndex},
+    error::LineIndex,
     types::{Arr, ArrT, Datatype, Downcast, Tuple as Tup, Value},
 };
 
@@ -86,6 +86,8 @@ pub enum ExprContents {
     Function(Function),
     Call(Call),
     GenericSpecify(GenericSpecify),
+    Return(Return),
+    Break(Break),
 }
 
 #[derive(Clone)]
@@ -138,6 +140,8 @@ impl Debug for ExprContents {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            Self::Return(ret) => write!(f, "return {:?}", ret.ret),
+            Self::Break(_) => write!(f, "break"),
         }
     }
 }
@@ -222,6 +226,8 @@ impl Display for Expr {
                 ),
                 vec![&gspec.base],
             ),
+            ExprContents::Return(ret) => ("return".to_string(), vec![&ret.ret]),
+            ExprContents::Break(_) => ("break".to_string(), vec![]),
         };
         writeln!(f, "{str} ({:?})", self.location)?;
         let num_children = children.len();
@@ -384,6 +390,8 @@ impl Expr {
                 Box::new(used.into_iter())
             }
             ExprContents::GenericSpecify(gspec) => gspec.base.used_variables(),
+            ExprContents::Return(ret) => ret.ret.used_variables(),
+            ExprContents::Break(_) => Box::new(vec![].into_iter()),
         }
     }
 
@@ -446,6 +454,8 @@ impl Expr {
                     .chain(call.base.assigned_variables()),
             ),
             ExprContents::GenericSpecify(gspec) => gspec.base.assigned_variables(),
+            ExprContents::Return(ret) => ret.ret.assigned_variables(),
+            ExprContents::Break(_) => Box::new(vec![].into_iter()),
         }
     }
 
@@ -557,6 +567,10 @@ impl Expr {
                 base: gspec.base.replace_generics(generics)?,
                 types: gspec.types.clone(),
             }),
+            ExprContents::Return(ret) => ExprContents::Return(Return {
+                ret: ret.ret.replace_generics(generics)?,
+            }),
+            ExprContents::Break(_) => ExprContents::Break(Break),
         };
         Ok(Box::new(Self {
             contents: new_contents,
@@ -579,9 +593,10 @@ impl Expr {
                     None
                 }
             }
-            ExprContents::Prefix(prefix) => {
-                prefix.rhs.try_const_eval().and_then(|rhs| rhs.pre_op(prefix.op).ok())
-            }
+            ExprContents::Prefix(prefix) => prefix
+                .rhs
+                .try_const_eval()
+                .and_then(|rhs| rhs.pre_op(prefix.op).ok()),
             ExprContents::Postfix(postfix) => postfix
                 .lhs
                 .try_const_eval()
@@ -610,10 +625,6 @@ impl Expr {
                     }
                 }
             },
-            ExprContents::Scope(_) => None,
-            ExprContents::Conditional(_) => None,
-            ExprContents::While(_) => None,
-            ExprContents::For(_) => None,
             ExprContents::Array(array) => {
                 fn arr_eval(arr: &Array, out: Datatype) -> Option<Arr> {
                     let mut vals = vec![];
@@ -635,9 +646,15 @@ impl Expr {
                 }
                 tup_eval(tuple).map(|t| Box::new(t) as Value)
             }
-            ExprContents::Function(_) => None,
-            ExprContents::Call(_) => None,
-            ExprContents::GenericSpecify(_) => None,
+            ExprContents::Scope(_)
+            | ExprContents::Conditional(_)
+            | ExprContents::While(_)
+            | ExprContents::For(_)
+            | ExprContents::Function(_)
+            | ExprContents::Call(_)
+            | ExprContents::GenericSpecify(_)
+            | ExprContents::Return(_)
+            | ExprContents::Break(_) => None,
         }
     }
 }
@@ -844,3 +861,11 @@ pub struct GenericSpecify {
     pub base: Box<Expr>,
     pub types: Vec<Datatype>,
 }
+
+#[derive(Clone)]
+pub struct Return {
+    pub ret: Box<Expr>,
+}
+
+#[derive(Clone)]
+pub struct Break;
