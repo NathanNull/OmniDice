@@ -45,6 +45,7 @@ pub struct RuntimeError {
 pub enum RuntimeErrorType {
     Standard,
     Break,
+    Continue,
     Return(Value),
 }
 
@@ -59,6 +60,13 @@ impl RuntimeErrorType {
     pub fn is_break(&self) -> bool {
         match self {
             Break => true,
+            _ => false
+        }
+    }
+
+    pub fn is_continue(&self) -> bool {
+        match self {
+            Continue => true,
             _ => false
         }
     }
@@ -84,6 +92,7 @@ impl Display for RuntimeError {
                 }
             }
             Break => writeln!(f, "Break")?,
+            Continue => writeln!(f, "Continue")?,
             Return(v) => writeln!(f, "Return {v}")?,
         }
         Ok(())

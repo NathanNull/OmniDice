@@ -285,6 +285,7 @@ impl Parser {
             }
             ExprContents::Return(ret) => ret.ret.output.clone(),
             ExprContents::Break(_) => VOID.output.clone(),
+            ExprContents::Continue(_) => VOID.output.clone(),
         };
         Ok(if let Some(ty) = expected_type {
             ty.assert_same(&res)
@@ -309,7 +310,7 @@ impl Parser {
         self.var_types.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
-            name: "scope"
+            name: "scope",
         });
         let expected_end = vec![
             Token::EOL,
@@ -482,6 +483,13 @@ impl Parser {
                     return self.make_error("Breaking is not valid in this context".to_string());
                 }
                 ExprContents::Break(Break)
+            }
+
+            Token::Keyword(Keyword::Continue) => {
+                if self.break_t_stack.last().is_none_or(|allowed| !*allowed) {
+                    return self.make_error("Continuing is not valid in this context".to_string());
+                }
+                ExprContents::Continue(Continue)
             }
             tk => return self.make_error(format!("Expected expression, found {tk:?}")),
         };
@@ -728,7 +736,7 @@ impl Parser {
         self.var_types.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
-            name: "for"
+            name: "for",
         });
         self.set_var_type(var.clone(), i_type, false, true)?;
         self.break_t_stack.push(true);
@@ -920,7 +928,7 @@ impl Parser {
                     .map(|n| (n.clone(), Box::new(TypeVar::Var(n.clone())) as Datatype)),
             ),
             blocking: false,
-            name: "func"
+            name: "func",
         });
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LBracket)))
@@ -958,7 +966,7 @@ impl Parser {
                     .map(|(name, ty)| (name.clone(), (ty.clone(), false))),
             ),
             blocking: false,
-            name: "func"
+            name: "func",
         });
         self.return_t_stack.push(output.clone());
         self.break_t_stack.push(false);

@@ -88,6 +88,7 @@ pub enum ExprContents {
     GenericSpecify(GenericSpecify),
     Return(Return),
     Break(Break),
+    Continue(Continue),
 }
 
 #[derive(Clone)]
@@ -142,6 +143,7 @@ impl Debug for ExprContents {
             ),
             Self::Return(ret) => write!(f, "return {:?}", ret.ret),
             Self::Break(_) => write!(f, "break"),
+            Self::Continue(_) => write!(f, "continue"),
         }
     }
 }
@@ -228,6 +230,7 @@ impl Display for Expr {
             ),
             ExprContents::Return(ret) => ("return".to_string(), vec![&ret.ret]),
             ExprContents::Break(_) => ("break".to_string(), vec![]),
+            ExprContents::Continue(_) => ("continue".to_string(), vec![]),
         };
         writeln!(f, "{str} ({:?})", self.location)?;
         let num_children = children.len();
@@ -392,6 +395,7 @@ impl Expr {
             ExprContents::GenericSpecify(gspec) => gspec.base.used_variables(),
             ExprContents::Return(ret) => ret.ret.used_variables(),
             ExprContents::Break(_) => Box::new(vec![].into_iter()),
+            ExprContents::Continue(_) => Box::new(vec![].into_iter()),
         }
     }
 
@@ -456,6 +460,7 @@ impl Expr {
             ExprContents::GenericSpecify(gspec) => gspec.base.assigned_variables(),
             ExprContents::Return(ret) => ret.ret.assigned_variables(),
             ExprContents::Break(_) => Box::new(vec![].into_iter()),
+            ExprContents::Continue(_) => Box::new(vec![].into_iter()),
         }
     }
 
@@ -571,6 +576,7 @@ impl Expr {
                 ret: ret.ret.replace_generics(generics)?,
             }),
             ExprContents::Break(_) => ExprContents::Break(Break),
+            ExprContents::Continue(_) => ExprContents::Continue(Continue),
         };
         Ok(Box::new(Self {
             contents: new_contents,
@@ -654,7 +660,8 @@ impl Expr {
             | ExprContents::Call(_)
             | ExprContents::GenericSpecify(_)
             | ExprContents::Return(_)
-            | ExprContents::Break(_) => None,
+            | ExprContents::Break(_)
+            | ExprContents::Continue(_) => None,
         }
     }
 }
@@ -869,3 +876,6 @@ pub struct Return {
 
 #[derive(Clone)]
 pub struct Break;
+
+#[derive(Clone)]
+pub struct Continue;

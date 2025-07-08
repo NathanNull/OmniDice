@@ -104,6 +104,7 @@ impl Interpreter {
             ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec),
             ExprContents::Return(ret) => self.eval_return(ret),
             ExprContents::Break(_) => self.eval_break(),
+            ExprContents::Continue(_) => self.eval_continue(),
         }?;
         if res.get_type() != expr.output {
             return Err(RuntimeError::single(
@@ -289,6 +290,7 @@ impl Interpreter {
                         }
                         Ok(_) => (),
                         Err(e) if e.err_type().is_break() => break,
+                        Err(e) if e.err_type().is_continue() => continue,
                         Err(e) => return Err(e),
                     }
                 } else {
@@ -345,6 +347,7 @@ impl Interpreter {
                         }
                         Ok(_) => (),
                         Err(e) if e.err_type().is_break() => break,
+                        Err(e) if e.err_type().is_continue() => continue,
                         Err(e) => return Err(e),
                     }
                 }
@@ -461,5 +464,9 @@ impl Interpreter {
 
     fn eval_break(&mut self) -> Result<Value, RuntimeError> {
         Err(RuntimeError::special(RuntimeErrorType::Break))
+    }
+
+    fn eval_continue(&mut self) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::special(RuntimeErrorType::Continue))
     }
 }

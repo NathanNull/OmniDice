@@ -93,6 +93,9 @@ let a = func() -> int {
 };
 
 for i in 0..100 {
+    if i % 3 == 0 {
+        continue;
+    }
     printf("{}, {}", (i, a()));
     if i > 10 {
         break;

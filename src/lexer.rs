@@ -44,6 +44,7 @@ pub enum Keyword {
     Func,
     Typedef,
     Break,
+    Continue,
     Return,
 }
 
@@ -64,6 +65,7 @@ impl Display for Keyword {
                 Keyword::Func => "func",
                 Keyword::Typedef => "typedef",
                 Keyword::Break => "break",
+                Keyword::Continue => "continue",
                 Keyword::Return => "return",
             }
         )
@@ -288,6 +290,7 @@ impl<'a> Lexer<'a> {
                 "func" => Keyword::Func,
                 "typedef" => Keyword::Typedef,
                 "break" => Keyword::Break,
+                "continue" => Keyword::Continue,
                 "return" => Keyword::Return,
                 _ => return Some(Token::Identifier(name_str)),
             }))
