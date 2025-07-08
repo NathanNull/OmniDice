@@ -1,4 +1,4 @@
-use std::{fmt::Debug, iter::Map, str::Chars};
+use std::{fmt::{Debug, Display}, iter::Map, str::Chars};
 
 use crate::{TokenIter, TokenWidth, error::LexError, parser::Op, types::Value};
 
@@ -11,6 +11,20 @@ pub enum Token {
     EOL,
     EOF,
     Arrow,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Keyword(k) => write!(f, "{k}"),
+            Self::Identifier(i) => write!(f, "{i}"),
+            Self::Literal(v) => write!(f, "{v}"),
+            Self::OpLike(ol) => write!(f, "{ol}"),
+            Self::EOL => write!(f, ";"),
+            Self::EOF => write!(f, "EOF"),
+            Self::Arrow => write!(f, "->"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +41,23 @@ pub enum Keyword {
     Typedef,
 }
 
+impl Display for Keyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "_k_{}", match self {
+            Keyword::True => "true",
+            Keyword::False => "false",
+            Keyword::If => "if",
+            Keyword::Else => "else",
+            Keyword::While => "while",
+            Keyword::For => "for",
+            Keyword::In => "in",
+            Keyword::Let => "let",
+            Keyword::Func => "func",
+            Keyword::Typedef => "typedef",
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bracket {
     LBracket,
@@ -35,6 +66,19 @@ pub enum Bracket {
     RCurly,
     LSquare,
     RSquare,
+}
+
+impl Display for Bracket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Bracket::LBracket => "(",
+            Bracket::RBracket => ")",
+            Bracket::LCurly => "{",
+            Bracket::RCurly => "}",
+            Bracket::LSquare => "[",
+            Bracket::RSquare => "]",
+        })
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,6 +91,21 @@ pub enum OpLike {
     Colon,
     Comma,
     LTurbofish,
+}
+
+impl Display for OpLike {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpLike::Op(op) => write!(f, "{op:?}"),
+            OpLike::Assign => write!(f, "="),
+            OpLike::OpAssign(op) => write!(f, "{op:?}="),
+            OpLike::Access => write!(f, "."),
+            OpLike::Bracket(b) => write!(f, "{b}"),
+            OpLike::Colon => write!(f, ":"),
+            OpLike::Comma => write!(f, ","),
+            OpLike::LTurbofish => write!(f, "::<"),
+        }
+    }
 }
 
 impl Debug for OpLike {

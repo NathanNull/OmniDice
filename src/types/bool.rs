@@ -25,28 +25,29 @@ impl Type for BoolT {
     }
 }
 impl Val for bool {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if let Some(rhs) = other.downcast::<bool>() {
-            Box::new(match op {
+            Ok(Box::new(match op {
                 Op::And => *self && rhs,
                 Op::Or => *self || rhs,
                 Op::Equal => self == &rhs,
                 Op::NotEqual => self != &rhs,
                 _ => invalid!(op, self, other),
-            })
+            }))
         } else {
             invalid!(op, self, other)
         }
     }
 
-    fn pre_op(&self, op: Op) -> Value {
+    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
         match op {
-            Op::Not => Box::new(!self),
+            Op::Not => Ok(Box::new(!self)),
             _ => invalid!(op, self, ()),
         }
     }
 
-    fn hash(&self, h: &mut dyn Hasher) {
-        h.write_u8(*self as u8)
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        h.write_u8(*self as u8);
+        Ok(())
     }
 }

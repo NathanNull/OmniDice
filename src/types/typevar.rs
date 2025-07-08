@@ -104,7 +104,7 @@ impl Type for TypeVar {
             TypeVar::Prop(base, prop) => base.insert_generics(generics)?.prop_type(&prop)?,
             TypeVar::MustBeSame(types) => {
                 let mut t_iter = types.iter();
-                let mut res = t_iter.next().unwrap().insert_generics(generics)?;
+                let mut res = t_iter.next()?.insert_generics(generics)?;
                 for t in t_iter {
                     res = res.assert_same(&t.insert_generics(generics)?);
                 }
@@ -130,12 +130,7 @@ impl Type for TypeVar {
                 }
                 let mut matches = HashMap::new();
                 for k in t_matches.iter().map(|m| m.keys()).flatten() {
-                    let match_val = t_matches
-                        .iter()
-                        .find(|m| m.contains_key(k))
-                        .unwrap()
-                        .get(k)
-                        .unwrap();
+                    let match_val = t_matches.iter().find(|m| m.contains_key(k))?.get(k)?;
                     matches.insert(k.clone(), match_val.clone());
                     if t_matches
                         .iter()
@@ -146,7 +141,7 @@ impl Type for TypeVar {
                 }
                 matches
             }
-            _ => todo!("Match {self} w/ {other}"),
+            _ => return None,
         })
     }
 
@@ -154,9 +149,9 @@ impl Type for TypeVar {
         if &self.dup() == other {
             self.dup()
         } else if let Self::MustBeSame(v) = self {
-            Box::new(Self::same(v.clone(), other))
+            Box::new(Self::MustBeSame(Self::same(v.clone(), other)))
         } else {
-            Box::new(Self::same(vec![self.dup()], other))
+            Box::new(Self::MustBeSame(Self::same(vec![self.dup()], other)))
         }
     }
 
@@ -189,21 +184,17 @@ impl Type for TypeVar {
 }
 
 impl TypeVar {
-    fn same(v: Vec<Datatype>, new: &Datatype) -> Self {
+    fn same(v: Vec<Datatype>, new: &Datatype) -> Vec<Datatype> {
         if v.contains(new) {
-            Self::MustBeSame(v)
+            v
         } else if let Some(Self::MustBeSame(vals)) = new.downcast::<Self>() {
             let mut res = v;
             for val in vals {
-                res = if let Self::MustBeSame(r) = Self::same(res, &val) {
-                    r
-                } else {
-                    unreachable!()
-                }
+                res = Self::same(res, &val)
             }
-            Self::MustBeSame(res)
+            res
         } else {
-            Self::MustBeSame(v.into_iter().chain(vec![new.clone()]).collect())
+            v.into_iter().chain(vec![new.clone()]).collect()
         }
     }
 }

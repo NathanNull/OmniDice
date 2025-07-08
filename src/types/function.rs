@@ -13,7 +13,7 @@ pub struct Func {
     pub contents: InnerFunc,
 }
 
-type RustFunc = fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value;
+type RustFunc = fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, RuntimeError>;
 
 #[derive(Clone, Debug)]
 pub enum InnerFunc {
@@ -28,7 +28,7 @@ impl InnerFunc {
         interpreter: &mut Interpreter,
         mut params: Vec<Value>,
         expected_output: Option<Datatype>,
-    ) -> Value {
+    ) -> Result<Value, RuntimeError> {
         match self {
             InnerFunc::Code(expr, param_names, captured_scope) => {
                 let mut preset_vals = captured_scope.clone();
@@ -41,7 +41,7 @@ impl InnerFunc {
                 }
                 let body = expr
                     .replace_generics(&generics)
-                    .expect("Couldn't replace generics");
+                    .map_err(|e| RuntimeError::partial(&e))?;
                 interpreter.call_function(preset_vals, &body)
             }
             InnerFunc::Rust(func, owner) => {
@@ -53,17 +53,17 @@ impl InnerFunc {
         }
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Self {
-        match self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Self, RuntimeError> {
+        Ok(match self {
             InnerFunc::Code(expr, param_names, captured_scope) => InnerFunc::Code(
                 *expr
                     .replace_generics(generics)
-                    .expect("couldn't replace generics"),
+                    .map_err(|e| RuntimeError::partial(&e))?,
                 param_names.clone(),
                 captured_scope.clone(),
             ),
             InnerFunc::Rust(_, _) => self.clone(),
-        }
+        })
     }
 }
 
@@ -157,51 +157,64 @@ impl FuncT {
         }
     }
 
-    pub fn make_rust_member(mut self, func: RustFunc, owner: Value) -> Func {
-        self = self.with_owner(owner.get_type()).expect("Invalid owner");
-        Func {
+    pub fn make_rust_member(mut self, func: RustFunc, owner: Value) -> Result<Func, RuntimeError> {
+        self = self.with_owner(owner.get_type())?;
+        Ok(Func {
             params: self.params,
             output: self.output,
             generic: self.generic,
             owner_t: self.owner_t,
             contents: InnerFunc::Rust(func, Some(owner)),
-        }
+        })
     }
 
-    pub fn with_owner(mut self, owner: Datatype) -> Option<Self> {
+    pub fn with_owner(mut self, owner: Datatype) -> Result<Self, RuntimeError> {
         let me_owner = self
             .owner_t
             .as_ref()
-            .expect("Can't make this function into a member");
-        let generics = me_owner.try_match(&owner).expect(&format!(
-            "Invalid owner for this function (expected {}, found {})",
-            me_owner, owner
-        ));
+            .ok_or_else(|| RuntimeError::partial("Can't make this function into a member"))?;
+        let generics = me_owner.try_match(&owner).ok_or_else(|| {
+            RuntimeError::partial(&format!(
+                "Invalid owner for this function (expected {}, found {})",
+                me_owner, owner
+            ))
+        })?;
         for (name, _) in &generics {
             self.generic.remove(
                 self.generic
                     .iter()
                     .enumerate()
                     .find(|g| (g.1 == name))
-                    .expect(&format!(
-                        "Couldn't find generic {:?} in {:?}",
-                        name, self.generic
-                    ))
+                    .ok_or_else(|| {
+                        RuntimeError::partial(&format!(
+                            "Couldn't find generic {:?} in {:?}",
+                            name, self.generic
+                        ))
+                    })?
                     .0,
             );
         }
         self.params
             .iter_mut()
-            .for_each(|p| *p = p.insert_generics(&generics).expect("Invalid generic here"));
+            .map(|p| {
+                *p = p
+                    .insert_generics(&generics)
+                    .ok_or_else(|| RuntimeError::partial("Invalid generic here"))?;
+                Ok(())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         self.output = self
             .output
             .insert_generics(&generics)
-            .expect("Invalid generic here");
-        self.owner_t = self
-            .owner_t
-            .as_ref()
-            .map(|o| o.insert_generics(&generics).expect("Invalid generic here"));
-        Some(self)
+            .ok_or_else(|| RuntimeError::partial("Invalid generic here"))?;
+        self.owner_t = match &self.owner_t {
+            Some(o) => Some(
+                o.insert_generics(&generics)
+                    .ok_or_else(|| RuntimeError::partial("Invalid generic here"))?,
+            ),
+            None => None,
+        };
+        Ok(self)
     }
 }
 
@@ -323,35 +336,35 @@ impl Val for Func {
         params: Vec<Value>,
         interpreter: &mut Interpreter,
         expected_output: Option<Datatype>,
-    ) -> Value {
+    ) -> Result<Value, RuntimeError> {
         let generics = self
             .get_type()
             .downcast::<FuncT>()
-            .unwrap()
+            .ok_or_else(|| RuntimeError::partial("Func type isn't FuncT"))?
             .get_generics(
                 params.iter().map(|p| p.get_type()).collect(),
                 &expected_output,
             )
-            .unwrap();
+            .ok_or_else(|| RuntimeError::partial("Couldn't resolve generics"))?;
         self.contents
             .eval(generics, interpreter, params, expected_output)
     }
 
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if op == Op::Plus && other.get_type().possible_call() {
-            Box::new(FuncSum::new(vec![self.dup(), other.dup()]))
+            Ok(Box::new(FuncSum::new(vec![self.dup(), other.dup()])))
         } else {
             invalid!(op, self, other);
         }
     }
-    fn insert_generics(&self, generics: &Vec<Datatype>) -> Value {
+    fn insert_generics(&self, generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
         let new_ty = self
             .get_type()
             .specify_generics(generics)
-            .expect("Invalid generic specification")
+            .ok_or_else(|| RuntimeError::partial("Couldn't resolve generics"))?
             .downcast::<FuncT>()
-            .unwrap();
-        Box::new(Func {
+            .ok_or_else(|| RuntimeError::partial("Generic specification result wasn't a Func"))?;
+        Ok(Box::new(Func {
             params: new_ty.params,
             owner_t: new_ty.owner_t,
             output: new_ty.output,
@@ -361,7 +374,7 @@ impl Val for Func {
                     .iter()
                     .zip(generics.iter())
                     .map(|(n, t)| (n.clone(), t.clone())),
-            )),
-        })
+            ))?,
+        }))
     }
 }

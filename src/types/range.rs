@@ -53,38 +53,34 @@ static RANGE_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(RangeT)),
 });
 
-// fn range_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut it = params.iter().cloned();
-//     it.next_as::<RangeT>()?;
-//     Some(Box::new(IterT {
-//         output: Box::new(IntT),
-//     }))
-// }
-
-fn range_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn range_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let me = it.next_as::<Range>().expect("Invalid call");
-    Box::new(Iter {
+    let me = it
+        .next_as::<Range>()
+        .ok_or_else(|| RuntimeError::partial("Range iter function owner isn't range"))?;
+    Ok(Box::new(Iter {
         output: Box::new(IntT),
         next_fn: Box::new(
             RANGE_ITER_SIG
                 .clone()
-                .make_rust_member(range_iter_fn, Box::new(me)),
+                .make_rust_member(range_iter_fn, Box::new(me))?,
         ),
-    })
+    }))
 }
 
-// fn range_iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut it = params.iter().cloned();
-//     it.next_as::<RangeT>()?;
-//     Some(Box::new(MaybeT {
-//         output: Box::new(IntT),
-//     }))
-// }
-
-fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn range_iter_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let me_outer = it.next_as::<Range>().unwrap();
+    let me_outer = it
+        .next_as::<Range>()
+        .ok_or_else(|| RuntimeError::partial("Range iter function owner isn't range"))?;
     let mut me = me_outer.inner_mut();
     let contents: Option<Value> = if me.curr < me.last {
         me.curr += 1;
@@ -92,10 +88,10 @@ fn range_iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>)
     } else {
         None
     };
-    Box::new(Maybe {
+    Ok(Box::new(Maybe {
         output: Box::new(IntT),
         contents,
-    })
+    }))
 }
 
 gen_fn_map!(RANGE_FNS, ("iter", RANGE_SIG, range_fn));
@@ -112,19 +108,20 @@ impl Type for RangeT {
     }
 }
 impl Val for Range {
-    fn get_prop(&self, name: &str) -> Value {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         match name {
-            n if RANGE_FNS.contains_key(n) => Box::new(
+            n if RANGE_FNS.contains_key(n) => Ok(Box::new(
                 RANGE_FNS[n]
                     .0
                     .clone()
-                    .make_rust_member(RANGE_FNS[n].1, self.dup()),
-            ),
+                    .make_rust_member(RANGE_FNS[n].1, self.dup())?,
+            )),
             _ => invalid!("Prop", self, name),
         }
     }
-    fn hash(&self, h: &mut dyn Hasher) {
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(self.inner().curr);
         h.write_i32(self.inner().last);
+        Ok(())
     }
 }

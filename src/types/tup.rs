@@ -119,27 +119,33 @@ impl Type for TupT {
     }
 
     fn is_hashable(&self) -> bool {
-        self.entries.iter().all(|e|e.is_hashable())
+        self.entries.iter().all(|e| e.is_hashable())
     }
 }
 impl Val for Tuple {
-    fn get_prop(&self, name: &str) -> Value {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         if let Some(idx) = as_idx(name) {
-            self.inner().elements[idx].clone()
+            Ok(self.inner().elements[idx].clone())
         } else {
             invalid!("Prop", self, ());
         }
     }
 
-    fn set_prop(&self, prop: &str, value: Value) {
+    fn set_prop(&self, prop: &str, value: Value) -> Result<(), RuntimeError> {
         if let Some(idx) = as_idx(prop) {
-            self.inner_mut().elements[idx] = value
+            self.inner_mut().elements[idx] = value;
+            Ok(())
         } else {
             invalid!("Prop", self, ());
         }
     }
 
-    fn hash(&self, h: &mut dyn Hasher) {
-        self.inner().elements.iter().for_each(|e|e.as_ref().hash(h));
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        self.inner()
+            .elements
+            .iter()
+            .map(|e| e.as_ref().hash(h))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|_| ())
     }
 }

@@ -1,15 +1,10 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    TokenIter, TokenWidth,
-    builtins::BUILTINS,
-    error::ParseError,
-    interpreter::VarScope,
-    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{
+    builtins::BUILTINS, error::{LineIndex, ParseError}, interpreter::VarScope, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, types::{
         ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
         TupT, TypeVar, Void,
-    },
+    }, TokenIter, TokenWidth
 };
 
 pub mod expr;
@@ -25,11 +20,13 @@ pub struct Parser {
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
     contents: ExprContents::Value(Box::new(Void)),
     output: Box::new(Void),
+    location: LineIndex(0, 0),
 });
 
 static BOOL: LazyLock<Expr> = LazyLock::new(|| Expr {
     contents: ExprContents::Value(Box::new(false)),
     output: Box::new(BoolT),
+    location: LineIndex(0, 0),
 });
 
 impl Parser {
@@ -64,14 +61,17 @@ impl Parser {
         expected_type: Option<Datatype>,
     ) -> Result<Box<Expr>, ParseError> {
         let output = self.decide_type(&contents, expected_type)?;
+        let location = self.tokens.pos;
         let expr = Box::new(Expr {
             output: output.clone(),
             contents,
+            location,
         });
         Ok(if let Some(val) = expr.try_const_eval() {
             Box::new(Expr {
                 contents: ExprContents::Value(val),
                 output,
+                location,
             })
         } else {
             expr

@@ -23,9 +23,9 @@ impl Type for FloatT {
     }
 }
 impl Val for f32 {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if let Some(rhs) = other.downcast::<f32>() {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
                 Op::Times => Box::new(self * rhs),
@@ -37,27 +37,28 @@ impl Val for f32 {
                 Op::Geq => Box::new(self >= &rhs),
                 Op::Leq => Box::new(self <= &rhs),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else if let Some(rhs) = other.downcast::<i32>().map(|i| i as f32) {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
                 Op::Times => Box::new(self * rhs),
                 Op::Divided => Box::new(self / rhs),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else {
             invalid!(op, self, other)
         }
     }
-    fn pre_op(&self, op: Op) -> Value {
-        match op {
+    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
+        Ok(match op {
             Op::Minus => Box::new(-self),
             _ => invalid!(op, self, ()),
-        }
+        })
     }
-    fn hash(&self, h: &mut dyn Hasher) {
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_u32(self.to_bits());
+        Ok(())
     }
 }
 
@@ -104,9 +105,9 @@ impl Type for IntT {
     }
 }
 impl Val for i32 {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if let Some(rhs) = other.downcast::<i32>() {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
                 Op::Times => Box::new(self * rhs),
@@ -122,54 +123,69 @@ impl Val for i32 {
                 Op::Range => Box::new(Range::new(*self, rhs - 1)),
                 Op::RangeEq => Box::new(Range::new(*self, rhs)),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else if let Some(rhs) = other.downcast::<f32>() {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(*self as f32 + rhs),
                 Op::Minus => Box::new(*self as f32 - rhs),
                 Op::Times => Box::new(*self as f32 * rhs),
                 Op::Divided => Box::new(*self as f32 / rhs),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else if let Some(rhs) = other.downcast::<Arr>() {
-            Box::new(
+            Ok(Box::new(
                 Distribution::from_vec(
                     rhs.inner()
                         .elements
                         .iter()
-                        .map(|e| e.downcast::<i32>().unwrap())
-                        .collect(),
+                        .map(|e| {
+                            e.downcast::<i32>().ok_or_else(|| {
+                                RuntimeError::partial(
+                                    "Dice constructor array elements were not integers",
+                                )
+                            })
+                        })
+                        .collect::<Result<_, _>>()?,
                 )
                 .multiroll(*self as usize),
-            )
+            ))
         } else if let Some(rhs) = other.downcast::<Map>() {
-            Box::new(
+            Ok(Box::new(
                 Distribution::from_weights(
                     rhs.inner()
                         .elements
                         .iter()
                         .map(|(k, v)| {
-                            (
-                                k.downcast::<i32>().unwrap(),
-                                v.downcast::<i32>().unwrap() as usize,
-                            )
+                            Ok((
+                                k.downcast::<i32>().ok_or_else(|| {
+                                    RuntimeError::partial(
+                                        "Dice constructor map keys were not integers",
+                                    )
+                                })?,
+                                v.downcast::<i32>().ok_or_else(|| {
+                                    RuntimeError::partial(
+                                        "Dice constructor map values were not integers",
+                                    )
+                                })? as usize,
+                            ))
                         })
-                        .collect(),
+                        .collect::<Result<_,_>>()?,
                 )
                 .multiroll(*self as usize),
-            )
+            ))
         } else {
             invalid!(op, self, other)
         }
     }
 
-    fn pre_op(&self, op: Op) -> Value {
+    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
         match op {
-            Op::Minus => Box::new(-self),
+            Op::Minus => Ok(Box::new(-self)),
             _ => invalid!(op, self, ()),
         }
     }
-    fn hash(&self, h: &mut dyn Hasher) {
-        h.write_i32(*self)
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        h.write_i32(*self);
+        Ok(())
     }
 }

@@ -29,27 +29,28 @@ impl Type for StringT {
 }
 
 impl Val for String {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if let Some(rhs) = other.downcast::<String>() {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(self.clone() + &rhs),
                 Op::Equal => Box::new(self == &rhs),
                 Op::NotEqual => Box::new(self != &rhs),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else {
             invalid!(op, self, other)
         }
     }
 
-    fn get_prop(&self, name: &str) -> Value {
-        match name {
-            "length" => todo!("how make mutable"),//&mut (Box::new(self.len() as i32) as Box<dyn Val>),
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
+        Ok(match name {
+            "length" => Box::new(self.len() as i32),
             _ => invalid!("Prop", self, name),
-        }
+        })
     }
 
-    fn hash(&self, h: &mut dyn Hasher) {
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write(self.as_bytes());
+        Ok(())
     }
 }

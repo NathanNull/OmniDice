@@ -25,42 +25,42 @@ impl Type for DiceT {
     }
 }
 impl Val for Distribution {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if let Some(rhs) = other.downcast::<i32>() {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(self.clone() + rhs.into()),
                 Op::Minus => Box::new(self.clone() - rhs.into()),
                 Op::Times => Box::new(self.clone() * rhs.into()),
                 Op::Divided => Box::new(self.clone() / rhs.into()),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else if let Some(rhs) = other.downcast::<Distribution>() {
-            match op {
+            Ok(match op {
                 Op::Plus => Box::new(self.clone() + rhs.clone()),
                 Op::Minus => Box::new(self.clone() - rhs.clone()),
                 Op::Times => Box::new(self.clone() * rhs.clone()),
                 Op::Divided => Box::new(self.clone() / rhs.clone()),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else {
             invalid!(op, self, other)
         }
     }
 
-    fn pre_op(&self, op: Op) -> Value {
-        match op {
+    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
+        Ok(match op {
             Op::Minus => Box::new(self.clone() * Into::<_>::into(-1)),
             _ => invalid!(op, self, ()),
-        }
+        })
     }
 
-    fn get_prop(&self, name: &str) -> Value {
-        match name {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
+        Ok(match name {
             "mean" => Box::new(self.mean()),
             "stddev" => Box::new(self.stddev()),
             "min" => Box::new(self.min()),
             "max" => Box::new(self.max()),
             _ => invalid!("Prop", self, name),
-        }
+        })
     }
 }

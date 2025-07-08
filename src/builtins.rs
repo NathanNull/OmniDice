@@ -4,6 +4,7 @@ use itertools::Itertools;
 
 use crate::{
     distribution::Distribution,
+    error::RuntimeError,
     gen_fn_map,
     interpreter::Interpreter,
     invalid,
@@ -45,11 +46,15 @@ static REF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn ref_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn ref_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     if params.len() == 1 {
-        Box::new(Ref::new(params[0].clone()))
+        Ok(Box::new(Ref::new(params[0].clone())))
     } else {
-        unreachable!("Invalid function call")
+        Err(RuntimeError::partial("Invalid function call"))
     }
 }
 
@@ -60,10 +65,17 @@ static PRINTLN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn println_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
-    let res = params.first().unwrap().downcast::<String>().unwrap();
+fn println_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    let res = params
+        .first()
+        .and_then(|v| v.downcast::<String>())
+        .ok_or_else(|| RuntimeError::partial("Println first parameter must be a string"))?;
     println!("{res}");
-    Box::new(Void)
+    Ok(Box::new(Void))
 }
 
 static PRINTF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -73,10 +85,16 @@ static PRINTF_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn printf_fn(params: Vec<Value>, i: &mut Interpreter, o: Option<Datatype>) -> Value {
-    let res = format_fn(params, i, o).downcast::<String>().unwrap();
+fn printf_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    let res = format_fn(params, i, o)?
+        .downcast::<String>()
+        .ok_or_else(|| RuntimeError::partial("Printf first parameter must be a string"))?;
     println!("{res}");
-    Box::new(Void)
+    Ok(Box::new(Void))
 }
 
 static ERROR_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -86,15 +104,19 @@ static ERROR_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn error_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
-    panic!(
+fn error_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    Err(RuntimeError::partial(&format!(
         "{}",
         params
             .into_iter()
             .map(|p| format!("{p}"))
             .collect::<Vec<_>>()
             .join(" ")
-    );
+    )))
 }
 
 static FORMAT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -104,12 +126,18 @@ static FORMAT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn format_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut param_iter = params.clone().into_iter();
     let str = param_iter
         .next_as::<String>()
-        .expect("Invalid function call");
-    let next = param_iter.next().expect("Expected format args");
+        .ok_or_else(|| RuntimeError::partial("Format/printf first parameter must be a string"))?;
+    let next = param_iter.next().ok_or_else(|| {
+        RuntimeError::partial("Format/printf second parameter must be format args")
+    })?;
     let mut format_args = match next.downcast::<Tuple>() {
         Some(tup) if str.split("{}").count() > 2 => tup.inner().elements.clone(),
         _ => vec![next],
@@ -122,12 +150,12 @@ fn format_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
         res += next_str_piece;
         match format_args.next() {
             Some(arg) if str_pieces.peek().is_some() => res += &arg,
-            Some(_) => panic!("Too many format args"),
+            Some(_) => return Err(RuntimeError::partial("Too many format args")),
             None if str_pieces.next().is_none() => break,
-            None => panic!("Not enough format args"),
+            None => return Err(RuntimeError::partial("Not enough format args")),
         }
     }
-    Box::new(res)
+    Ok(Box::new(res))
 }
 
 static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -139,12 +167,16 @@ static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn filled_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     if params.len() == 1 {
-        Box::new(Maybe {
+        Ok(Box::new(Maybe {
             output: params[0].get_type(),
             contents: Some(params[0].clone()),
-        })
+        }))
     } else {
         invalid!("Call", "filled", params)
     }
@@ -159,13 +191,17 @@ static NULL_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn null_fn(params: Vec<Value>, _i: &mut Interpreter, o: Option<Datatype>) -> Value {
+fn null_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     if params.len() == 0 {
         if let Some(ret) = o.and_then(|o| o.downcast::<MaybeT>()) {
-            return Box::new(Maybe {
+            return Ok(Box::new(Maybe {
                 output: ret.output,
                 contents: None,
-            });
+            }));
         }
     }
     invalid!("Call", "null", params)
@@ -187,26 +223,27 @@ static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
-    if params.len() == 1 {
-        let func = params
-            .first()
-            .and_then(|p| p.downcast::<Func>())
-            .expect("Invalid function call");
-        if func.params.len() > 0 {
-            invalid!("Call", "iter", params);
-        }
-        let output = func
-            .output
-            .downcast::<MaybeT>()
-            .expect("Invalid function call")
-            .output;
-        return Box::new(Iter {
-            output,
-            next_fn: func.dup(),
-        });
+fn iter_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    let func = params
+        .first()
+        .and_then(|p| p.downcast::<Func>())
+        .ok_or_else(|| RuntimeError::partial("Iter first parameter must be a function"))?;
+    if func.params.len() > 0 {
+        invalid!("Call", "iter", params);
     }
-    invalid!("Call", "iter", params);
+    let output = func
+        .output
+        .downcast::<MaybeT>()
+        .ok_or_else(|| RuntimeError::partial("Iter function output must be maybe<something>"))?
+        .output;
+    Ok(Box::new(Iter {
+        output,
+        next_fn: func.dup(),
+    }))
 }
 
 static DICEMAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -228,19 +265,22 @@ static DICEMAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: None,
 });
 
-fn dicemap_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn dicemap_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut param_iter = params.iter().cloned();
     if let Some(dice) = param_iter.next_as::<Arr>() {
         if let Some(func) = param_iter.next_as::<Func>() {
             let mut roll_iter: Box<dyn Iterator<Item = (Vec<i32>, f32)>> =
                 Box::new(vec![(vec![], 1.0)].into_iter());
             // Generate all potential combinations of rolls, and their odds
-            for die in dice
-                .inner()
-                .elements
-                .iter()
-                .map(|d| d.downcast::<Distribution>().unwrap())
-            {
+            for die in dice.inner().elements.iter().map(|d| {
+                d.downcast::<Distribution>()
+                    .ok_or_else(|| RuntimeError::partial("Dice array contained a non-dice value"))
+            }) {
+                let die = die?;
                 // For each current result and each possible roll of the new die, multiply their odds
                 // and append the new roll to the result (with some extra nonsense to satisfy memory management)
                 roll_iter = Box::new(
@@ -267,16 +307,20 @@ fn dicemap_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> 
                     Box::new(IntT),
                 );
                 let res = func
-                    .call(vec![Box::new(param)], i, Some(Box::new(IntT)))
+                    .call(vec![Box::new(param)], i, Some(Box::new(IntT)))?
                     .downcast::<i32>()
-                    .unwrap();
+                    .ok_or_else(|| {
+                        RuntimeError::partial("Dicemap function return value must be an integer")
+                    })?;
                 if let Some(o) = results.get_mut(&res) {
                     *o += odds;
                 } else {
                     results.insert(res, odds);
                 }
             }
-            return Box::new(Distribution::from_odds(results.into_iter().collect()));
+            return Ok(Box::new(Distribution::from_odds(
+                results.into_iter().collect(),
+            )));
         }
     }
     invalid!("Call", "dicemap", params);

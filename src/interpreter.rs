@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     builtins::BUILTINS,
+    error::RuntimeError,
     parser::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
         Function, GenericSpecify, Postfix, Prefix, Scope, Tuple as TupleExpr, While,
@@ -47,10 +48,17 @@ impl Interpreter {
 
     pub fn run(&mut self) {
         let ast = self.ast.clone();
-        self.eval_expr(&ast);
+        match self.eval_expr(&ast) {
+            Ok(ok) => assert_eq!(
+                &ok,
+                &(Box::new(Void) as Value),
+                "All programs should return void"
+            ),
+            Err(err) => println!("{err}"),
+        }
     }
 
-    fn eval_scope(&mut self, scope: &Scope) -> Value {
+    fn eval_scope(&mut self, scope: &Scope) -> Result<Value, RuntimeError> {
         let mut last: Value = Box::new(Void);
         // Variables created in scope die when it ends
         self.variables.push(VarScope {
@@ -58,24 +66,24 @@ impl Interpreter {
             blocking: false,
         });
         for expr in scope {
-            last = self.eval_expr(&expr);
+            last = self.eval_expr(&expr)?;
         }
         self.variables.pop();
-        last
+        Ok(last)
     }
 
-    fn eval_expr(&mut self, expr: &Expr) -> Value {
+    fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         let res = match &expr.contents {
-            ExprContents::Accessor(acc) => self.eval_accessor(acc),
+            ExprContents::Accessor(acc) => self.eval_accessor(acc)?,
             ExprContents::Value(val) => val.clone(),
-            ExprContents::Binop(binop) => self.eval_binop(binop),
-            ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
-            ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
-            ExprContents::Assign(assign) => self.eval_assign(assign),
-            ExprContents::Scope(scope) => self.eval_scope(scope),
-            ExprContents::Conditional(cond) => self.eval_conditional(cond),
-            ExprContents::While(wh) => self.eval_while(wh),
-            ExprContents::For(fo) => self.eval_for(fo),
+            ExprContents::Binop(binop) => self.eval_binop(binop)?,
+            ExprContents::Prefix(prefix) => self.eval_prefix(prefix)?,
+            ExprContents::Postfix(postfix) => self.eval_postfix(postfix)?,
+            ExprContents::Assign(assign) => self.eval_assign(assign)?,
+            ExprContents::Scope(scope) => self.eval_scope(scope)?,
+            ExprContents::Conditional(cond) => self.eval_conditional(cond)?,
+            ExprContents::While(wh) => self.eval_while(wh)?,
+            ExprContents::For(fo) => self.eval_for(fo)?,
             ExprContents::Array(arr) => self.eval_array(
                 arr,
                 expr.output
@@ -83,207 +91,268 @@ impl Interpreter {
                     .expect("Array should be array")
                     .entry
                     .clone(),
-            ),
-            ExprContents::Tuple(tup) => self.eval_tuple(tup),
-            ExprContents::Function(func) => self.eval_function(func),
-            ExprContents::Call(call) => self.eval_call(call, expr.output.clone()),
-            ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec),
+            )?,
+            ExprContents::Tuple(tup) => self.eval_tuple(tup)?,
+            ExprContents::Function(func) => self.eval_function(func)?,
+            ExprContents::Call(call) => self.eval_call(call, expr.output.clone())?,
+            ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec)?,
         };
-        assert_eq!(
-            &res.get_type(),
-            &expr.output,
-            "Expression {expr:?} evaluated to a different type ({}) than expected ({}). This is notable.",
-            res.get_type(),
-            expr.output
-        );
-        res
+        if res.get_type() != expr.output {
+            return Err(RuntimeError::single(
+                &format!(
+                    "Expression {expr:?} evaluated to a different type ({}) than expected ({}). This is notable.",
+                    res.get_type(),
+                    expr.output
+                ),
+                expr.location,
+            ));
+        }
+        Ok(res)
     }
 
-    fn eval_accessor(&mut self, acc: &Accessor) -> Value {
+    fn eval_accessor(&mut self, acc: &Accessor) -> Result<Value, RuntimeError> {
         match acc {
-            Accessor::Variable(ident) => self.get_var(ident).clone(),
-            Accessor::Property(base, property) => self.eval_expr(&base).get_prop(property),
+            // TODO: once accessor knows where it is, stack_loc it onto the get_var error
+            Accessor::Variable(ident) => Ok(self.get_var(ident)?.clone()),
+            Accessor::Property(base, property) => self.eval_expr(&base)?.get_prop(property),
             Accessor::Index(indexed, index) => {
-                self.eval_expr(&indexed).get_index(self.eval_expr(&index))
+                self.eval_expr(&indexed)?.get_index(self.eval_expr(&index)?)
             }
         }
     }
 
-    fn eval_binop(&mut self, binop: &Binop) -> Value {
-        let lhs = self.eval_expr(&binop.lhs);
-        let rhs = self.eval_expr(&binop.rhs);
+    fn eval_binop(&mut self, binop: &Binop) -> Result<Value, RuntimeError> {
+        let lhs = self.eval_expr(&binop.lhs)?;
+        let rhs = self.eval_expr(&binop.rhs)?;
+        // TODO: better location
         lhs.bin_op(&rhs, binop.op)
+            .map_err(|e| e.stack_loc(binop.lhs.location))
     }
 
-    fn get_var(&mut self, var: &str) -> &Value {
+    fn get_var(&mut self, var: &str) -> Result<&Value, RuntimeError> {
         for scope in self.variables.iter().rev() {
             if let Some(val) = scope.vars.get(var) {
-                return val;
+                return Ok(val);
             }
             if scope.blocking {
                 break;
             }
         }
-        panic!(
+        Err(RuntimeError::partial(&format!(
             "Attempted to access nonexistent variable {var}, vars: {:?}",
             self.variables
-        );
+        )))
     }
 
-    fn set_var(&mut self, var: String, val: Value) {
-        if self.variables.is_empty() {
-            panic!("Tried to set variable while no scope alive");
+    fn set_var(&mut self, var: String, val: Value) -> Result<(), RuntimeError> {
+        if let Some(v) = self.variables.last_mut() {
+            v.vars.insert(var, val);
+            Ok(())
+        } else {
+            Err(RuntimeError::partial(
+                "UNREACHABLE: tried to set variable while no scope alive",
+            ))
         }
-        self.variables.last_mut().unwrap().vars.insert(var, val);
     }
 
-    fn update_var(&mut self, var: String, val: Value) {
+    fn update_var(&mut self, var: String, val: Value) -> Result<(), RuntimeError> {
         if self.variables.is_empty() {
-            panic!("Tried to set variable while no scope alive");
+            return Err(RuntimeError::partial(
+                "UNREACHABLE: Tried to set variable while no scope alive",
+            ));
         }
         for scope in self.variables.iter_mut().rev() {
             if scope.vars.contains_key(&var) {
                 scope.vars.insert(var, val);
-                return;
+                return Ok(());
             }
             if scope.blocking {
                 break;
             }
         }
-        panic!(
-            "Tried to update unknown variable {var}, (vars: {:?})",
+        return Err(RuntimeError::partial(&format!(
+            "UNREACHABLE: Tried to update unknown variable {var}, (vars: {:?})",
             self.variables
-        );
+        )));
     }
 
-    fn eval_prefix(&mut self, prefix: &Prefix) -> Value {
-        let rhs = self.eval_expr(&prefix.rhs);
+    fn eval_prefix(&mut self, prefix: &Prefix) -> Result<Value, RuntimeError> {
+        let rhs = self.eval_expr(&prefix.rhs)?;
         rhs.pre_op(prefix.op)
+            .map_err(|e| e.stack_loc(prefix.rhs.location))
     }
 
-    fn eval_postfix(&mut self, postfix: &Postfix) -> Value {
-        let lhs = self.eval_expr(&postfix.lhs);
+    fn eval_postfix(&mut self, postfix: &Postfix) -> Result<Value, RuntimeError> {
+        let lhs = self.eval_expr(&postfix.lhs)?;
         lhs.post_op(postfix.op)
+            .map_err(|e| e.stack_loc(postfix.lhs.location))
     }
 
-    fn eval_assign(&mut self, assign: &Assign) -> Value {
-        let val = self.eval_expr(&assign.val);
+    fn eval_assign(&mut self, assign: &Assign) -> Result<Value, RuntimeError> {
+        let val = self.eval_expr(&assign.val)?;
         match &assign.assignee {
             Accessor::Variable(name) => match assign.a_type {
                 AssignType::Reassign => {
-                    assert_eq!(
-                        val.get_type(),
-                        self.get_var(name).get_type(),
-                        "Tried to reassign variable {name} to a different type"
-                    );
-                    self.update_var(name.clone(), val.dup());
+                    if match self.get_var(name) {
+                        Err(_) => true,
+                        Ok(v) => v.get_type() != val.get_type(),
+                    } {
+                        return Err(RuntimeError::single(
+                            &format!("Tried to reassign variable {name} to a different type"),
+                            assign.val.location,
+                        ));
+                    }
+                    self.update_var(name.clone(), val.dup())
+                        .map_err(|e| e.stack_loc(assign.val.location))?;
                 }
-                AssignType::Create => self.set_var(name.clone(), val.dup()),
+                AssignType::Create => self
+                    .set_var(name.clone(), val.dup())
+                    .map_err(|e| e.stack_loc(assign.val.location))?,
             },
             Accessor::Property(base, prop) => {
-                let base_val = self.eval_expr(&base);
-                assert_eq!(
-                    val.get_type(),
-                    base_val.get_type().prop_type(prop).unwrap(),
-                    "Tried to reassign property {:?} to a different type",
-                    assign.assignee
-                );
-                base_val.set_prop(prop, val.dup());
+                let base_val = self.eval_expr(&base)?;
+                if base_val
+                    .get_type()
+                    .prop_type(prop)
+                    .is_none_or(|pt| val.get_type() != pt)
+                {
+                    return Err(RuntimeError::single(
+                        &format!(
+                            "Tried to reassign property {:?} to a different type",
+                            assign.assignee
+                        ),
+                        base.location,
+                    ));
+                }
+                base_val
+                    .set_prop(prop, val.dup())
+                    .map_err(|e| e.stack_loc(base.location))?;
             }
             Accessor::Index(indexed, index) => {
-                let base_val = self.eval_expr(&indexed);
-                assert_eq!(
-                    val.get_type(),
-                    base_val.get_type().index_type(&index.output).unwrap(),
-                    "Tried to reassign property {:?} to a different type",
-                    assign.assignee
-                );
-                base_val.set_index(self.eval_expr(&index), val.dup());
+                let base_val = self.eval_expr(&indexed)?;
+                if base_val
+                    .get_type()
+                    .index_type(&index.output)
+                    .is_none_or(|it| it != val.get_type())
+                {
+                    return Err(RuntimeError::single(
+                        &format!(
+                            "Tried to reassign property {:?} to a different type",
+                            assign.assignee
+                        ),
+                        assign.val.location,
+                    ));
+                };
+                base_val
+                    .set_index(self.eval_expr(&index)?, val.dup())
+                    .map_err(|e| e.stack_loc(indexed.location))?;
             }
         }
-        val
+        Ok(val)
     }
 
-    fn eval_conditional(&mut self, cond: &Conditional) -> Value {
-        if let Some(condition) = self.eval_expr(&cond.condition).downcast::<bool>() {
+    fn eval_conditional(&mut self, cond: &Conditional) -> Result<Value, RuntimeError> {
+        if let Some(condition) = self.eval_expr(&cond.condition)?.downcast::<bool>() {
             if condition {
                 self.eval_expr(&cond.result)
             } else if let Some(otherwise) = cond.otherwise.as_ref() {
                 self.eval_expr(&otherwise)
             } else {
-                Box::new(Void)
+                Ok(Box::new(Void))
             }
         } else {
-            unreachable!("Conditional statements should always return boolean values")
+            return Err(RuntimeError::single(
+                "UNREACHABLE: Conditional statements should always return boolean values",
+                cond.condition.location,
+            ));
         }
     }
 
-    fn eval_while(&mut self, wh: &While) -> Value {
+    fn eval_while(&mut self, wh: &While) -> Result<Value, RuntimeError> {
         loop {
-            if let Some(condition) = self.eval_expr(&wh.condition).downcast::<bool>() {
+            if let Some(condition) = self.eval_expr(&wh.condition)?.downcast::<bool>() {
                 if condition {
-                    self.eval_expr(&wh.result);
+                    self.eval_expr(&wh.result)?;
                 } else {
                     break;
                 }
             } else {
-                unreachable!("Conditional statements should always return boolean values")
+                return Err(RuntimeError::single(
+                    "UNREACHABLE: Conditional statements should always return boolean values",
+                    wh.condition.location,
+                ));
             }
         }
-        Box::new(Void)
+        Ok(Box::new(Void))
     }
 
-    fn eval_for(&mut self, fo: &For) -> Value {
+    fn eval_for(&mut self, fo: &For) -> Result<Value, RuntimeError> {
         let iter = self
-            .eval_expr(&fo.iter)
+            .eval_expr(&fo.iter)?
             .get_prop("iter")
-            .call(vec![], self, None);
+            .map_err(|e| e.stack_loc(fo.iter.location))?
+            .call(vec![], self, None)?;
         self.variables.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
         });
         loop {
-            let next_val = iter.get_prop("next").call(vec![], self, None);
+            let next_val = iter
+                .get_prop("next")
+                .map_err(|e| e.stack_loc(fo.iter.location))?
+                .call(vec![], self, None)?;
             match next_val.downcast::<Maybe>() {
                 Some(Maybe {
                     output: _,
                     contents: Some(c),
                 }) => {
-                    self.set_var(fo.var.clone(), c);
-                    self.eval_expr(&fo.body);
+                    self.set_var(fo.var.clone(), c)
+                        .map_err(|e| e.stack_loc(fo.iter.location))?;
+                    self.eval_expr(&fo.body)?;
                 }
                 Some(Maybe {
                     output: _,
                     contents: None,
                 }) => break,
-                None => panic!("Invalid for loop"),
+                None => {
+                    return Err(RuntimeError::single(
+                        "UNREACHABLE: Iterator functions should always return Maybe",
+                        fo.iter.location,
+                    ));
+                }
             }
         }
         self.variables.pop();
-        Box::new(Void)
+        Ok(Box::new(Void))
     }
 
-    fn eval_array(&mut self, arr: &Array, expected_type: Datatype) -> Value {
+    fn eval_array(&mut self, arr: &Array, expected_type: Datatype) -> Result<Value, RuntimeError> {
         let mut res = vec![];
         for expr in &arr.elements {
-            res.push(self.eval_expr(expr));
+            res.push(self.eval_expr(expr)?);
             let next_type = res.last().unwrap().get_type();
-            assert_eq!(expected_type, next_type, "Array types didn't match");
+            if expected_type != next_type {
+                return Err(match arr.elements.first() {
+                    Some(e) => RuntimeError::single("Array types didn't match", e.location),
+                    None => RuntimeError::partial(
+                        "UNREACHABLE: array types don't match without any elements in the array",
+                    ),
+                });
+            }
         }
-        Box::new(Arr::new(res, expected_type))
+        Ok(Box::new(Arr::new(res, expected_type)))
     }
 
-    fn eval_tuple(&mut self, tup: &TupleExpr) -> Value {
+    fn eval_tuple(&mut self, tup: &TupleExpr) -> Result<Value, RuntimeError> {
         let mut res = vec![];
         for expr in &tup.elements {
-            res.push(self.eval_expr(expr));
-            // TODO: maybe add type checking here, if I feel I need it for some reason
+            res.push(self.eval_expr(expr)?);
         }
-        Box::new(Tuple::new(res))
+        Ok(Box::new(Tuple::new(res)))
     }
 
-    fn eval_function(&mut self, func: &Function) -> Value {
-        Box::new(Func {
+    fn eval_function(&mut self, func: &Function) -> Result<Value, RuntimeError> {
+        Ok(Box::new(Func {
             params: func.params.iter().map(|(_, t)| t.clone()).collect(),
             output: func.contents.output.clone(),
             generic: func.generic.clone(),
@@ -295,26 +364,37 @@ impl Interpreter {
                     func.contents
                         .used_variables()
                         .filter(|v| !func.params.iter().any(|(n, _)| v == n))
-                        .map(|v| {
-                            let val = self.get_var(&v).clone();
-                            (v, val)
-                        }),
+                        .map(|v| -> Result<_, RuntimeError> {
+                            let val = self
+                                .get_var(&v)
+                                .map_err(|e| e.stack_loc(func.contents.location))?
+                                .clone();
+                            Ok((v, val))
+                        })
+                        .collect::<Result<Vec<_>, RuntimeError>>()?,
                 ),
             ),
-        })
+        }))
     }
 
-    fn eval_call(&mut self, call: &Call, expected_type: Datatype) -> Value {
-        let base = self.eval_expr(&call.base);
-        let params = call
-            .params
-            .iter()
-            .map(|p| self.eval_expr(p))
-            .collect::<Vec<_>>();
+    fn eval_call(&mut self, call: &Call, expected_type: Datatype) -> Result<Value, RuntimeError> {
+        let base = self.eval_expr(&call.base)?;
+        let params = {
+            let mut res = vec![];
+            for p in call.params.iter() {
+                res.push(self.eval_expr(p)?)
+            }
+            res
+        };
         base.call(params, self, Some(expected_type))
+            .map_err(|e| e.stack_loc(call.base.location))
     }
 
-    pub fn call_function(&mut self, preset_vals: HashMap<String, Value>, func: &Expr) -> Value {
+    pub fn call_function(
+        &mut self,
+        preset_vals: HashMap<String, Value>,
+        func: &Expr,
+    ) -> Result<Value, RuntimeError> {
         self.variables.push(VarScope {
             vars: preset_vals,
             blocking: true,
@@ -324,7 +404,7 @@ impl Interpreter {
         res
     }
 
-    fn eval_specify_generics(&mut self, gspec: &GenericSpecify) -> Value {
-        self.eval_expr(&gspec.base).insert_generics(&gspec.types)
+    fn eval_specify_generics(&mut self, gspec: &GenericSpecify) -> Result<Value, RuntimeError> {
+        self.eval_expr(&gspec.base)?.insert_generics(&gspec.types)
     }
 }

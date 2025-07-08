@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op};
+use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op, error::RuntimeError};
 
 mod num;
 pub use num::{FloatT, IntT};
@@ -182,34 +182,34 @@ trait BaseVal {
 
 #[allow(private_bounds)]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
-    fn get_prop(&self, _name: &str) -> Value {
-        unreachable!("Type '{}' has no properties.", self.get_type())
+    fn get_prop(&self, _name: &str) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' has no properties.", self.get_type())))
     }
-    fn set_prop(&self, _prop: &str, _value: Value) {
-        unreachable!("Type '{}' has no properties.", self.get_type())
+    fn set_prop(&self, _prop: &str, _value: Value) -> Result<(),RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' has no properties.", self.get_type())))
     }
-    fn get_index(&self, _index: Value) -> Value {
-        unreachable!("Type '{}' can't be indexed.", self.get_type())
+    fn get_index(&self, _index: Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' can't be indexed.", self.get_type())))
     }
-    fn set_index(&self, _index: Value, _value: Value) {
-        unreachable!("Type '{}' can't be indexed.", self.get_type())
+    fn set_index(&self, _index: Value, _value: Value) -> Result<(), RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' can't be indexed.", self.get_type())))
     }
-    fn bin_op(&self, _other: &Value, _op: Op) -> Value {
-        unreachable!("Type '{}' has no binary operations.", self.get_type())
+    fn bin_op(&self, _other: &Value, _op: Op) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' has no binary operations.", self.get_type())))
     }
-    fn pre_op(&self, _op: Op) -> Value {
-        unreachable!("Type '{}' has no prefix operations.", self.get_type())
+    fn pre_op(&self, _op: Op) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' has no prefix operations.", self.get_type())))
     }
-    fn post_op(&self, _op: Op) -> Value {
-        unreachable!("Type '{}' has no postfix operations.", self.get_type())
+    fn post_op(&self, _op: Op) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' has no postfix operations.", self.get_type())))
     }
     fn call(
         &self,
         _params: Vec<Value>,
         _interpreter: &mut Interpreter,
         _expected_output: Option<Datatype>,
-    ) -> Value {
-        unreachable!("Type '{}' cannot be called.", self.get_type())
+    ) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' cannot be called.", self.get_type())))
     }
     fn get_type(&self) -> Datatype {
         self.base_get_type()
@@ -217,11 +217,11 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn dup(&self) -> Value {
         self.base_dup()
     }
-    fn insert_generics(&self, _generics: &Vec<Datatype>) -> Value {
-        unreachable!("Type '{}' cannot have generics inserted", self.get_type())
+    fn insert_generics(&self, _generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' cannot have generics inserted", self.get_type())))
     }
-    fn hash(&self, _h: &mut dyn Hasher) {
-        unreachable!("Type '{}' cannot be hashed", self.get_type())
+    fn hash(&self, _h: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        Err(RuntimeError::partial(&format!("Type '{}' cannot be hashed", self.get_type())))
     }
 }
 
@@ -231,7 +231,7 @@ macro_rules! invalid {
         let op = $op;
         let lhs = $lhs;
         let rhs = $rhs;
-        unreachable!("Invalid operation {op:?} on {lhs:?}, {rhs:?}")
+        return Err(RuntimeError::partial(&format!("Invalid operation {op:?} on {lhs:?}, {rhs:?}")))
     }};
 }
 
@@ -395,7 +395,7 @@ impl Eq for Value {}
 
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_ref().hash(state);
+        let _ = self.as_ref().hash(state).inspect_err(|e|panic!("{e}"));
     }
 }
 
@@ -433,7 +433,7 @@ impl Downcast for Datatype {
 type_init!(Void, Void, "()");
 impl Type for Void {}
 impl Val for Void {
-    fn hash(&self, _: &mut dyn Hasher) {}
+    fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {Ok(())}
 }
 
 impl PartialEq for Void {
@@ -460,7 +460,7 @@ macro_rules! gen_fn_map {
                 &'static str,
                 (
                     FuncT,
-                    fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
+                    fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
                 ),
             >,
         > = ::std::sync::LazyLock::new(|| {
@@ -469,7 +469,7 @@ macro_rules! gen_fn_map {
                     $fname,
                     (
                         (&$fsig as &FuncT).clone(),
-                        $ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Value,
+                        $ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
                     ),
                 ),)*
             ])

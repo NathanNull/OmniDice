@@ -21,15 +21,19 @@ pub static NEXT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-pub fn next_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+pub fn next_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Iter>() {
-        Box::new(
+        Ok(Box::new(
             me.next_fn
-                .call(vec![], i, None)
+                .call(vec![], i, None)?
                 .downcast::<Maybe>()
-                .expect("Invalid iter function return value"),
-        )
+                .ok_or_else(|| RuntimeError::partial("Invalid iter function return value"))?,
+        ))
     } else {
         invalid!("Call", "next", params)
     }
@@ -69,48 +73,70 @@ pub static MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-pub fn map_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+pub fn map_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let me = it.next_as::<Iter>().expect("Invalid call");
-    let mapper = it.next_as::<Func>().expect("Invalid call");
-    Box::new(Iter {
+    let me = it
+        .next_as::<Iter>()
+        .ok_or_else(|| RuntimeError::partial("map owner not iter"))?;
+    let mapper = it
+        .next_as::<Func>()
+        .ok_or_else(|| RuntimeError::partial("map param not func"))?;
+    Ok(Box::new(Iter {
         output: mapper
             .get_type()
             .call_result(vec![me.output.dup()], None)
-            .expect("Invalid call"),
+            .ok_or_else(|| RuntimeError::partial("map func has invalid input"))?,
         next_fn: Box::new(
             MAP_ITER_SIG
                 .insert_generics(&HashMap::from_iter([
                     (ITER_T_NAME.to_string(), me.output.clone()),
                     (TV2_NAME.to_string(), mapper.output.clone()),
                 ]))
-                .unwrap()
+                .ok_or_else(|| RuntimeError::partial("map func is invalid"))?
                 .downcast::<FuncT>()
-                .unwrap()
+                .ok_or_else(|| RuntimeError::partial("map func degenericization isn't a function"))?
                 .make_rust_member(
                     map_iter_fn,
                     Box::new(Tuple::new(vec![me.dup(), mapper.dup()])),
-                ),
+                )?,
         ),
-    })
+    }))
 }
 
-fn map_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn map_iter_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let tup = it.next_as::<Tuple>().unwrap();
+    let tup = it
+        .next_as::<Tuple>()
+        .ok_or_else(|| RuntimeError::partial("map iter owner isn't a tuple"))?;
     let mut it = tup.inner().elements.clone().into_iter();
-    let me = it.next_as::<Iter>().unwrap();
-    let mapper = it.next_as::<Func>().unwrap();
-    let next = next_fn(vec![me.dup()], i, None)
+    let me = it
+        .next_as::<Iter>()
+        .ok_or_else(|| RuntimeError::partial("map iter owner i1 isn't an iter"))?;
+    let mapper = it
+        .next_as::<Func>()
+        .ok_or_else(|| RuntimeError::partial("map iter owner i2 isn't a func"))?;
+    let next = next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
-        .unwrap();
-    Box::new(Maybe {
+        .ok_or_else(|| RuntimeError::partial("map iter next is invalid"))?;
+    Ok(Box::new(Maybe {
         output: mapper
             .get_type()
             .call_result(vec![me.output.dup()], None)
-            .unwrap(),
-        contents: next.contents.map(|n| mapper.call(vec![n], i, None)),
-    })
+            .ok_or_else(|| RuntimeError::partial("map func is invalid"))?,
+        contents: if let Some(c) = next.contents {
+            Some(mapper.call(vec![c], i, None)?)
+        } else {
+            None
+        },
+    }))
 }
 
 static FILTERER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -147,11 +173,19 @@ pub static FILTER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-pub fn filter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+pub fn filter_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let me = it.next_as::<Iter>().expect("Invalid call");
-    let filter = it.next_as::<Func>().expect("Invalid call");
-    Box::new(Iter {
+    let me = it
+        .next_as::<Iter>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let filter = it
+        .next_as::<Func>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    Ok(Box::new(Iter {
         output: me.output.clone(),
         next_fn: Box::new(
             FILTER_ITER_SIG
@@ -159,36 +193,52 @@ pub fn filter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>)
                     ITER_T_NAME.to_string(),
                     me.output.clone(),
                 )]))
-                .unwrap()
+                .ok_or_else(|| RuntimeError::partial("Invalid call"))?
                 .downcast::<FuncT>()
-                .unwrap()
+                .ok_or_else(|| RuntimeError::partial("Invalid call"))?
                 .make_rust_member(
                     filter_iter_fn,
                     Box::new(Tuple::new(vec![me.dup(), filter.dup()])),
-                ),
+                )?,
         ),
-    })
+    }))
 }
 
-fn filter_iter_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn filter_iter_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let tup = it.next_as::<Tuple>().unwrap();
+    let tup = it
+        .next_as::<Tuple>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
     let mut it = tup.inner().elements.clone().into_iter();
-    let me = it.next_as::<Iter>().unwrap();
-    let filter = it.next_as::<Func>().unwrap();
-    let mut res = Maybe {output: me.output.clone(), contents: None};
-    while let Some(next) = &next_fn(vec![me.dup()], i, None)
+    let me = it
+        .next_as::<Iter>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let filter = it
+        .next_as::<Func>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let mut res = Maybe {
+        output: me.output.clone(),
+        contents: None,
+    };
+    while let Some(next) = &next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
-        .unwrap()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?
         .contents
     {
-        let filter_res = filter.call(vec![next.clone()], i, Some(Box::new(BoolT))).downcast::<bool>().unwrap();
+        let filter_res = filter
+            .call(vec![next.clone()], i, Some(Box::new(BoolT)))?
+            .downcast::<bool>()
+            .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
         if filter_res {
             res.contents = Some(next.clone());
             break;
         }
     }
-    Box::new(res)
+    Ok(Box::new(res))
 }
 
 static FOLDER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -207,20 +257,30 @@ pub static FOLD_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-pub fn fold_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+pub fn fold_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let me = it.next_as::<Iter>().expect("Invalid call");
-    let initial = it.next().expect("Invalid call");
-    let folder = it.next_as::<Func>().expect("Invalid call");
+    let me = it
+        .next_as::<Iter>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let initial = it
+        .next()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let folder = it
+        .next_as::<Func>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
     let mut curr = initial;
-    while let Some(next) = &next_fn(vec![me.dup()], i, None)
+    while let Some(next) = &next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
-        .unwrap()
+        .ok_or_else(|| RuntimeError::partial(""))?
         .contents
     {
-        curr = folder.call(vec![curr, next.clone()], i, None);
+        curr = folder.call(vec![curr, next.clone()], i, None)?;
     }
-    curr
+    Ok(curr)
 }
 
 pub static IDENT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -230,8 +290,15 @@ pub static IDENT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(ITER_T.clone()),
 });
 
-pub fn ident_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
-    params.first().unwrap().clone()
+pub fn ident_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    Ok(params
+        .first()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+        .clone())
 }
 
 pub static TO_MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
@@ -247,16 +314,26 @@ pub static TO_MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
         }),
     })),
 });
-pub fn to_map_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) -> Value {
-    let iter = params.first().unwrap().downcast::<Iter>().unwrap();
+pub fn to_map_fn(
+    params: Vec<Value>,
+    i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    let iter = params
+        .first()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+        .downcast::<Iter>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
     let mut map = HashMap::new();
     let (mut kt, mut vt) = (Box::new(Void) as Datatype, Box::new(Void) as Datatype);
     loop {
-        let entry = next_fn(vec![Box::new(iter.clone())], i, None)
+        let entry = next_fn(vec![Box::new(iter.clone())], i, None)?
             .downcast::<Maybe>()
-            .unwrap();
+            .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
         if let Some(val) = entry.contents {
-            let tup = val.downcast::<Tuple>().unwrap();
+            let tup = val
+                .downcast::<Tuple>()
+                .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
             let kvpair = &tup.inner().elements;
             let key = kvpair[0].clone();
             let value = kvpair[1].clone();
@@ -267,5 +344,7 @@ pub fn to_map_fn(params: Vec<Value>, i: &mut Interpreter, _o: Option<Datatype>) 
             break;
         }
     }
-    Box::new(Map::new(map, kt, vt))
+    Ok(Box::new(
+        Map::new(map, kt, vt).map_err(|e| RuntimeError::partial(&e))?,
+    ))
 }

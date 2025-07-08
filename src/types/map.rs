@@ -56,23 +56,31 @@ impl Debug for _InnerMap {
 }
 
 impl _InnerMap {
-    fn new(elements: HashMap<Value, Value>, key: Datatype, value: Datatype) -> Self {
+    fn new(
+        elements: HashMap<Value, Value>,
+        key: Datatype,
+        value: Datatype,
+    ) -> Result<Self, String> {
         if !key.is_hashable() {
-            unreachable!("Invalid map key type {}", key)
+            return Err(format!("Invalid map key type {}", key));
         }
-        Self {
+        Ok(Self {
             key,
             value,
             elements,
-        }
+        })
     }
 }
 
 mut_type_init!(Map, _InnerMap);
 
 impl Map {
-    pub fn new(elements: HashMap<Value, Value>, key: Datatype, value: Datatype) -> Self {
-        Self::make(_InnerMap::new(elements, key, value))
+    pub fn new(
+        elements: HashMap<Value, Value>,
+        key: Datatype,
+        value: Datatype,
+    ) -> Result<Self, String> {
+        Ok(Self::make(_InnerMap::new(elements, key, value)?))
     }
 }
 
@@ -98,7 +106,11 @@ static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn iter_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(map) = p_iter.next_as::<Map>() {
         if p_iter.next().is_none() {
@@ -115,13 +127,13 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Va
                     .collect(),
                 out.clone(),
             );
-            return Box::new(Iter {
+            return Ok(Box::new(Iter {
                 output: out,
                 next_fn: Box::new(ITER_RET_SIG.clone().make_rust_member(
                     iter_ret_fn,
                     Box::new(Tuple::new(vec![Box::new(0), Box::new(arr)])),
-                )),
-            });
+                )?),
+            }));
         }
     }
     invalid!("Call", "iter", params);
@@ -137,15 +149,23 @@ static SET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn set_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn set_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Map>() {
         if let Some(key) = p_iter.next() {
-            assert_eq!(arr.inner().key, key.get_type(), "Invalid type");
+            if arr.inner().key != key.get_type() {
+                return Err(RuntimeError::partial("Invalid key type for map"));
+            }
             if let Some(val) = p_iter.next() {
-                assert_eq!(arr.inner().value, val.get_type(), "Invalid type");
+                if arr.inner().value != val.get_type() {
+                    return Err(RuntimeError::partial("Invalid value type for map"));
+                }
                 arr.inner_mut().elements.insert(key, val);
-                return Box::new(Void);
+                return Ok(Box::new(Void));
             }
         }
     }
@@ -162,16 +182,22 @@ static GET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn get_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn get_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Map>() {
         if let Some(key) = p_iter.next() {
-            return arr
+            return Ok(arr
                 .inner_mut()
                 .elements
                 .get(&key)
-                .expect("Can't pop from empty array")
-                .clone();
+                .ok_or_else(|| {
+                    RuntimeError::partial(&format!("Can't access nonexistent key {key:?} of map"))
+                })?
+                .clone());
         }
     }
     invalid!("Call", "push", params)
@@ -200,16 +226,7 @@ impl Type for MapT {
         match name {
             "length" => Some(Box::new(IntT)),
             n if MAP_FNS.contains_key(n) => {
-                println!("Getting {n}");
-                let ret = Some(
-                    MAP_FNS[n]
-                        .0
-                        .clone()
-                        .with_owner(self.dup())
-                        .expect("Invalid owner")
-                        .dup(),
-                );
-                println!("Got {ret:?}");
+                let ret = Some(MAP_FNS[n].0.clone().with_owner(self.dup()).ok()?.dup());
                 ret
             }
             _ => None,
@@ -263,65 +280,76 @@ impl Type for MapT {
 }
 
 impl Val for Map {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if other.get_type() == self.get_type() {
-            let rhs = other
-                .downcast::<Self>()
-                .expect("Just checked if it was the right type");
-            match op {
-                Op::Plus => Box::new(Self::new(
-                    {
-                        let mut m = self.inner().elements.clone();
-                        for (k, v) in rhs.inner().elements.iter() {
-                            m.insert(k.clone(), v.clone());
-                        }
-                        m
-                    },
-                    self.inner().key.clone(),
-                    self.inner().value.clone(),
-                )),
+            let rhs = other.downcast::<Self>().ok_or_else(|| {
+                RuntimeError::partial("mapbinop rhs wrong type, despite just checking")
+            })?;
+            Ok(match op {
+                Op::Plus => Box::new(
+                    Self::new(
+                        {
+                            let mut m = self.inner().elements.clone();
+                            for (k, v) in rhs.inner().elements.iter() {
+                                m.insert(k.clone(), v.clone());
+                            }
+                            m
+                        },
+                        self.inner().key.clone(),
+                        self.inner().value.clone(),
+                    )
+                    .map_err(|e| RuntimeError::partial(&e))?,
+                ),
                 _ => invalid!(op, self, other),
-            }
+            })
         } else {
             invalid!(op, self, other);
         }
     }
 
-    fn get_prop(&self, name: &str) -> Value {
-        match name {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
+        Ok(match name {
             "length" => Box::new(self.inner().elements.len() as i32),
             n if MAP_FNS.contains_key(n) => Box::new(
                 MAP_FNS[n]
                     .0
                     .clone()
-                    .make_rust_member(MAP_FNS[n].1, self.dup()),
+                    .make_rust_member(MAP_FNS[n].1, self.dup())?,
             ),
             _ => invalid!("Prop", self, name),
-        }
+        })
     }
 
-    fn get_index(&self, index: Value) -> Value {
+    fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {
         if index.get_type() == self.inner().key {
-            self.inner()
+            Ok(self
+                .inner()
                 .elements
                 .get(&index)
-                .expect("Invalid index")
-                .dup()
+                .ok_or_else(|| {
+                    RuntimeError::partial(&format!("Can't access nonexistent key {index:?} of map"))
+                })?
+                .dup())
         } else {
             invalid!("Index", self, index.get_type())
         }
     }
 
-    fn set_index(&self, index: Value, value: Value) {
+    fn set_index(&self, index: Value, value: Value) -> Result<(), RuntimeError> {
         if index.get_type() == self.inner().key {
-            assert_eq!(value.get_type(), self.inner().value);
-            *self
-                .inner_mut()
-                .elements
-                .get_mut(&index)
-                .expect("Invalid index") = value;
+            if value.get_type() != self.inner().value {
+                return Err(RuntimeError::partial(
+                    "UNREACHABLE: invalid value type for map insertion",
+                ));
+            }
+            *self.inner_mut().elements.get_mut(&index).ok_or_else(|| {
+                RuntimeError::partial(&format!(
+                    "Can't access nonexistent key {index:?} of map, consider using .set instead."
+                ))
+            })? = value;
         } else {
             invalid!("Index", self, index.get_type())
         }
+        Ok(())
     }
 }

@@ -114,7 +114,7 @@ impl Val for FuncSum {
         params: Vec<Value>,
         interpreter: &mut Interpreter,
         expected_output: Option<Datatype>,
-    ) -> Value {
+    ) -> Result<Value, RuntimeError> {
         for (ty, f) in self.f_types.iter().zip(self.fns.iter()).rev() {
             if let Some(_) = ty.call_result(
                 params.iter().map(|v| v.get_type()).collect(),
@@ -125,9 +125,9 @@ impl Val for FuncSum {
         }
         invalid!("Call", self, ());
     }
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if op == Op::Plus && other.get_type().possible_call() {
-            Box::new(FuncSum::new(vec![self.dup(), other.dup()]))
+            Ok(Box::new(FuncSum::new(vec![self.dup(), other.dup()])))
         } else {
             invalid!(op, self, other);
         }

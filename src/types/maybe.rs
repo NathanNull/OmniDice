@@ -27,15 +27,6 @@ impl Display for Maybe {
 
 type_init!(MaybeT, Maybe, "maybe", output: Datatype);
 
-// fn unwrap_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut it = params.iter().cloned();
-//     if let Some(me) = it.next_as::<MaybeT>() {
-//         Some(me.output)
-//     } else {
-//         None
-//     }
-// }
-
 static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
@@ -48,10 +39,13 @@ static UNWRAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Maybe>() {
-        me.contents.unwrap()
+        match me.contents {
+            Some(v) => Ok(v),
+            None => Err(RuntimeError::partial("Attempted to unwrap null value")),
+        }
     } else {
         invalid!("Call", "unwrap", params);
     }
@@ -60,7 +54,7 @@ fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
 impl Type for MaybeT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "unwrap" => Some(Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).expect("Invalid owner"))),
+            "unwrap" => Some(Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).ok()?)),
             "filled" => Some(Box::new(BoolT)),
             _ => None,
         }
@@ -82,16 +76,17 @@ impl Type for MaybeT {
     }
 }
 impl Val for Maybe {
-    fn get_prop(&self, name: &str) -> Value {
-        match name {
-            "unwrap" => Box::new(UNWRAP_SIG.clone().make_rust_member(unwrap_fn, self.dup())),
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
+        Ok(match name {
+            "unwrap" => Box::new(UNWRAP_SIG.clone().make_rust_member(unwrap_fn, self.dup())?),
             "filled" => Box::new(self.contents.is_some()),
             _ => invalid!("Prop", self, name),
-        }
+        })
     }
-    fn hash(&self, h: &mut dyn Hasher) {
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         if let Some(c) = &self.contents {
-            c.as_ref().hash(h)
+            c.as_ref().hash(h)?;
         }
+        Ok(())
     }
 }

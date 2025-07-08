@@ -76,13 +76,19 @@ static PUSH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
-fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn push_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if let Some(to_push) = p_iter.next() {
-            assert_eq!(arr.inner().entry, to_push.get_type(), "Invalid type");
+            if arr.inner().entry != to_push.get_type() {
+                return Err(RuntimeError::partial("pushed element is the wrong type"));
+            }
             arr.inner_mut().elements.push(to_push.clone());
-            return Box::new(Void);
+            return Ok(Box::new(Void));
         }
     }
     invalid!("Call", "push", params)
@@ -106,14 +112,18 @@ static POP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
-fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn pop_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
-        return arr
+        return Ok(arr
             .inner_mut()
             .elements
             .pop()
-            .expect("Can't pop from empty array");
+            .ok_or_else(|| RuntimeError::partial("Can't pop from empty array"))?);
     }
     invalid!("Call", "push", params)
 }
@@ -148,44 +158,52 @@ pub static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+fn iter_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if p_iter.next().is_none() {
-            return Box::new(Iter {
+            return Ok(Box::new(Iter {
                 output: arr.inner().entry.clone(),
                 next_fn: Box::new(ITER_RET_SIG.clone().make_rust_member(
                     iter_ret_fn,
                     Box::new(Tuple::new(vec![Box::new(0), arr.dup()])),
-                )),
-            });
+                )?),
+            }));
         }
     }
     invalid!("Call", "iter", params);
 }
 
-pub fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Value {
+pub fn iter_ret_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
-    let me = it.next_as::<Tuple>().expect("Invalid function call");
+    let me = it
+        .next_as::<Tuple>()
+        .ok_or_else(|| RuntimeError::partial("arriter owner isn't tuple"))?;
     let idx = me.inner().elements[0]
         .downcast::<i32>()
-        .expect("Invalid function call") as usize;
-    *me.inner_mut()
-        .elements
-        .get_mut(0)
-        .unwrap()
+        .ok_or_else(|| RuntimeError::partial("arriter owner first isn't an index"))?
+        as usize;
+    *me.inner_mut().elements[0]
         .downcast_mut::<i32>()
-        .unwrap() += 1;
+        .ok_or_else(|| RuntimeError::partial("arriter owner first isn't an index"))? += 1;
     let arr = me
         .inner()
         .elements
         .get(1)
         .and_then(|v| v.downcast::<Arr>())
-        .expect("Invalid function call");
-    return Box::new(Maybe {
+        .ok_or_else(|| RuntimeError::partial("arriter owner second isn't an array"))?;
+    return Ok(Box::new(Maybe {
         output: arr.inner().entry.clone(),
         contents: arr.inner().elements.get(idx).map(|e| e.dup()),
-    });
+    }));
 }
 
 gen_fn_map!(
@@ -210,14 +228,9 @@ impl Type for ArrT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
             "length" => Some(Box::new(IntT)),
-            n if ARR_FNS.contains_key(n) => Some(
-                ARR_FNS[n]
-                    .0
-                    .clone()
-                    .with_owner(self.dup())
-                    .expect("Invalid owner")
-                    .dup(),
-            ),
+            n if ARR_FNS.contains_key(n) => {
+                Some(ARR_FNS[n].0.clone().with_owner(self.dup()).ok()?.dup())
+            }
             _ => None,
         }
     }
@@ -255,13 +268,15 @@ impl Type for ArrT {
 }
 
 impl Val for Arr {
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         if other.get_type() == self.get_type() {
-            let rhs = other
-                .downcast::<Self>()
-                .expect("Just checked if it was the right type");
+            let rhs = other.downcast::<Self>().ok_or_else(|| {
+                RuntimeError::partial(
+                    "arrbinop lhs and rhs aren't the same, despite just testing for that",
+                )
+            })?;
             match op {
-                Op::Plus => Box::new(Self::new(
+                Op::Plus => Ok(Box::new(Self::new(
                     self.inner()
                         .elements
                         .iter()
@@ -269,7 +284,7 @@ impl Val for Arr {
                         .cloned()
                         .collect(),
                     self.inner().entry.clone(),
-                )),
+                ))),
                 _ => invalid!(op, self, other),
             }
         } else {
@@ -277,108 +292,158 @@ impl Val for Arr {
         }
     }
 
-    fn get_prop(&self, name: &str) -> Value {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         match name {
-            "length" => Box::new(self.inner().elements.len() as i32),
-            n if ARR_FNS.contains_key(n) => Box::new(
+            "length" => Ok(Box::new(self.inner().elements.len() as i32)),
+            n if ARR_FNS.contains_key(n) => Ok(Box::new(
                 ARR_FNS[n]
                     .0
                     .clone()
-                    .make_rust_member(ARR_FNS[n].1, self.dup()),
-            ),
+                    .make_rust_member(ARR_FNS[n].1, self.dup())?,
+            )),
             _ => invalid!("Prop", self, name),
         }
     }
 
-    fn get_index(&self, index: Value) -> Value {
+    fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {
         if let Some(idx) = index.downcast::<i32>() {
-            self.inner()
+            Ok(self
+                .inner()
                 .elements
                 .get(idx as usize)
-                .expect("Invalid index")
-                .dup()
+                .ok_or_else(|| {
+                    RuntimeError::partial(&format!("Array has no element at index {idx}"))
+                })?
+                .dup())
         } else if let Some(idxs) = index.downcast::<Tuple>() {
             let eles = &self.inner().elements;
-            Box::new(Self::new(
+            Ok(Box::new(Self::new(
                 idxs.inner()
                     .elements
                     .iter()
                     .map(|idx| {
                         if let Some(i) = idx.downcast::<i32>() {
-                            eles.get(i as usize).expect("Invalid index").dup()
+                            Ok(eles
+                                .get(i as usize)
+                                .ok_or_else(|| {
+                                    RuntimeError::partial(&format!(
+                                        "Array has no element at index {i}"
+                                    ))
+                                })?
+                                .dup())
                         } else {
                             invalid!("Index", self, idx.get_type())
                         }
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
                 self.inner().entry.clone(),
-            ))
+            )))
         } else if let Some(range) = index.downcast::<Range>() {
             let eles = &self.inner().elements;
-            Box::new(Self::new(
+            Ok(Box::new(Self::new(
                 (range.inner().curr + 1..range.inner().last)
                     .map(|idx| {
-                        eles.get(idx as usize)
-                            .expect(&format!("Invalid index {idx}"))
-                            .dup()
+                        Ok(eles
+                            .get(idx as usize)
+                            .ok_or_else(|| {
+                                RuntimeError::partial(&format!(
+                                    "Array has no element at index {idx}"
+                                ))
+                            })?
+                            .dup())
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
                 self.inner().entry.clone(),
-            ))
+            )))
         } else {
             invalid!("Index", self, index.get_type())
         }
     }
 
-    fn set_index(&self, index: Value, value: Value) {
+    fn set_index(&self, index: Value, value: Value) -> Result<(), RuntimeError> {
         if let Some(idx) = index.downcast::<i32>() {
-            assert_eq!(value.get_type(), self.inner().entry);
+            if value.get_type() != self.inner().entry {
+                return Err(RuntimeError::partial(&format!(
+                    "Tried to set array index to different type ({}) than allowed ({})",
+                    value.get_type(),
+                    self.inner().entry
+                )));
+            }
             *self
                 .inner_mut()
                 .elements
                 .get_mut(idx as usize)
-                .expect("Invalid index") = value;
+                .ok_or_else(|| {
+                    RuntimeError::partial(&format!("Array has no element at index {idx}"))
+                })? = value;
         } else if let Some(idxs) = index.downcast::<Tuple>() {
             let entry = self.inner().entry.clone();
-            let vals = value.downcast::<Arr>().unwrap();
-            assert_eq!(vals.inner().entry, entry);
+            let vals = value.downcast::<Arr>().ok_or_else(|| {
+                RuntimeError::partial("Array setindex using tuple as index must use array as value")
+            })?;
+            if vals.inner().entry != entry {
+                return Err(RuntimeError::partial(&format!(
+                    "Tried to set array index to different type ({}) than allowed ({})",
+                    vals.inner().entry,
+                    entry
+                )));
+            }
             idxs.inner()
                 .elements
                 .iter()
                 .zip(vals.inner().elements.iter())
-                .for_each(|(idx, val)| {
+                .map(|(idx, val)| {
                     if let Some(i) = idx.downcast::<i32>() {
                         *self
                             .inner_mut()
                             .elements
                             .get_mut(i as usize)
-                            .expect("Invalid index") = val.dup();
+                            .ok_or_else(|| {
+                                RuntimeError::partial(&format!("Array has no element at index {i}"))
+                            })? = val.dup();
                     } else {
                         invalid!("Index", self, idx.get_type())
                     }
-                });
+                    Ok(())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
         } else if let Some(range) = index.downcast::<Range>() {
             let entry = self.inner().entry.clone();
-            let vals = value.downcast::<Arr>().unwrap();
-            assert_eq!(vals.inner().entry, entry);
+            let vals = value.downcast::<Arr>().ok_or_else(|| {
+                RuntimeError::partial("Array setindex using range as index must use array as value")
+            })?;
+            if vals.inner().entry != entry {
+                return Err(RuntimeError::partial(&format!(
+                    "Tried to set array index to different type ({}) than allowed ({})",
+                    vals.inner().entry,
+                    entry
+                )));
+            }
             (range.inner().curr + 1..range.inner().last)
                 .zip(vals.inner().elements.iter())
-                .for_each(|(idx, val)| {
+                .map(|(idx, val)| {
                     *self
                         .inner_mut()
                         .elements
                         .get_mut(idx as usize)
-                        .expect("Invalid index") = val.dup();
-                });
+                        .ok_or_else(|| {
+                            RuntimeError::partial(&format!("Array has no element at index {idx}"))
+                        })? = val.dup();
+                    Ok(())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
         } else {
             invalid!("Index", self, index.get_type())
         }
+        Ok(())
     }
 
-    fn hash(&self, h: &mut dyn Hasher) {
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()
             .elements
             .iter()
-            .for_each(|e| e.as_ref().hash(h));
+            .map(|e| e.as_ref().hash(h))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|_| ())
     }
 }

@@ -6,7 +6,10 @@ use std::{
 
 use strum::EnumIter;
 
-use crate::types::{Arr, ArrT, Datatype, Downcast, Tuple as Tup, Value};
+use crate::{
+    error::{LineIndex},
+    types::{Arr, ArrT, Datatype, Downcast, Tuple as Tup, Value},
+};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum OpType {
@@ -89,6 +92,7 @@ pub enum ExprContents {
 pub struct Expr {
     pub contents: ExprContents,
     pub output: Datatype,
+    pub location: LineIndex,
 }
 
 impl Debug for ExprContents {
@@ -189,7 +193,7 @@ impl Display for Expr {
                     if func.generic.len() > 0 {
                         format!("<{}>", func.generic.join(", "))
                     } else {
-                        "".to_string()
+                        String::new()
                     },
                     func.params
                         .iter()
@@ -219,7 +223,7 @@ impl Display for Expr {
                 vec![&gspec.base],
             ),
         };
-        writeln!(f, "{str}")?;
+        writeln!(f, "{str} ({:?})", self.location)?;
         let num_children = children.len();
         for (c_idx, child) in children.into_iter().enumerate() {
             for (i, line) in format!("{child}").split("\n").enumerate() {
@@ -557,6 +561,7 @@ impl Expr {
         Ok(Box::new(Self {
             contents: new_contents,
             output: new_type,
+            location: self.location,
         }))
     }
 
@@ -569,28 +574,37 @@ impl Expr {
                     .try_const_eval()
                     .and_then(|l| binop.rhs.try_const_eval().map(|r| (l, r)))
                 {
-                    Some(lhs.bin_op(&rhs, binop.op))
+                    lhs.bin_op(&rhs, binop.op).ok()
                 } else {
                     None
                 }
             }
             ExprContents::Prefix(prefix) => {
-                prefix.rhs.try_const_eval().map(|rhs| rhs.pre_op(prefix.op))
+                prefix.rhs.try_const_eval().and_then(|rhs| rhs.pre_op(prefix.op).ok())
             }
             ExprContents::Postfix(postfix) => postfix
                 .lhs
                 .try_const_eval()
-                .map(|lhs| lhs.post_op(postfix.op)),
+                .and_then(|lhs| lhs.post_op(postfix.op).ok()),
             ExprContents::Assign(_) => None,
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(_) => None,
-                Accessor::Property(base, prop) => base.try_const_eval().map(|b| b.get_prop(prop)),
+                Accessor::Property(base, prop) => base
+                    .try_const_eval()
+                    .and_then(|b| b.get_prop(prop).ok())
+                    .and_then(|v| {
+                        if v.get_type().possible_call() {
+                            None
+                        } else {
+                            Some(v)
+                        }
+                    }),
                 Accessor::Index(base, index) => {
                     if let Some((b, i)) = base
                         .try_const_eval()
                         .and_then(|l| index.try_const_eval().map(|r| (l, r)))
                     {
-                        Some(b.get_index(i))
+                        b.get_index(i).ok()
                     } else {
                         None
                     }

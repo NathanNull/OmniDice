@@ -1,8 +1,11 @@
-use std::{env, fs};
+use std::{env, fmt::Display, fs};
 
 use interpreter::Interpreter;
+use itertools::Itertools;
 use lexer::Lexer;
 use parser::Parser;
+
+use crate::error::LineIndex;
 
 mod builtins;
 mod distribution;
@@ -20,7 +23,7 @@ fn main() {
     println!("Raw code: {code}");
     match Lexer::new(&code).lex() {
         Ok(tokens) => {
-            println!("Tokens: {tokens:?}");
+            println!("Tokens: [{}]", tokens.iter().map(|t|format!("({}, {})", t.0, t.1)).join(", "));
             match Parser::new(tokens).parse() {
                 Ok(ast) => {
                     println!("AST: {ast}");
@@ -42,11 +45,17 @@ pub struct TokenWidth {
     height: usize,
 }
 
+impl Display for TokenWidth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}", self.width, self.height)
+    }
+}
+
 #[derive(Clone)]
 pub struct TokenIter<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> {
     inner: T,
     peeked: Vec<I>,
-    pos: (usize, usize),
+    pos: LineIndex,
 }
 
 impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> Iterator for TokenIter<I, T> {
@@ -72,14 +81,14 @@ impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
         Self {
             inner,
             peeked: vec![],
-            pos: (1, 0),
+            pos: LineIndex(1, 1),
         }
     }
 
     fn step(&mut self, w: TokenWidth) {
         if w.height != 0 {
             self.pos.0 += w.height;
-            self.pos.1 = 0;
+            self.pos.1 = 1;
         }
         self.pos.1 += w.width;
     }

@@ -62,7 +62,11 @@ impl Type for RefT {
         self.ty.post_op_result(op)
     }
 
-    fn real_call_result(&self, params: Vec<Datatype>, expected_output: Option<Datatype>) -> Option<Datatype> {
+    fn real_call_result(
+        &self,
+        params: Vec<Datatype>,
+        expected_output: Option<Datatype>,
+    ) -> Option<Datatype> {
         self.ty.call_result(params, expected_output)
     }
 
@@ -91,46 +95,52 @@ impl Type for RefT {
 }
 
 impl Val for Ref {
-    fn get_prop(&self, name: &str) -> Value {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         if name == "inner" {
-            self.inner().val.clone()
+            Ok(self.inner().val.clone())
         } else {
             self.inner().val.get_prop(name)
         }
     }
 
-    fn set_prop(&self, prop: &str, value: Value) {
+    fn set_prop(&self, prop: &str, value: Value) -> Result<(), RuntimeError> {
         if prop == "inner" {
-            self.inner_mut().val = value
+            self.inner_mut().val = value;
+            Ok(())
         } else {
-            self.inner().val.set_prop(prop, value);
+            self.inner().val.set_prop(prop, value)
         }
     }
 
-    fn bin_op(&self, other: &Value, op: Op) -> Value {
+    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
         self.inner().val.bin_op(other, op)
     }
 
-    fn pre_op(&self, op: Op) -> Value {
+    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
         self.inner().val.pre_op(op)
     }
 
-    fn post_op(&self, op: Op) -> Value {
+    fn post_op(&self, op: Op) -> Result<Value, RuntimeError> {
         self.inner().val.post_op(op)
     }
 
-    fn get_index(&self, index: Value) -> Value {
+    fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {
         self.inner().val.get_index(index)
     }
 
-    fn set_index(&self, index: Value, value: Value) {
-        self.inner().val.set_index(index, value);
+    fn set_index(&self, index: Value, value: Value) -> Result<(), RuntimeError> {
+        self.inner().val.set_index(index, value)
     }
 
-    fn call(&self, params: Vec<Value>, interpreter: &mut Interpreter, expected_output: Option<Datatype>) -> Value {
+    fn call(
+        &self,
+        params: Vec<Value>,
+        interpreter: &mut Interpreter,
+        expected_output: Option<Datatype>,
+    ) -> Result<Value, RuntimeError> {
         self.inner().val.call(params, interpreter, expected_output)
     }
-    fn hash(&self, h: &mut dyn Hasher) {
-        self.inner().val.as_ref().hash(h);
+    fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        self.inner().val.as_ref().hash(h)
     }
 }

@@ -39,20 +39,14 @@ gen_fn_map!(
 impl Type for IterT {
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            n if ITER_FNS.contains_key(n) => Some(Box::new(
-                ITER_FNS[n]
-                    .0
-                    .clone()
-                    .with_owner(self.dup())
-                    .expect("Invalid owner"),
-            )),
-            "to_map" => {
-                println!("Creating to-map");
-                TO_MAP_SIG
+            n if ITER_FNS.contains_key(n) => {
+                Some(Box::new(ITER_FNS[n].0.clone().with_owner(self.dup()).ok()?))
+            }
+            "to_map" => TO_MAP_SIG
                 .clone()
                 .with_owner(self.dup())
                 .map(|f| Box::new(f) as Datatype)
-            },
+                .ok(),
             _ => None,
         }
     }
@@ -70,15 +64,17 @@ impl Type for IterT {
     }
 }
 impl Val for Iter {
-    fn get_prop(&self, name: &str) -> Value {
+    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         match name {
-            n if ITER_FNS.contains_key(n) => Box::new(
+            n if ITER_FNS.contains_key(n) => Ok(Box::new(
                 ITER_FNS[n]
                     .0
                     .clone()
-                    .make_rust_member(ITER_FNS[n].1, self.dup()),
-            ),
-            "to_map" => Box::new(TO_MAP_SIG.clone().make_rust_member(to_map_fn, self.dup())),
+                    .make_rust_member(ITER_FNS[n].1, self.dup())?,
+            )),
+            "to_map" => Ok(Box::new(
+                TO_MAP_SIG.clone().make_rust_member(to_map_fn, self.dup())?,
+            )),
             _ => invalid!("Prop", self, name),
         }
     }
