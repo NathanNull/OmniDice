@@ -5,9 +5,15 @@ use crate::types::Value;
 #[derive(Clone, Copy)]
 pub struct LineIndex(pub usize, pub usize);
 
-impl Debug for LineIndex {
+impl Display for LineIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "line {}, col {}", self.0, self.1)
+    }
+}
+
+impl Debug for LineIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}_{}", self.0, self.1)
     }
 }
 
@@ -19,7 +25,7 @@ pub struct LexError {
 
 impl Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Lex error: {} at {:?}", self.info, self.location)
+        write!(f, "Lex error: {} at {}", self.info, self.location)
     }
 }
 
@@ -31,7 +37,7 @@ pub struct ParseError {
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse error: {} at {:?}", self.info, self.location)
+        write!(f, "Parse error: {} at {}", self.info, self.location)
     }
 }
 
@@ -82,13 +88,13 @@ impl Display for RuntimeError {
                     f,
                     "Runtime Error {}: {}",
                     match self.err_loc {
-                        Some(l) => format!("at {l:?}"),
+                        Some(l) => format!("at {l}"),
                         None => "with unknown location".to_string(),
                     },
                     self.info
                 )?;
                 for line in &self.call_stack {
-                    writeln!(f, "\t@{line:?}")?;
+                    writeln!(f, "\t@{line}")?;
                 }
             }
             Break => writeln!(f, "Break")?,

@@ -1,5 +1,25 @@
-use crate::{invalid, type_init};
+use std::sync::LazyLock;
+
 use super::*;
+use crate::{invalid, type_init};
+
+static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(IntT),
+    generic: vec![],
+    owner_t: Some(Box::new(StringT)),
+});
+
+fn length_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    let string = params[0]
+        .downcast::<String>()
+        .ok_or_else(|| RuntimeError::partial("strlen owner isn't string"))?;
+    Ok(Box::new(string.len() as i32))
+}
 
 type_init!(StringT, String, "string");
 impl Type for StringT {
@@ -18,7 +38,7 @@ impl Type for StringT {
 
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "length" => Some(Box::new(IntT)),
+            "length" => Some(LENGTH_SIG.dup()),
             _ => None,
         }
     }
@@ -44,7 +64,7 @@ impl Val for String {
 
     fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         Ok(match name {
-            "length" => Box::new(self.len() as i32),
+            "length" => Box::new(LENGTH_SIG.clone().make_rust_member(length_fn, self.dup())?),
             _ => invalid!("Prop", self, name),
         })
     }

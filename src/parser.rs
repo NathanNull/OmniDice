@@ -27,13 +27,11 @@ pub struct Parser {
 static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
     contents: ExprContents::Value(Box::new(Void)),
     output: Box::new(Void),
-    location: LineIndex(0, 0),
 });
 
 static BOOL: LazyLock<Expr> = LazyLock::new(|| Expr {
     contents: ExprContents::Value(Box::new(false)),
     output: Box::new(BoolT),
-    location: LineIndex(0, 0),
 });
 
 impl Parser {
@@ -72,17 +70,14 @@ impl Parser {
         expected_type: Option<Datatype>,
     ) -> Result<Box<Expr>, ParseError> {
         let output = self.decide_type(&contents, expected_type)?;
-        let location = self.tokens.pos;
         let expr = Box::new(Expr {
             output: output.clone(),
             contents,
-            location,
         });
         Ok(if let Some(val) = expr.try_const_eval() {
             Box::new(Expr {
                 contents: ExprContents::Value(val),
                 output,
-                location,
             })
         } else {
             expr
@@ -164,8 +159,8 @@ impl Parser {
     ) -> Result<Datatype, ParseError> {
         let res = match contents {
             ExprContents::Accessor(acc) => match acc {
-                Accessor::Variable(var) => self.get_var_type(var)?,
-                Accessor::Property(base, prop) => {
+                Accessor::Variable(var, _) => self.get_var_type(var)?,
+                Accessor::Property(base, prop, _) => {
                     let ty = &base.output;
                     match ty.prop_type(&prop) {
                         Some(pt) => pt,
@@ -175,7 +170,7 @@ impl Parser {
                         }
                     }
                 }
-                Accessor::Index(indexed, index) => {
+                Accessor::Index(indexed, index, _) => {
                     let ty = &indexed.output;
                     match ty.index_type(&index.output) {
                         Some(pt) => pt,
@@ -359,7 +354,9 @@ impl Parser {
     ) -> Result<ExprContents, ParseError> {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
-            Token::Identifier(id) => ExprContents::Accessor(Accessor::Variable(id)),
+            Token::Identifier(id) => {
+                ExprContents::Accessor(Accessor::Variable(id, self.tokens.pos))
+            }
             Token::Literal(lit) => ExprContents::Value(lit),
             Token::Keyword(Keyword::True) => ExprContents::Value(Box::new(true)),
             Token::Keyword(Keyword::False) => ExprContents::Value(Box::new(false)),
@@ -393,8 +390,9 @@ impl Parser {
             Token::OpLike(OpLike::Bracket(Bracket::LSquare)) => self.parse_array()?,
             Token::OpLike(op) => {
                 if let Some(((), r_bp)) = PREFIX_BINDING_POWER.get(&op) {
+                    let op_loc = self.tokens.pos;
                     let rhs = self.parse_expr(*r_bp, expected_end, false, false)?;
-                    self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix)?
+                    self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix, op_loc)?
                 } else {
                     return self.make_error(format!("Invalid prefix operator {op:?}"));
                 }
@@ -413,7 +411,9 @@ impl Parser {
             }
             Token::Keyword(Keyword::Let) => {
                 let ident = match self.tokens.next() {
-                    Some(Token::Identifier(id)) => ExprContents::Accessor(Accessor::Variable(id)),
+                    Some(Token::Identifier(id)) => {
+                        ExprContents::Accessor(Accessor::Variable(id, self.tokens.pos))
+                    }
                     Some(tk) => {
                         return self.make_error(format!("Expected literal or ident, found {tk:?}"));
                     }
@@ -431,6 +431,7 @@ impl Parser {
                 self.tokens
                     .expect(Token::OpLike(OpLike::Assign))
                     .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+                let op_loc = self.tokens.pos;
 
                 let rhs = self.parse_expr(
                     INFIX_BINDING_POWER[&OpLike::Assign].1,
@@ -439,7 +440,7 @@ impl Parser {
                     false,
                 )?;
 
-                self.parse_assign(AssignType::Create, ident, rhs, typehint)?
+                self.parse_assign(AssignType::Create, ident, rhs, typehint, op_loc)?
             }
             Token::Keyword(Keyword::Func) => {
                 imply_eol = allow_imply_eol;
@@ -497,6 +498,7 @@ impl Parser {
             let op = match self.tokens.peek().unwrap().clone() {
                 tk if expected_end.contains(&tk) => break,
                 Token::OpLike(OpLike::Bracket(Bracket::LSquare)) => {
+                    let op_loc = self.tokens.pos;
                     // acting like [ is a postfix operator, but parsing it completely differently because it contains an inner section
                     let (bp, _) = POSTFIX_BINDING_POWER
                         .get(&OpLike::Bracket(Bracket::LSquare))
@@ -517,10 +519,12 @@ impl Parser {
                     lhs = ExprContents::Accessor(Accessor::Index(
                         self.new_expr(lhs, None)?,
                         self.new_expr(index, None)?,
+                        op_loc
                     ));
                     continue;
                 }
                 Token::OpLike(OpLike::Bracket(Bracket::LBracket)) => {
+                    let loc = self.tokens.pos;
                     // acting like ( is a postfix operator, but parsing it completely differently because it contains an inner section
                     let (bp, _) = POSTFIX_BINDING_POWER
                         .get(&OpLike::Bracket(Bracket::LBracket))
@@ -554,6 +558,7 @@ impl Parser {
                     lhs = ExprContents::Call(Call {
                         base: self.new_expr(lhs, None)?,
                         params,
+                        loc
                     });
                     continue;
                 }
@@ -626,7 +631,8 @@ impl Parser {
                     break;
                 }
                 self.tokens.next();
-                lhs = self.make_expr(lhs, VOID.contents.clone(), op, OpType::Postfix)?;
+                let op_loc = self.tokens.pos;
+                lhs = self.make_expr(lhs, VOID.contents.clone(), op, OpType::Postfix, op_loc)?;
                 continue;
             }
             let (l_bp, r_bp) = match INFIX_BINDING_POWER.get(&op) {
@@ -642,8 +648,9 @@ impl Parser {
                 break;
             }
             self.tokens.next();
+            let op_loc = self.tokens.pos;
             let rhs = self.parse_expr(*r_bp, expected_end, false, allow_join)?;
-            lhs = self.make_expr(lhs, rhs, op, OpType::Infix)?;
+            lhs = self.make_expr(lhs, rhs, op, OpType::Infix, op_loc)?;
         }
         Ok(lhs)
     }
@@ -702,7 +709,7 @@ impl Parser {
             Some(Token::Identifier(id)) => id,
             Some(t) => {
                 return self.make_error(format!(
-                    "Expected identifier, found {t:?} (pos {:?})",
+                    "Expected identifier, found {t:?} (pos {})",
                     self.tokens.pos
                 ));
             }
@@ -717,6 +724,7 @@ impl Parser {
             false,
             false,
         )?;
+        let iter_loc = self.tokens.pos;
         let iter = self.new_expr(it, None)?;
         let i_type = match iter
             .output
@@ -747,7 +755,12 @@ impl Parser {
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
-        Ok(ExprContents::For(For { var, iter, body }))
+        Ok(ExprContents::For(For {
+            var,
+            iter,
+            body,
+            iter_loc,
+        }))
     }
 
     fn parse_conditional_clause(
@@ -785,6 +798,7 @@ impl Parser {
         lhs: ExprContents,
         rhs: ExprContents,
         expected_type: Option<Datatype>,
+        a_loc: LineIndex,
     ) -> Result<ExprContents, ParseError> {
         let val = self.new_expr(rhs, expected_type)?;
         let ty = val.output.clone();
@@ -795,8 +809,8 @@ impl Parser {
         match assign_type {
             AssignType::Reassign => {
                 let old_type = match &assignee {
-                    Accessor::Variable(v) => self.get_var_type(v)?,
-                    Accessor::Property(base, prop) => match base.output.prop_type(prop) {
+                    Accessor::Variable(v, _) => self.get_var_type(v)?,
+                    Accessor::Property(base, prop, _) => match base.output.prop_type(prop) {
                         Some(pt) => pt,
                         None => {
                             return self.make_error(format!(
@@ -805,7 +819,7 @@ impl Parser {
                             ));
                         }
                     },
-                    Accessor::Index(indexed, index) => {
+                    Accessor::Index(indexed, index, _) => {
                         match indexed.output.index_type(&index.output) {
                             Some(it) => it,
                             None => {
@@ -826,8 +840,8 @@ impl Parser {
 
                 fn is_assignable(me: &mut Parser, assignee: &Accessor) -> bool {
                     match &assignee {
-                        Accessor::Variable(v) => me.var_is_mutable(v),
-                        Accessor::Property(base, _) | Accessor::Index(base, _) => {
+                        Accessor::Variable(v, _) => me.var_is_mutable(v),
+                        Accessor::Property(base, _, _) | Accessor::Index(base, _, _) => {
                             match &base.contents {
                                 ExprContents::Accessor(accessor) => is_assignable(me, accessor),
                                 _ => false,
@@ -840,7 +854,7 @@ impl Parser {
                 }
             }
             AssignType::Create => match &assignee {
-                Accessor::Variable(v) => self.set_var_type(v.clone(), ty, true, true)?,
+                Accessor::Variable(v, _) => self.set_var_type(v.clone(), ty, true, true)?,
                 _ => {
                     return self.make_error(
                         "Let assignments should only be able to parse lhs as a single variable"
@@ -854,6 +868,7 @@ impl Parser {
             assignee,
             val,
             a_type: assign_type,
+            a_loc,
         }))
     }
 
@@ -1100,6 +1115,7 @@ impl Parser {
         rhs: ExprContents,
         op: OpLike,
         op_type: OpType,
+        op_loc: LineIndex,
     ) -> Result<ExprContents, ParseError> {
         Ok(match (op, op_type) {
             (
@@ -1127,35 +1143,39 @@ impl Parser {
                     OpLike::Op(o) => o,
                     _ => unreachable!("Must have been an op to get here"),
                 },
+                op_loc,
             }),
             (OpLike::Op(Op::Minus), OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: Op::Minus,
                 rhs: self.new_expr(rhs, None)?,
+                op_loc,
             }),
             (OpLike::Op(Op::Not), OpType::Prefix) => ExprContents::Prefix(Prefix {
                 op: Op::Not,
                 rhs: self.new_expr(rhs, None)?,
+                op_loc,
             }),
             // "d6" expands to "1d6"
             (OpLike::Op(Op::D), OpType::Prefix) => ExprContents::Binop(Binop {
                 lhs: self.new_expr(ExprContents::Value(Box::new(1)), Some(Box::new(IntT)))?,
                 rhs: self.new_expr(rhs, None)?,
                 op: Op::D,
+                op_loc,
             }),
             (OpLike::Assign, OpType::Infix) => {
                 let prev_type = self.new_expr(lhs.clone(), None)?.output;
-                self.parse_assign(AssignType::Reassign, lhs, rhs, Some(prev_type))?
+                self.parse_assign(AssignType::Reassign, lhs, rhs, Some(prev_type), op_loc)?
             }
             (OpLike::OpAssign(op), OpType::Infix) => {
-                let val = self.make_expr(lhs.clone(), rhs, OpLike::Op(op), op_type)?;
-                self.make_expr(lhs, val, OpLike::Assign, op_type)?
+                let val = self.make_expr(lhs.clone(), rhs, OpLike::Op(op), op_type, op_loc)?;
+                self.make_expr(lhs, val, OpLike::Assign, op_type, op_loc)?
             }
             (OpLike::Access, OpType::Infix) => {
                 let rhs = match rhs {
-                    ExprContents::Accessor(Accessor::Variable(var)) => var,
+                    ExprContents::Accessor(Accessor::Variable(var, _)) => var,
                     _ => return self.make_error(format!("Expected property, found {rhs:?}")),
                 };
-                ExprContents::Accessor(Accessor::Property(self.new_expr(lhs, None)?, rhs))
+                ExprContents::Accessor(Accessor::Property(self.new_expr(lhs, None)?, rhs, op_loc))
             }
             (OpLike::Bracket(_) | OpLike::Colon | OpLike::Comma | OpLike::LTurbofish, _) => {
                 unreachable!(

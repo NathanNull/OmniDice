@@ -186,13 +186,13 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
         Err(RuntimeError::partial(&format!("Type '{}' has no properties.", self.get_type())))
     }
     fn set_prop(&self, _prop: &str, _value: Value) -> Result<(),RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' has no properties.", self.get_type())))
+        Err(RuntimeError::partial(&format!("Type '{}' has no writable properties.", self.get_type())))
     }
     fn get_index(&self, _index: Value) -> Result<Value, RuntimeError> {
         Err(RuntimeError::partial(&format!("Type '{}' can't be indexed.", self.get_type())))
     }
     fn set_index(&self, _index: Value, _value: Value) -> Result<(), RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' can't be indexed.", self.get_type())))
+        Err(RuntimeError::partial(&format!("Type '{}' can't be indexed writably.", self.get_type())))
     }
     fn bin_op(&self, _other: &Value, _op: Op) -> Result<Value, RuntimeError> {
         Err(RuntimeError::partial(&format!("Type '{}' has no binary operations.", self.get_type())))

@@ -111,7 +111,10 @@ impl Val for i32 {
                 Op::Plus => Box::new(self + rhs),
                 Op::Minus => Box::new(self - rhs),
                 Op::Times => Box::new(self * rhs),
-                Op::Divided => Box::new(self / rhs),
+                Op::Divided => Box::new(
+                    self.checked_div(rhs)
+                        .ok_or_else(|| RuntimeError::partial("Attempted to divide by zero"))?,
+                ),
                 Op::Equal => Box::new(self == &rhs),
                 Op::NotEqual => Box::new(self != &rhs),
                 Op::Greater => Box::new(self > &rhs),
@@ -169,7 +172,7 @@ impl Val for i32 {
                                 })? as usize,
                             ))
                         })
-                        .collect::<Result<_,_>>()?,
+                        .collect::<Result<_, _>>()?,
                 )
                 .multiroll(*self as usize),
             ))

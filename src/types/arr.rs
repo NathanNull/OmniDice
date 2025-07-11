@@ -206,11 +206,30 @@ pub fn iter_ret_fn(
     }));
 }
 
+static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(IntT),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
+});
+
+fn length_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
+    let arr = params[0]
+        .downcast::<Arr>()
+        .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
+    Ok(Box::new(arr.inner().elements.len() as i32))
+}
+
 gen_fn_map!(
     ARR_FNS,
     ("push", PUSH_SIG, push_fn),
     ("pop", POP_SIG, pop_fn),
-    ("iter", ITER_SIG, iter_fn)
+    ("iter", ITER_SIG, iter_fn),
+    ("length", LENGTH_SIG, length_fn),
 );
 
 impl Type for ArrT {
@@ -227,7 +246,6 @@ impl Type for ArrT {
 
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
-            "length" => Some(Box::new(IntT)),
             n if ARR_FNS.contains_key(n) => {
                 Some(ARR_FNS[n].0.clone().with_owner(self.dup()).ok()?.dup())
             }
@@ -294,7 +312,6 @@ impl Val for Arr {
 
     fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         match name {
-            "length" => Ok(Box::new(self.inner().elements.len() as i32)),
             n if ARR_FNS.contains_key(n) => Ok(Box::new(
                 ARR_FNS[n]
                     .0

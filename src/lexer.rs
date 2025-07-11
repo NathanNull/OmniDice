@@ -154,15 +154,9 @@ impl<'a> Lexer<'a> {
             (
                 c,
                 if c == '\n' {
-                    TokenWidth {
-                        width: 0,
-                        height: 1,
-                    }
+                    TokenWidth::Tall(1, 1)
                 } else {
-                    TokenWidth {
-                        width: 1,
-                        height: 0,
-                    }
+                    TokenWidth::Wide(1)
                 },
             )
         }
@@ -190,17 +184,11 @@ impl<'a> Lexer<'a> {
             {
                 let p = self.code.pos;
                 tokens.push((
-                    tk,
+                    tk.clone(),
                     if last_pos.0 == p.0 {
-                        TokenWidth {
-                            width: p.1 - last_pos.1,
-                            height: 0,
-                        }
+                        TokenWidth::Wide(p.1 - last_pos.1)
                     } else {
-                        TokenWidth {
-                            height: p.0 - last_pos.0,
-                            width: p.1,
-                        }
+                        TokenWidth::Tall(p.0 - last_pos.0, p.1)
                     },
                 ));
                 last_pos = p;
@@ -213,7 +201,7 @@ impl<'a> Lexer<'a> {
                     .concat();
                 return Err(LexError {
                     info: format!(
-                        "Couldn't tokenize, next is {:?}, rest is {:?}",
+                        "Tokenization failed, next is {:?}, rest is {:?}",
                         self.code.peek(),
                         str
                     ),
@@ -225,15 +213,9 @@ impl<'a> Lexer<'a> {
         tokens.push((
             Token::EOF,
             if last_pos.0 == p.0 {
-                TokenWidth {
-                    width: p.1 - last_pos.1,
-                    height: 0,
-                }
+                TokenWidth::Wide(p.1 - last_pos.1)
             } else {
-                TokenWidth {
-                    height: p.0 - last_pos.0,
-                    width: p.1,
-                }
+                TokenWidth::Tall(p.0 - last_pos.0, p.1)
             },
         ));
         Ok(tokens)

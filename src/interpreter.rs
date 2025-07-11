@@ -20,14 +20,14 @@ impl<T: Debug> Debug for VarScope<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}([{}], blocking? {})",
+            "{}([{}]{})",
             self.name,
             self.vars
                 .iter()
                 .map(|(v, _)| v.clone())
                 .collect::<Vec<_>>()
                 .join(", "),
-            self.blocking,
+            if self.blocking { ", blocking" } else { "" },
         )
     }
 }
@@ -107,24 +107,22 @@ impl Interpreter {
             ExprContents::Continue(_) => self.eval_continue(),
         }?;
         if res.get_type() != expr.output {
-            return Err(RuntimeError::single(
-                &format!(
-                    "Expression {expr:?} evaluated to a different type ({}) than expected ({}). This is notable.",
-                    res.get_type(),
-                    expr.output
-                ),
-                expr.location,
-            ));
+            return Err(RuntimeError::partial(&format!(
+                "Expression {expr:?} evaluated to a different type ({}) than expected ({}). This is notable.",
+                res.get_type(),
+                expr.output
+            )));
         }
         Ok(res)
     }
 
     fn eval_accessor(&mut self, acc: &Accessor) -> Result<Value, RuntimeError> {
         match acc {
-            // TODO: once accessor knows where it is, stack_loc it onto the get_var error
-            Accessor::Variable(ident) => Ok(self.get_var(ident)?.clone()),
-            Accessor::Property(base, property) => self.eval_expr(&base)?.get_prop(property),
-            Accessor::Index(indexed, index) => {
+            Accessor::Variable(ident, loc) => {
+                Ok(self.get_var(ident).map_err(|e| e.stack_loc(*loc))?.clone())
+            }
+            Accessor::Property(base, property, _) => self.eval_expr(&base)?.get_prop(property),
+            Accessor::Index(indexed, index, _) => {
                 self.eval_expr(&indexed)?.get_index(self.eval_expr(&index)?)
             }
         }
@@ -133,9 +131,8 @@ impl Interpreter {
     fn eval_binop(&mut self, binop: &Binop) -> Result<Value, RuntimeError> {
         let lhs = self.eval_expr(&binop.lhs)?;
         let rhs = self.eval_expr(&binop.rhs)?;
-        // TODO: better location
         lhs.bin_op(&rhs, binop.op)
-            .map_err(|e| e.stack_loc(binop.lhs.location))
+            .map_err(|e| e.stack_loc(binop.op_loc))
     }
 
     fn get_var(&mut self, var: &str) -> Result<&Value, RuntimeError> {
@@ -188,19 +185,19 @@ impl Interpreter {
     fn eval_prefix(&mut self, prefix: &Prefix) -> Result<Value, RuntimeError> {
         let rhs = self.eval_expr(&prefix.rhs)?;
         rhs.pre_op(prefix.op)
-            .map_err(|e| e.stack_loc(prefix.rhs.location))
+            .map_err(|e| e.stack_loc(prefix.op_loc))
     }
 
     fn eval_postfix(&mut self, postfix: &Postfix) -> Result<Value, RuntimeError> {
         let lhs = self.eval_expr(&postfix.lhs)?;
         lhs.post_op(postfix.op)
-            .map_err(|e| e.stack_loc(postfix.lhs.location))
+            .map_err(|e| e.stack_loc(postfix.op_loc))
     }
 
     fn eval_assign(&mut self, assign: &Assign) -> Result<Value, RuntimeError> {
         let val = self.eval_expr(&assign.val)?;
         match &assign.assignee {
-            Accessor::Variable(name) => match assign.a_type {
+            Accessor::Variable(name, vpos) => match assign.a_type {
                 AssignType::Reassign => {
                     if match self.get_var(name) {
                         Err(_) => true,
@@ -208,17 +205,17 @@ impl Interpreter {
                     } {
                         return Err(RuntimeError::single(
                             &format!("Tried to reassign variable {name} to a different type"),
-                            assign.val.location,
+                            *vpos,
                         ));
                     }
                     self.update_var(name.clone(), val.dup())
-                        .map_err(|e| e.stack_loc(assign.val.location))?;
+                        .map_err(|e| e.stack_loc(*vpos))?;
                 }
                 AssignType::Create => self
                     .set_var(name.clone(), val.dup())
-                    .map_err(|e| e.stack_loc(assign.val.location))?,
+                    .map_err(|e| e.stack_loc(*vpos))?,
             },
-            Accessor::Property(base, prop) => {
+            Accessor::Property(base, prop, loc) => {
                 let base_val = self.eval_expr(&base)?;
                 if base_val
                     .get_type()
@@ -230,14 +227,14 @@ impl Interpreter {
                             "Tried to reassign property {:?} to a different type",
                             assign.assignee
                         ),
-                        base.location,
+                        *loc,
                     ));
                 }
                 base_val
                     .set_prop(prop, val.dup())
-                    .map_err(|e| e.stack_loc(base.location))?;
+                    .map_err(|e| e.stack_loc(assign.a_loc))?;
             }
-            Accessor::Index(indexed, index) => {
+            Accessor::Index(indexed, index, loc) => {
                 let base_val = self.eval_expr(&indexed)?;
                 if base_val
                     .get_type()
@@ -249,12 +246,12 @@ impl Interpreter {
                             "Tried to reassign property {:?} to a different type",
                             assign.assignee
                         ),
-                        assign.val.location,
+                        *loc,
                     ));
                 };
                 base_val
                     .set_index(self.eval_expr(&index)?, val.dup())
-                    .map_err(|e| e.stack_loc(indexed.location))?;
+                    .map_err(|e| e.stack_loc(assign.a_loc))?;
             }
         }
         Ok(val)
@@ -270,9 +267,8 @@ impl Interpreter {
                 Ok(Box::new(Void))
             }
         } else {
-            return Err(RuntimeError::single(
+            return Err(RuntimeError::partial(
                 "UNREACHABLE: Conditional statements should always return boolean values",
-                cond.condition.location,
             ));
         }
     }
@@ -283,9 +279,8 @@ impl Interpreter {
                 if condition {
                     match self.eval_expr(&wh.result) {
                         Ok(v) if v != Box::new(Void) as Value => {
-                            return Err(RuntimeError::single(
+                            return Err(RuntimeError::partial(
                                 "While loop returned non-void value",
-                                wh.result.location,
                             ));
                         }
                         Ok(_) => (),
@@ -297,9 +292,8 @@ impl Interpreter {
                     break;
                 }
             } else {
-                return Err(RuntimeError::single(
+                return Err(RuntimeError::partial(
                     "UNREACHABLE: Conditional statements should always return boolean values",
-                    wh.condition.location,
                 ));
             }
         }
@@ -310,7 +304,7 @@ impl Interpreter {
         let iter = self
             .eval_expr(&fo.iter)?
             .get_prop("iter")
-            .map_err(|e| e.stack_loc(fo.iter.location))?
+            .map_err(|e| e.stack_loc(fo.iter_loc))?
             .call(vec![], self, None)?;
         self.variables.push(VarScope {
             vars: HashMap::new(),
@@ -320,7 +314,7 @@ impl Interpreter {
         loop {
             let next_val = iter
                 .get_prop("next")
-                .map_err(|e| e.stack_loc(fo.iter.location))
+                .map_err(|e| e.stack_loc(fo.iter_loc))
                 .inspect_err(|_| {
                     self.variables.pop();
                 })?
@@ -334,16 +328,13 @@ impl Interpreter {
                     contents: Some(c),
                 }) => {
                     self.set_var(fo.var.clone(), c)
-                        .map_err(|e| e.stack_loc(fo.iter.location))
+                        .map_err(|e| e.stack_loc(fo.iter_loc))
                         .inspect_err(|_| {
                             self.variables.pop();
                         })?;
                     match self.eval_expr(&fo.body) {
                         Ok(v) if v != Box::new(Void) as Value => {
-                            return Err(RuntimeError::single(
-                                "While loop returned non-void value",
-                                fo.body.location,
-                            ));
+                            return Err(RuntimeError::partial("For loop returned non-void value"));
                         }
                         Ok(_) => (),
                         Err(e) if e.err_type().is_break() => break,
@@ -356,9 +347,8 @@ impl Interpreter {
                     contents: None,
                 }) => break,
                 None => {
-                    return Err(RuntimeError::single(
+                    return Err(RuntimeError::partial(
                         "UNREACHABLE: Iterator functions should always return Maybe",
-                        fo.iter.location,
                     ));
                 }
             }
@@ -374,7 +364,7 @@ impl Interpreter {
             let next_type = res.last().unwrap().get_type();
             if expected_type != next_type {
                 return Err(match arr.elements.first() {
-                    Some(e) => RuntimeError::single("Array types didn't match", e.location),
+                    Some(_) => RuntimeError::partial("Array types didn't match"),
                     None => RuntimeError::partial(
                         "UNREACHABLE: array types don't match without any elements in the array",
                     ),
@@ -406,10 +396,7 @@ impl Interpreter {
                         .used_variables()
                         .filter(|v| !func.params.iter().any(|(n, _)| v == n))
                         .map(|v| -> Result<_, RuntimeError> {
-                            let val = self
-                                .get_var(&v)
-                                .map_err(|e| e.stack_loc(func.contents.location))?
-                                .clone();
+                            let val = self.get_var(&v)?.clone();
                             Ok((v, val))
                         })
                         .collect::<Result<Vec<_>, RuntimeError>>()?,
@@ -428,7 +415,7 @@ impl Interpreter {
             res
         };
         base.call(params, self, Some(expected_type))
-            .map_err(|e| e.stack_loc(call.base.location))
+            .map_err(|e| e.stack_loc(call.loc))
     }
 
     pub fn call_function(

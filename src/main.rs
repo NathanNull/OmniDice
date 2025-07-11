@@ -18,15 +18,25 @@ mod types;
 fn main() {
     let args = env::args().collect::<Vec<_>>();
     let filename = args.get(1).expect("Must pass file name to run");
-    println!("Filename is {filename}");
     let code = fs::read_to_string(filename).expect("Couldn't read code file");
-    println!("Raw code: {code}");
     match Lexer::new(&code).lex() {
         Ok(tokens) => {
-            println!("Tokens: [{}]", tokens.iter().map(|t|format!("({}, {})", t.0, t.1)).join(", "));
+            let mut tk_iter = TokenIter::new(tokens.iter().cloned());
+            let mut res = vec![];
+            while let Some(_) = tk_iter.next() {
+                res.push(tk_iter.pos);
+            }
+            println!(
+                "Tokens: [\n\t{}\n]\n",
+                tokens
+                    .iter()
+                    .zip(res)
+                    .map(|(t, pos)| format!("({}, {} @ {:?})", t.0, t.1, pos))
+                    .join("\n\t")
+            );
             match Parser::new(tokens).parse() {
                 Ok(ast) => {
-                    println!("AST: {ast}");
+                    println!("AST: {ast}\n");
                     println!("Program output:");
                     Interpreter::new(*ast).run();
                 }
@@ -39,40 +49,34 @@ fn main() {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct TokenWidth {
-    width: usize,
-    height: usize,
+#[derive(Debug, Clone, Copy)]
+pub enum TokenWidth {
+    Wide(usize),
+    Tall(usize, usize),
 }
 
 impl Display for TokenWidth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}x{}", self.width, self.height)
+        match self {
+            Self::Wide(w) => write!(f, "{w}"),
+            Self::Tall(h, post_w) => write!(f, "{h}x{post_w}"),
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct TokenIter<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> {
     inner: T,
-    peeked: Vec<I>,
+    peeked: Vec<(I, TokenWidth)>,
     pos: LineIndex,
+    pos_memory: Vec<LineIndex>,
 }
 
 impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> Iterator for TokenIter<I, T> {
     type Item = I;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(peeked) = self.peeked.pop() {
-            Some(peeked)
-        } else {
-            let next = self.inner.next();
-            if let Some(n) = next {
-                self.step(n.1);
-                Some(n.0)
-            } else {
-                None
-            }
-        }
+        self.next_raw().map(|(t, _)| t)
     }
 }
 
@@ -82,29 +86,62 @@ impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
             inner,
             peeked: vec![],
             pos: LineIndex(1, 1),
+            pos_memory: vec![],
         }
     }
 
-    fn step(&mut self, w: TokenWidth) {
-        if w.height != 0 {
-            self.pos.0 += w.height;
-            self.pos.1 = 1;
+    fn next_raw(&mut self) -> Option<(I, TokenWidth)> {
+        if let Some(peeked) = self.peeked.pop() {
+            self.step(peeked.1, true);
+            Some(peeked)
+        } else if let Some(n) = self.inner.next() {
+            self.step(n.1, true);
+            Some(n)
+        } else {
+            None
         }
-        self.pos.1 += w.width;
+    }
+
+    fn step(&mut self, w: TokenWidth, forward: bool) {
+        match w {
+            TokenWidth::Tall(height, post_width) => {
+                if forward {
+                    self.pos_memory.push(self.pos);
+                    self.pos.0 += height;
+                    self.pos.1 = post_width;
+                } else {
+                    self.pos = self
+                        .pos_memory
+                        .pop()
+                        .expect("Can't backtrack multiline token that wasn't already there")
+                }
+            }
+            TokenWidth::Wide(width) => {
+                if forward {
+                    self.pos.1 += width
+                } else {
+                    self.pos.1 -= width
+                }
+            }
+        }
     }
 
     pub fn peek(&mut self) -> Option<&I> {
         if self.peeked.is_empty() {
             if let Some(peeked) = self.inner.next() {
-                self.step(peeked.1);
-                self.peeked.push(peeked.0)
+                self.peeked.push(peeked)
             }
         }
-        self.peeked.last()
+        self.peeked.last().map(|(t, _)| t)
     }
 
     pub fn replace(&mut self, itm: I) {
-        self.peeked.push(itm);
+        self.peeked.push((itm, TokenWidth::Wide(0)));
+    }
+
+    pub fn replace_sized(&mut self, itm: I, size: TokenWidth) {
+        self.peeked.push((itm, size));
+        self.step(size, false);
     }
 
     pub fn eat(&mut self, pattern: impl IntoIterator<Item = I>) -> Option<Vec<I>>
@@ -113,26 +150,26 @@ impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
     {
         let mut removed = vec![];
         for itm in pattern {
-            if let Some(n) = self.next() {
+            if let Some((n, sz)) = self.next_raw() {
                 if n != itm {
-                    self.replace(n);
-                    for r in removed.into_iter().rev() {
-                        self.replace(r);
+                    self.replace_sized(n, sz);
+                    for (r, sr) in removed.into_iter().rev() {
+                        self.replace_sized(r, sr);
                     }
                     return None;
                 }
-                removed.push(n)
+                removed.push((n, sz))
             } else {
-                for r in removed.into_iter().rev() {
-                    self.replace(r);
+                for (r, sr) in removed.into_iter().rev() {
+                    self.replace_sized(r, sr);
                 }
                 return None;
             }
         }
-        Some(removed)
+        Some(removed.into_iter().map(|(t, _)| t).collect())
     }
 
-    pub fn expect(&mut self, ele: I) -> Result<(),String>
+    pub fn expect(&mut self, ele: I) -> Result<(), String>
     where
         I: PartialEq,
     {

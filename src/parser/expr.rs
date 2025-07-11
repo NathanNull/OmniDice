@@ -95,20 +95,33 @@ pub enum ExprContents {
 pub struct Expr {
     pub contents: ExprContents,
     pub output: Datatype,
-    pub location: LineIndex,
 }
 
 impl Debug for ExprContents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(num) => write!(f, "{:?}", num),
-            Self::Binop(Binop { op, lhs, rhs }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
-            Self::Prefix(Prefix { op: prefix, rhs }) => write!(f, "(pr{prefix:?} {rhs:?})"),
-            Self::Postfix(Postfix { op: postfix, lhs }) => write!(f, "(po{postfix:?} {lhs:?})"),
+            Self::Binop(Binop {
+                op,
+                lhs,
+                rhs,
+                op_loc: _,
+            }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
+            Self::Prefix(Prefix {
+                op: prefix,
+                rhs,
+                op_loc: _,
+            }) => write!(f, "(pr{prefix:?} {rhs:?})"),
+            Self::Postfix(Postfix {
+                op: postfix,
+                lhs,
+                op_loc: _,
+            }) => write!(f, "(po{postfix:?} {lhs:?})"),
             Self::Assign(Assign {
                 assignee,
                 val,
                 a_type,
+                a_loc: _,
             }) => write!(f, "({a_type} {assignee:?} {val:?})"),
             Self::Accessor(acc) => write!(f, "{acc:?}"),
             Self::Scope(scope) => write!(f, "{{{scope:?}}}"),
@@ -177,9 +190,9 @@ impl Display for Expr {
                 vec![&assign.val],
             ),
             ExprContents::Accessor(accessor) => match accessor {
-                Accessor::Variable(v) => (format!("{v}"), vec![]),
-                Accessor::Property(base, prop) => (format!("prop {prop} of"), vec![&base]),
-                Accessor::Index(indexed, index) => ("index".to_string(), vec![&indexed, &index]),
+                Accessor::Variable(v, _) => (format!("{v}"), vec![]),
+                Accessor::Property(base, prop, _) => (format!("prop {prop} of"), vec![&base]),
+                Accessor::Index(indexed, index, _) => ("index".to_string(), vec![&indexed, &index]),
             },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
@@ -232,7 +245,7 @@ impl Display for Expr {
             ExprContents::Break(_) => ("break".to_string(), vec![]),
             ExprContents::Continue(_) => ("continue".to_string(), vec![]),
         };
-        writeln!(f, "{str} ({:?})", self.location)?;
+        writeln!(f, "{str}")?;
         let num_children = children.len();
         for (c_idx, child) in children.into_iter().enumerate() {
             for (i, line) in format!("{child}").split("\n").enumerate() {
@@ -414,7 +427,7 @@ impl Expr {
                 match &assign.a_type {
                     AssignType::Reassign => accessor_assigned_vars(&assign.assignee),
                     AssignType::Create => match &assign.assignee {
-                        Accessor::Variable(v) => Box::new([v.clone()].into_iter()),
+                        Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
                         _ => unreachable!("Unexpected non-variable in let statement"),
                     },
                 }
@@ -478,19 +491,23 @@ impl Expr {
                 lhs: binop.lhs.replace_generics(generics)?,
                 rhs: binop.rhs.replace_generics(generics)?,
                 op: binop.op,
+                op_loc: binop.op_loc,
             }),
             ExprContents::Prefix(prefix) => ExprContents::Prefix(Prefix {
                 op: prefix.op,
                 rhs: prefix.rhs.replace_generics(generics)?,
+                op_loc: prefix.op_loc,
             }),
             ExprContents::Postfix(postfix) => ExprContents::Postfix(Postfix {
                 op: postfix.op,
                 lhs: postfix.lhs.replace_generics(generics)?,
+                op_loc: postfix.op_loc,
             }),
             ExprContents::Assign(assign) => ExprContents::Assign(Assign {
                 assignee: accessor_replace_generics(&assign.assignee, generics)?,
                 val: assign.val.replace_generics(generics)?,
                 a_type: assign.a_type.clone(),
+                a_loc: assign.a_loc,
             }),
             ExprContents::Accessor(accessor) => {
                 ExprContents::Accessor(accessor_replace_generics(accessor, generics)?)
@@ -518,6 +535,7 @@ impl Expr {
                 var: fo.var.clone(),
                 iter: fo.iter.replace_generics(generics)?,
                 body: fo.body.replace_generics(generics)?,
+                iter_loc: fo.iter_loc,
             }),
             ExprContents::Array(array) => ExprContents::Array(Array {
                 elements: {
@@ -567,6 +585,7 @@ impl Expr {
                     }
                     res
                 },
+                loc: call.loc,
             }),
             ExprContents::GenericSpecify(gspec) => ExprContents::GenericSpecify(GenericSpecify {
                 base: gspec.base.replace_generics(generics)?,
@@ -581,7 +600,6 @@ impl Expr {
         Ok(Box::new(Self {
             contents: new_contents,
             output: new_type,
-            location: self.location,
         }))
     }
 
@@ -609,8 +627,8 @@ impl Expr {
                 .and_then(|lhs| lhs.post_op(postfix.op).ok()),
             ExprContents::Assign(_) => None,
             ExprContents::Accessor(accessor) => match accessor {
-                Accessor::Variable(_) => None,
-                Accessor::Property(base, prop) => base
+                Accessor::Variable(_, _) => None,
+                Accessor::Property(base, prop, _) => base
                     .try_const_eval()
                     .and_then(|b| b.get_prop(prop).ok())
                     .and_then(|v| {
@@ -620,7 +638,7 @@ impl Expr {
                             Some(v)
                         }
                     }),
-                Accessor::Index(base, index) => {
+                Accessor::Index(base, index, _) => {
                     if let Some((b, i)) = base
                         .try_const_eval()
                         .and_then(|l| index.try_const_eval().map(|r| (l, r)))
@@ -668,9 +686,9 @@ impl Expr {
 
 fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
     match accessor {
-        Accessor::Variable(v) => Box::new([v.clone()].into_iter()),
-        Accessor::Property(base, _) => base.used_variables(),
-        Accessor::Index(indexed, index) => {
+        Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
+        Accessor::Property(base, _, _) => base.used_variables(),
+        Accessor::Index(indexed, index, _) => {
             Box::new(indexed.used_variables().chain(index.used_variables()))
         }
     }
@@ -678,9 +696,9 @@ fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = Str
 
 fn accessor_assigned_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
     match accessor {
-        Accessor::Variable(_) => Box::new([].into_iter()),
-        Accessor::Property(base, _) => base.assigned_variables(),
-        Accessor::Index(indexed, index) => Box::new(
+        Accessor::Variable(_, _) => Box::new([].into_iter()),
+        Accessor::Property(base, _, _) => base.assigned_variables(),
+        Accessor::Index(indexed, index, _) => Box::new(
             indexed
                 .assigned_variables()
                 .chain(index.assigned_variables()),
@@ -693,13 +711,14 @@ fn accessor_replace_generics(
     generics: &HashMap<String, Datatype>,
 ) -> Result<Accessor, String> {
     Ok(match accessor {
-        Accessor::Variable(_) => accessor.clone(),
-        Accessor::Property(base, prop) => {
-            Accessor::Property(base.replace_generics(generics)?, prop.clone())
+        Accessor::Variable(_, _) => accessor.clone(),
+        Accessor::Property(base, prop, i) => {
+            Accessor::Property(base.replace_generics(generics)?, prop.clone(), *i)
         }
-        Accessor::Index(base, index) => Accessor::Index(
+        Accessor::Index(base, index, i) => Accessor::Index(
             base.replace_generics(generics)?,
             index.replace_generics(generics)?,
+            *i,
         ),
     })
 }
@@ -709,18 +728,21 @@ pub struct Binop {
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
     pub op: Op,
+    pub op_loc: LineIndex,
 }
 
 #[derive(Debug, Clone)]
 pub struct Prefix {
     pub op: Op,
     pub rhs: Box<Expr>,
+    pub op_loc: LineIndex,
 }
 
 #[derive(Debug, Clone)]
 pub struct Postfix {
     pub op: Op,
     pub lhs: Box<Expr>,
+    pub op_loc: LineIndex,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -747,21 +769,22 @@ pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
     pub a_type: AssignType,
+    pub a_loc: LineIndex,
 }
 
 #[derive(Clone)]
 pub enum Accessor {
-    Variable(String),
-    Property(Box<Expr>, String),
-    Index(Box<Expr>, Box<Expr>),
+    Variable(String, LineIndex),
+    Property(Box<Expr>, String, LineIndex),
+    Index(Box<Expr>, Box<Expr>, LineIndex),
 }
 
 impl Debug for Accessor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Variable(name) => write!(f, "{name}"),
-            Self::Property(accessor, name) => write!(f, "{accessor:?}.{name}"),
-            Self::Index(indexed, index) => write!(f, "{indexed:?}[{index:?}]"),
+            Self::Variable(name, _) => write!(f, "{name}"),
+            Self::Property(accessor, name, _) => write!(f, "{accessor:?}.{name}"),
+            Self::Index(indexed, index, _) => write!(f, "{indexed:?}[{index:?}]"),
         }
     }
 }
@@ -800,6 +823,7 @@ pub struct For {
     pub var: String,
     pub iter: Box<Expr>,
     pub body: Box<Expr>,
+    pub iter_loc: LineIndex,
 }
 
 impl Debug for For {
@@ -861,6 +885,7 @@ pub struct Function {
 pub struct Call {
     pub base: Box<Expr>,
     pub params: Vec<Expr>,
+    pub loc: LineIndex,
 }
 
 #[derive(Clone)]
