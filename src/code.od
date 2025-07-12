@@ -102,7 +102,6 @@ for i in 0..100 {
     }
 }*/
 
-let a = "1234";
-printf("{}", a.length());
+let a = null();
 
 //printf("{}", (0..=10).iter().filter(func(i: int) -> bool {i % 2 == 0}).fold("", func(acc: string, i: int)->string{format("{}, {}", (acc, i))}));
