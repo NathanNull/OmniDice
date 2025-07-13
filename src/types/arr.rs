@@ -56,16 +56,6 @@ impl Arr {
 
 type_init!(ArrT, Arr, "array", (RwLockReadGuard<_InnerArr>), entry: Datatype);
 
-// fn push_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut p_iter = params.iter();
-//     if let Some(arr) = p_iter.next().and_then(|p| p.downcast::<ArrT>()) {
-//         if p_iter.next().is_some_and(|p| *p == arr.entry) && p_iter.next().is_none() {
-//             return Some(Box::new(Void));
-//         }
-//     }
-//     None
-// }
-
 static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
 
@@ -94,20 +84,11 @@ fn push_fn(
     invalid!("Call", "push", params)
 }
 
-// fn pop_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut p_iter = params.iter().cloned();
-//     if let Some(arr) = p_iter.next_as::<ArrT>() {
-//         if p_iter.next().is_none() {
-//             return Some(arr.entry);
-//         }
-//     }
-//     None
-// }
-
-// TODO: make this return a maybe
 static POP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
-    output: TV1.clone(),
+    output: Box::new(MaybeT {
+        output: TV1.clone(),
+    }),
     generic: vec![TV1_NAME.to_string()],
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
@@ -119,11 +100,9 @@ fn pop_fn(
 ) -> Result<Value, RuntimeError> {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
-        return Ok(arr
-            .inner_mut()
-            .elements
-            .pop()
-            .ok_or_else(|| RuntimeError::partial("Can't pop from empty array"))?);
+        let contents = arr.inner_mut().elements.pop();
+        let output = arr.inner().entry.clone();
+        return Ok(Box::new(Maybe { output, contents }));
     }
     invalid!("Call", "push", params)
 }

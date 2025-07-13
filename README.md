@@ -10,7 +10,9 @@ OmniDice contains five fundamental datatypes (int, float, bool, string, and dice
 
 ### Int
 #### Overview
-The simplest type, integers (ints, or whole numbers) support numerical operations such as addition (`+`), subtraction (`-`), multiplication (`*`), division (`/`), negation (`-` as a prefix), and modulo (`%`). They also support boolean operations such as equality (`==`), inequality (`!=`), greater than (`>`), less than (`<`), greater than or equal to (`>=`), and less than or equal to (`<=`). Ints in OmniDice are represented as 32-bit signed integers internally, and are written as-is, eg. `345` or `-12`.
+The simplest type, integers (ints, or whole numbers) support numerical operations such as addition (`+`), subtraction (`-`), multiplication (`*`), division (`/`), negation (`-` as a prefix), and modulo (`%`). They also support boolean
+operations such as equality (`==`), inequality (`!=`), greater than (`>`), less than (`<`), greater than or equal to (`>=`), and less than or equal to (`<=`). Ints in OmniDice are represented as 32-bit signed integers internally, and are
+written as-is, eg. `345` or `-12`.
 #### Example
 ```
 printf("{}", 1 + 2 - 3 * 4 / (5 / -2)); // prints 9
@@ -20,7 +22,9 @@ printf("{}", 1 >= 2); // prints false
 
 ### Float
 #### Overview
-Floats (floating point numbers, or decimals) support most of the same operations as Ints, with the exception of modulo. Either side of any float-based operation can be replaced with an int for the same result (eg. `4.5+2.0` will give the same result as `4.5+2`, with the `2` being read as an int rather than a float). Floats in OmniDice are represented internally with 32 bits, the same size as the integers, and are written the same way as integers with the additional restriction that they must contain exactly one decimal, eg. `-435.356`. Floats that could be represented as a whole number can be written with `.0` on the end, eg. `7.0`, or with only a decimal point, eg. `7.`.
+Floats (floating point numbers, or decimals) support most of the same operations as Ints, with the exception of modulo. Either side of any float-based operation can be replaced with an int for the same result (eg. `4.5+2.0` will give the
+same result as `4.5+2`, with the `2` being read as an int rather than a float). Floats in OmniDice are represented internally with 32 bits, the same size as the integers, and are written the same way as integers with the additional
+restriction that they must contain exactly one decimal, eg. `-435.356`. Floats that could be represented as a whole number can be written with `.0` on the end, eg. `7.0`, or with only a decimal point, eg. `7.`.
 #### Example
 ```
 printf("{}", 12.0 - 13.5); // prints -1.5
@@ -38,7 +42,9 @@ printf("{}", false || !false); // prints true
 
 ### String
 #### Overview
-Strings support equality and inequality operations, as well as concatenation using `+`. They are also the first type in OmniDice to have properties attached to them, which are accessed using the `.` operator. Strings only contain a single property, called `length`, which is a function which returns an integer. They can be written as any sequence of characters surrounded by quotation marks (`"`), and allow some escape characters such as `\n` for newline and `\"` for a non-terminating quotation mark.
+Strings support equality and inequality operations, as well as concatenation using `+`. They are also the first type in OmniDice to have properties attached to them, which are accessed using the `.` operator. Strings only contain a single
+property, called `length`, which is a function which returns an integer. They can be written as any sequence of characters surrounded by quotation marks (`"`), and allow some escape characters such as `\n` for newline and `\"` for a
+non-terminating quotation mark.
 #### Example
 ```
 printf("{}", ("firststring"+"secondstring").length()); // prints 23
@@ -47,7 +53,10 @@ printf("{}", ("firststring"+"secondstring").length()); // prints 23
 
 ### Dice
 #### Overview
-Dice are the last and most important basic OmniDice type, consisting of a set of integer values (possible rolls) and associated probabilities. They allow all of the numerical operations that an integer does (with the exception of modulo) either between themselves (resulting in the operation being performed across all possible pairs of results) or between one dice and one integer (resulting in the integer being operated with every possible result on the dice). They also contain several properties, namely `max` and `min`, which are integers, and `mean`, which is a float. They can be written in standard dice notation, ie. `#d#` or `d#`, so statements such as `2d8+d6+2` are valid OmniDice code.
+Dice are the last and most important basic OmniDice type, consisting of a set of integer values (possible rolls) and associated probabilities. They allow all of the numerical operations that an integer does (with the exception of modulo)
+either between themselves (resulting in the operation being performed across all possible pairs of results) or between one dice and one integer (resulting in the integer being operated with every possible result on the dice). They also
+contain several properties, namely `max` and `min`, which are integers, and `mean` and `stddev` (standard deviation, a measure of how spread apart a roll's outcomes are), which is a float. They can be written in standard dice notation, ie.
+`#d#` or `d#`, so statements such as `2d8+d6+2` are valid OmniDice code.
 #### Example
 ```
 printf("{}", (1d8+5).mean); // prints 9.5
@@ -56,7 +65,10 @@ printf("{}", (1d8+5).mean); // prints 9.5
 
 ### Array
 #### Overview
-Arrays are the first of the complex types that OmniDice supports, and can contain any number of a single type of value. They support only one operation, which is concatenation via +, but they contain multiple properties, including length (a function that returns an integer, like strings have) as well as `push`, `pop`, and `iter` (functions, with `push` accepting an element to add, `pop` removing and returning the last one, and `iter` returning an iterator over the array). They can be constructed using square brackets (\[/]), so an array of integers could be defined by writing `[1,2,3,4+5,16]`. They can also be indexed with square brackets (eg. `my_array[1]`) and can index multiple values simultaneously, which will return an array.
+Arrays are the first of the complex types that OmniDice supports, and can contain any number of a single type of value. They support only one operation, which is concatenation via +, but they contain multiple properties, including length
+(a function that returns an integer, like strings have) as well as `push`, `pop`, and `iter` (functions, with `push` accepting an element to add, `pop` removing and returning the last one (inside a maybe), and `iter` returning an iterator
+over the array). They can be constructed using square brackets (\[/]), so an array of integers could be defined by writing `[1,2,3,4+5,16]`. They can also be indexed with square brackets (eg. `my_array[1]`) and can index multiple values
+simultaneously, which will return an array.
 
 When constructing an array that is initially empty, make sure that its type is explicitly written out somewhere nearby (often in the type of the variable you're assigning it to), or else the code will not compile.
 #### Example
