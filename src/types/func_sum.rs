@@ -1,4 +1,4 @@
-use crate::{invalid, op_list, type_init};
+use crate::{op_list, type_init};
 
 use super::*;
 
@@ -60,7 +60,7 @@ impl Type for FuncSumT {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<Datatype> {
+    ) -> Option<(Datatype, CallFn)> {
         for f in self.f_types.iter().rev() {
             if let Some(res) = f.call_result(params.clone(), expected_output.clone()) {
                 return Some(res);
@@ -112,21 +112,4 @@ impl Type for FuncSumT {
             .collect()
     }
 }
-impl Val for FuncSum {
-    fn call(
-        &self,
-        params: Vec<Value>,
-        interpreter: &mut Interpreter,
-        expected_output: Option<Datatype>,
-    ) -> Result<Value, RuntimeError> {
-        for (ty, f) in self.f_types.iter().zip(self.fns.iter()).rev() {
-            if let Some(_) = ty.call_result(
-                params.iter().map(|v| v.get_type()).collect(),
-                expected_output.clone(),
-            ) {
-                return f.call(params, interpreter, expected_output);
-            }
-        }
-        invalid!("Call", self, ());
-    }
-}
+impl Val for FuncSum {}

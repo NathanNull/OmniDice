@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use crate::types::Value;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct LineIndex(pub usize, pub usize);
 
 impl Display for LineIndex {
@@ -41,6 +41,7 @@ impl Display for ParseError {
     }
 }
 
+#[derive(Clone)]
 pub struct RuntimeError {
     err_loc: Option<LineIndex>,
     call_stack: Vec<LineIndex>,
@@ -48,6 +49,7 @@ pub struct RuntimeError {
     err_type: RuntimeErrorType,
 }
 
+#[derive(Clone)]
 pub enum RuntimeErrorType {
     Standard,
     Break,

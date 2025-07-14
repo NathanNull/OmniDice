@@ -71,21 +71,49 @@ trait BaseType {
 }
 
 type OpResult = Result<Value, RuntimeError>;
+type VoidResult = Result<(), RuntimeError>;
 pub type BinOpFn = fn(&Expr, &Expr, &mut Interpreter) -> OpResult;
 pub type UnOpFn = fn(&Expr, &mut Interpreter) -> OpResult;
+pub type SetFn = fn(&Expr, &Expr, &mut Interpreter) -> VoidResult;
+pub type CallFn = fn(&Expr, &Vec<Expr>, &mut Interpreter, Option<Datatype>) -> OpResult;
+pub type SetAtFn = fn(&Expr, &Expr, &Expr, &mut Interpreter) -> VoidResult;
 
 #[allow(private_bounds)]
 pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
-    fn prop_type(&self, name: &str) -> Option<Datatype> {
+    fn prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         if !self.get_generics().is_empty() {
-            Some(Box::new(TypeVar::Prop(self.dup(), name.to_string())))
+            fn get_err(_: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            fn set_err(_: &Expr, _: &Expr, _: &mut Interpreter) -> VoidResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            Some((
+                Box::new(TypeVar::Prop(self.dup(), name.to_string())),
+                Some(get_err),
+                Some(set_err),
+            ))
         } else {
             self.real_prop_type(name)
         }
     }
-    fn index_type(&self, index: &Datatype) -> Option<Datatype> {
+    fn index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
         if !self.get_generics().is_empty() {
-            Some(Box::new(TypeVar::Index(self.dup(), index.clone())))
+            fn get_err(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            fn set_err(_: &Expr, _: &Expr, _: &Expr, _: &mut Interpreter) -> VoidResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            Some((Box::new(TypeVar::Index(self.dup(), index.clone())), get_err, set_err))
         } else {
             self.real_index_type(index)
         }
@@ -130,17 +158,22 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<Datatype> {
+    ) -> Option<(Datatype, CallFn)> {
         if !self.get_generics().is_empty() || params.iter().any(|p| !p.get_generics().is_empty()) {
-            Some(Box::new(TypeVar::Call(self.dup(), params, expected_output)))
+            fn err(_: &Expr, _: &Vec<Expr>, _: &mut Interpreter, _: Option<Datatype>) -> OpResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            Some((Box::new(TypeVar::Call(self.dup(), params, expected_output)), err))
         } else {
             self.real_call_result(params, expected_output)
         }
     }
-    fn real_prop_type(&self, _name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, _name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         None
     }
-    fn real_index_type(&self, _index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, _index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
         None
     }
     fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<(Datatype, BinOpFn)> {
@@ -156,7 +189,7 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
         &self,
         _params: Vec<Datatype>,
         _expected_output: Option<Datatype>,
-    ) -> Option<Datatype> {
+    ) -> Option<(Datatype, CallFn)> {
         None
     }
     fn possible_call(&self) -> bool {
@@ -206,41 +239,6 @@ trait BaseVal {
 
 #[allow(private_bounds)]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
-    fn get_prop(&self, _name: &str) -> OpResult {
-        Err(RuntimeError::partial(&format!(
-            "Type '{}' has no properties.",
-            self.get_type()
-        )))
-    }
-    fn set_prop(&self, _prop: &str, _value: Value) -> Result<(), RuntimeError> {
-        Err(RuntimeError::partial(&format!(
-            "Type '{}' has no writable properties.",
-            self.get_type()
-        )))
-    }
-    fn get_index(&self, _index: Value) -> OpResult {
-        Err(RuntimeError::partial(&format!(
-            "Type '{}' can't be indexed.",
-            self.get_type()
-        )))
-    }
-    fn set_index(&self, _index: Value, _value: Value) -> Result<(), RuntimeError> {
-        Err(RuntimeError::partial(&format!(
-            "Type '{}' can't be indexed writably.",
-            self.get_type()
-        )))
-    }
-    fn call(
-        &self,
-        _params: Vec<Value>,
-        _interpreter: &mut Interpreter,
-        _expected_output: Option<Datatype>,
-    ) -> OpResult {
-        Err(RuntimeError::partial(&format!(
-            "Type '{}' cannot be called.",
-            self.get_type()
-        )))
-    }
     fn get_type(&self) -> Datatype {
         self.base_get_type()
     }
@@ -501,22 +499,28 @@ impl PartialEq for Void {
 
 #[macro_export]
 macro_rules! gen_fn_map {
-    ($name: ident, $(($fname: literal, $fsig: ident, $ffn: ident)),*$(,)?) => {
+    ($name: ident, $(($fname: literal, $fsig: ident, $ffn: ident, $fpname: ident)),*$(,)?) => {
         static $name: ::std::sync::LazyLock<
             ::std::collections::HashMap<
                 &'static str,
                 (
                     FuncT,
                     fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
+                    fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>,
                 ),
             >,
         > = ::std::sync::LazyLock::new(|| {
+            $(fn $fpname(me: &crate::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::error::RuntimeError> {
+                let me = i.eval_expr(me)?;
+                Ok(Box::new($fsig.clone().make_rust_member($ffn, me)?))
+            })*
             ::std::collections::HashMap::from_iter([
                 $((
                     $fname,
                     (
                         (&$fsig as &FuncT).clone(),
                         $ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
+                        $fpname as fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>,
                     ),
                 ),)*
             ])

@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::{gen_fn_map, invalid, mut_type_init, type_init};
+use crate::{gen_fn_map, mut_type_init, type_init};
 
 use super::*;
 
@@ -94,12 +94,19 @@ fn range_iter_fn(
     }))
 }
 
-gen_fn_map!(RANGE_FNS, ("iter", RANGE_SIG, range_fn));
+gen_fn_map!(RANGE_FNS, ("iter", RANGE_SIG, range_fn, range_prop));
 
 impl Type for RangeT {
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         match name {
-            n if RANGE_FNS.contains_key(n) => Some(RANGE_FNS[n].0.dup()),
+            n if RANGE_FNS.contains_key(n) => {
+                let f = &RANGE_FNS[n];
+                Some((
+                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                    Some(f.2),
+                    None,
+                ))
+            },
             _ => None,
         }
     }
@@ -108,17 +115,6 @@ impl Type for RangeT {
     }
 }
 impl Val for Range {
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
-        match name {
-            n if RANGE_FNS.contains_key(n) => Ok(Box::new(
-                RANGE_FNS[n]
-                    .0
-                    .clone()
-                    .make_rust_member(RANGE_FNS[n].1, self.dup())?,
-            )),
-            _ => invalid!("Prop", self, name),
-        }
-    }
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(self.inner().curr);
         h.write_i32(self.inner().last);

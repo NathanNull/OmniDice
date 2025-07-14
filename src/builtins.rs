@@ -16,19 +16,19 @@ use crate::{
 
 gen_fn_map!(
     BUILTIN_FUNCS,
-    ("ref", REF_SIG, ref_fn),
-    ("println", PRINTLN_SIG, println_fn),
-    ("printf", PRINTF_SIG, printf_fn),
-    ("error", ERROR_SIG, error_fn),
-    ("format", FORMAT_SIG, format_fn),
-    ("filled", FILLED_SIG, filled_fn),
-    ("iter", ITER_SIG, iter_fn),
-    ("null", NULL_SIG, null_fn),
-    ("dicemap", DICEMAP_SIG, dicemap_fn)
+    ("ref", REF_SIG, ref_fn, rp),
+    ("println", PRINTLN_SIG, println_fn, pp),
+    ("printf", PRINTF_SIG, printf_fn, pfp),
+    ("error", ERROR_SIG, error_fn, ep),
+    ("format", FORMAT_SIG, format_fn, fp),
+    ("filled", FILLED_SIG, filled_fn, fip),
+    ("iter", ITER_SIG, iter_fn, ip),
+    ("null", NULL_SIG, null_fn, np),
+    ("dicemap", DICEMAP_SIG, dicemap_fn, dp)
 );
 
 pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
-    HashMap::from_iter(BUILTIN_FUNCS.iter().map(|(name, (sig, func))| {
+    HashMap::from_iter(BUILTIN_FUNCS.iter().map(|(name, (sig, func, _))| {
         (
             name.to_string(),
             Box::new(sig.clone().make_rust(*func)) as Value,
@@ -306,12 +306,25 @@ fn dicemap_fn(
                     rolls.into_iter().map(|r| Box::new(r) as Value).collect(),
                     Box::new(IntT),
                 );
-                let res = func
-                    .call(vec![Box::new(param)], i, Some(Box::new(IntT)))?
-                    .downcast::<i32>()
-                    .ok_or_else(|| {
-                        RuntimeError::partial("Dicemap function return value must be an integer")
-                    })?;
+                let res = (func
+                    .get_type()
+                    .call_result(
+                        vec![Box::new(ArrT {
+                            entry: Box::new(IntT),
+                        })],
+                        Some(Box::new(IntT)),
+                    )
+                    .ok_or_else(|| RuntimeError::partial("Invalid dicemap function"))?
+                    .1)(
+                    &func.dup().into(),
+                    &vec![(Box::new(param) as Value).into()],
+                    i,
+                    Some(Box::new(IntT)),
+                )?
+                .downcast::<i32>()
+                .ok_or_else(|| {
+                    RuntimeError::partial("Dicemap function return value must be an integer")
+                })?;
                 if let Some(o) = results.get_mut(&res) {
                     *o += odds;
                 } else {

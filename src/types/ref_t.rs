@@ -42,9 +42,16 @@ impl Ref {
 type_init!(RefT, Ref, "ref", (RwLockReadGuard<_InnerRef>), ty: Datatype);
 
 impl Type for RefT {
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         if name == "inner" {
-            Some(self.ty.dup())
+            fn get_inner(me: &Expr, i: &mut Interpreter) -> OpResult {
+                Ok(i.try_eval_as::<Ref>(me)?.inner().val.clone())
+            }
+            fn set_inner(me: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+                i.try_eval_as::<Ref>(me)?.inner_mut().val = i.eval_expr(val)?;
+                Ok(())
+            }
+            Some((self.ty.dup(), Some(get_inner), Some(set_inner)))
         } else {
             self.ty.prop_type(name)
         }
@@ -66,11 +73,11 @@ impl Type for RefT {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<Datatype> {
+    ) -> Option<(Datatype, CallFn)> {
         self.ty.call_result(params, expected_output)
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
         self.ty.index_type(index)
     }
 
@@ -95,39 +102,6 @@ impl Type for RefT {
 }
 
 impl Val for Ref {
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
-        if name == "inner" {
-            Ok(self.inner().val.clone())
-        } else {
-            self.inner().val.get_prop(name)
-        }
-    }
-
-    fn set_prop(&self, prop: &str, value: Value) -> Result<(), RuntimeError> {
-        if prop == "inner" {
-            self.inner_mut().val = value;
-            Ok(())
-        } else {
-            self.inner().val.set_prop(prop, value)
-        }
-    }
-
-    fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {
-        self.inner().val.get_index(index)
-    }
-
-    fn set_index(&self, index: Value, value: Value) -> Result<(), RuntimeError> {
-        self.inner().val.set_index(index, value)
-    }
-
-    fn call(
-        &self,
-        params: Vec<Value>,
-        interpreter: &mut Interpreter,
-        expected_output: Option<Datatype>,
-    ) -> Result<Value, RuntimeError> {
-        self.inner().val.call(params, interpreter, expected_output)
-    }
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner().val.as_ref().hash(h)
     }

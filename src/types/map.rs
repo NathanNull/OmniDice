@@ -2,7 +2,8 @@ use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
 use crate::{
-    gen_fn_map, invalid, mut_type_init, op_list, type_init, types::arr::{iter_ret_fn, ITER_RET_SIG}
+    gen_fn_map, invalid, mut_type_init, op_list, type_init,
+    types::arr::{ITER_RET_SIG, iter_ret_fn},
 };
 
 #[derive(Clone)]
@@ -204,9 +205,9 @@ fn get_fn(
 
 gen_fn_map!(
     MAP_FNS,
-    ("iter", ITER_SIG, iter_fn),
-    ("set", SET_SIG, set_fn),
-    ("get", GET_SIG, get_fn)
+    ("iter", ITER_SIG, iter_fn, iter_prop),
+    ("set", SET_SIG, set_fn, set_prop),
+    ("get", GET_SIG, get_fn, get_prop),
 );
 
 impl Type for MapT {
@@ -231,23 +232,73 @@ impl Type for MapT {
         }
     }
 
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+        fn get_length(me: &Expr, i: &mut Interpreter) -> OpResult {
+            Ok(Box::new(
+                i.try_eval_as::<Map>(me)?.inner().elements.len() as i32
+            ))
+        }
         match name {
-            "length" => Some(Box::new(IntT)),
+            "length" => Some((Box::new(IntT), Some(get_length), None)),
             n if MAP_FNS.contains_key(n) => {
-                let ret = Some(MAP_FNS[n].0.clone().with_owner(self.dup()).ok()?.dup());
-                ret
+                let f = &MAP_FNS[n];
+                Some((
+                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                    Some(f.2),
+                    None,
+                ))
             }
             _ => None,
         }
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
         if index == &self.key {
-            Some(self.value.clone())
+            fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
+                let index = i.eval_expr(idx)?;
+                Ok(i.try_eval_as::<Map>(me)?
+                    .inner()
+                    .elements
+                    .get(&index)
+                    .ok_or_else(|| {
+                        RuntimeError::partial(&format!(
+                            "Can't access nonexistent key {index:?} of map"
+                        ))
+                    })?
+                    .dup())
+            }
+            fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+                let index = i.eval_expr(idx)?;
+                let me = i.try_eval_as::<Map>(me)?;
+                let val = i.eval_expr(val)?;
+                if val.get_type() != me.inner().value {
+                    return Err(RuntimeError::partial(
+                        "UNREACHABLE: invalid value type for map insertion",
+                    ));
+                }
+                *me.inner_mut().elements.get_mut(&index).ok_or_else(|| {
+                    RuntimeError::partial(&format!(
+                        "Can't access nonexistent key {index:?} of map, consider using .set instead."
+                    ))
+                })? = val;
+                Ok(())
+            }
+            Some((self.value.clone(), get_fn, set_fn))
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
             if tup.entries.iter().all(|e| e == &self.key) {
-                Some(self.dup())
+                fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
+                    Err(RuntimeError::partial(
+                        "
+                    TODO: Map tuple indexing not implemented yet",
+                    ))
+                }
+                fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+                    Err(RuntimeError::partial(
+                        "
+                    TODO: Map tuple indexing not implemented yet",
+                    ))
+                }
+                Some((self.dup(), get_fn, set_fn))
             } else {
                 None
             }
@@ -289,49 +340,4 @@ impl Type for MapT {
 }
 
 impl Val for Map {
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
-        Ok(match name {
-            "length" => Box::new(self.inner().elements.len() as i32),
-            n if MAP_FNS.contains_key(n) => Box::new(
-                MAP_FNS[n]
-                    .0
-                    .clone()
-                    .make_rust_member(MAP_FNS[n].1, self.dup())?,
-            ),
-            _ => invalid!("Prop", self, name),
-        })
-    }
-
-    fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {
-        if index.get_type() == self.inner().key {
-            Ok(self
-                .inner()
-                .elements
-                .get(&index)
-                .ok_or_else(|| {
-                    RuntimeError::partial(&format!("Can't access nonexistent key {index:?} of map"))
-                })?
-                .dup())
-        } else {
-            invalid!("Index", self, index.get_type())
-        }
-    }
-
-    fn set_index(&self, index: Value, value: Value) -> Result<(), RuntimeError> {
-        if index.get_type() == self.inner().key {
-            if value.get_type() != self.inner().value {
-                return Err(RuntimeError::partial(
-                    "UNREACHABLE: invalid value type for map insertion",
-                ));
-            }
-            *self.inner_mut().elements.get_mut(&index).ok_or_else(|| {
-                RuntimeError::partial(&format!(
-                    "Can't access nonexistent key {index:?} of map, consider using .set instead."
-                ))
-            })? = value;
-        } else {
-            invalid!("Index", self, index.get_type())
-        }
-        Ok(())
-    }
 }

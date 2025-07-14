@@ -1,6 +1,6 @@
 use std::sync::RwLockReadGuard;
 
-use crate::{invalid, mut_type_init, type_init};
+use crate::{mut_type_init, type_init};
 
 use super::*;
 
@@ -75,10 +75,42 @@ fn as_idx(prop: &str) -> Option<usize> {
     prop.strip_prefix('i').and_then(|n| n.parse::<usize>().ok())
 }
 
+macro_rules! prop_at_idx {
+    ($idx: expr) => {{
+        fn get_prop(me: &Expr, i: &mut Interpreter) -> OpResult {
+            Ok(i.try_eval_as::<Tuple>(me)?.inner().elements[$idx].clone())
+        }
+        fn set_prop(me: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+            i.try_eval_as::<Tuple>(me)?.inner_mut().elements[$idx] = i.eval_expr(val)?;
+            Ok(())
+        }
+        (get_prop, set_prop)
+    }};
+}
+
+macro_rules! idx_props {
+    ($($idx: literal),*) => {
+        [
+            $(prop_at_idx!($idx)),*
+        ]
+    };
+}
+
+// Admittedly kinda hacky solution to needing all of the prop getter functions available at compile time,
+// just make a macro that can write as many as you (should) need. Tbf if you're writing code that uses 33-element
+// tuples, you're probably doing something wrong anyway.
+const PROPS: [(UnOpFn, SetFn); 32] = idx_props!(
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30, 31
+);
+
 impl Type for TupT {
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         if let Some(idx) = as_idx(name) {
-            self.entries.get(idx).cloned()
+            self.entries.get(idx).and_then(|e| {
+                let (get, set) = PROPS.get(idx)?;
+                Some((e.clone(), Some(*get), Some(*set)))
+            })
         } else {
             None
         }
@@ -123,23 +155,6 @@ impl Type for TupT {
     }
 }
 impl Val for Tuple {
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
-        if let Some(idx) = as_idx(name) {
-            Ok(self.inner().elements[idx].clone())
-        } else {
-            invalid!("Prop", self, ());
-        }
-    }
-
-    fn set_prop(&self, prop: &str, value: Value) -> Result<(), RuntimeError> {
-        if let Some(idx) = as_idx(prop) {
-            self.inner_mut().elements[idx] = value;
-            Ok(())
-        } else {
-            invalid!("Prop", self, ());
-        }
-    }
-
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()
             .elements

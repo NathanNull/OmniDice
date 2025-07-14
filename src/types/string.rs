@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use super::*;
-use crate::{invalid, op_list, type_init};
+use crate::{gen_fn_map, op_list, type_init};
 
 static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
@@ -21,6 +21,8 @@ fn length_fn(
     Ok(Box::new(string.len() as i32))
 }
 
+gen_fn_map!(STRING_FNS, ("length", LENGTH_SIG, length_fn, length_prop));
+
 type_init!(StringT, String, "string");
 impl Type for StringT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
@@ -35,9 +37,16 @@ impl Type for StringT {
         }
     }
 
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         match name {
-            "length" => Some(LENGTH_SIG.dup()),
+            n if STRING_FNS.contains_key(n) => {
+                let f = &STRING_FNS[n];
+                Some((
+                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                    Some(f.2),
+                    None,
+                ))
+            }
             _ => None,
         }
     }
@@ -48,13 +57,6 @@ impl Type for StringT {
 }
 
 impl Val for String {
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
-        Ok(match name {
-            "length" => Box::new(LENGTH_SIG.clone().make_rust_member(length_fn, self.dup())?),
-            _ => invalid!("Prop", self, name),
-        })
-    }
-
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write(self.as_bytes());
         Ok(())

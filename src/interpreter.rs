@@ -122,9 +122,7 @@ impl Interpreter {
             (ExprContents::Break(_), false) => self.eval_break(),
             (ExprContents::Continue(_), false) => self.eval_continue(),
             (_, true) => {
-                return Err(RuntimeError::partial(
-                    "Can't evaluate this at compile time",
-                ));
+                return Err(RuntimeError::partial("Can't evaluate this at compile time"));
             }
         }?;
         if res.get_type() != expr.output {
@@ -142,10 +140,11 @@ impl Interpreter {
             Accessor::Variable(ident, loc) => {
                 Ok(self.get_var(ident).map_err(|e| e.stack_loc(*loc))?.clone())
             }
-            Accessor::Property(base, property, _) => self.eval_expr(&base)?.get_prop(property),
-            Accessor::Index(indexed, index, _) => {
-                self.eval_expr(&indexed)?.get_index(self.eval_expr(&index)?)
-            }
+            Accessor::Property(base, _, loc, get, ..) => (get
+                .ok_or_else(|| RuntimeError::single("Can't get this property", *loc))?)(
+                &base, self,
+            ),
+            Accessor::Index(indexed, index, _, get, ..) => (get)(&indexed, &index, self),
         }
     }
 
@@ -229,43 +228,16 @@ impl Interpreter {
                     .set_var(name.clone(), val.dup())
                     .map_err(|e| e.stack_loc(*vpos))?,
             },
-            Accessor::Property(base, prop, loc) => {
-                let base_val = self.eval_expr(&base)?;
-                if base_val
-                    .get_type()
-                    .prop_type(prop)
-                    .is_none_or(|pt| val.get_type() != pt)
-                {
-                    return Err(RuntimeError::single(
-                        &format!(
-                            "Tried to reassign property {:?} to a different type",
-                            assign.assignee
-                        ),
-                        *loc,
-                    ));
-                }
-                base_val
-                    .set_prop(prop, val.dup())
-                    .map_err(|e| e.stack_loc(assign.a_loc))?;
+            Accessor::Property(base, _, loc, _, set, ..) => {
+                (set.ok_or_else(|| RuntimeError::single("Can't write to this property", *loc))?)(
+                    base,
+                    &assign.val,
+                    self,
+                )
+                .map_err(|e| e.stack_loc(assign.a_loc))?;
             }
-            Accessor::Index(indexed, index, loc) => {
-                let base_val = self.eval_expr(&indexed)?;
-                if base_val
-                    .get_type()
-                    .index_type(&index.output)
-                    .is_none_or(|it| it != val.get_type())
-                {
-                    return Err(RuntimeError::single(
-                        &format!(
-                            "Tried to reassign property {:?} to a different type",
-                            assign.assignee
-                        ),
-                        *loc,
-                    ));
-                };
-                base_val
-                    .set_index(self.eval_expr(&index)?, val.dup())
-                    .map_err(|e| e.stack_loc(assign.a_loc))?;
+            Accessor::Index(indexed, index, _, _, set, ..) => {
+                (set)(indexed, index, &assign.val, self).map_err(|e| e.stack_loc(assign.a_loc))?;
             }
         }
         Ok(val)
@@ -315,27 +287,39 @@ impl Interpreter {
     }
 
     fn eval_for(&mut self, fo: &For) -> Result<Value, RuntimeError> {
-        let iter = self
-            .eval_expr(&fo.iter)?
-            .get_prop("iter")
-            .map_err(|e| e.stack_loc(fo.iter_loc))?
-            .call(vec![], self, None)?;
+        let rte = &RuntimeError::single("Invalid iter", fo.iter_loc);
+        let (iter_fn_t, iter_fn_get, _) = fo
+            .iter
+            .output
+            .prop_type("iter")
+            .ok_or_else(|| rte.clone())?;
+        let iter = (iter_fn_t
+            .call_result(vec![], None)
+            .ok_or_else(|| rte.clone())?
+            .1)(
+            &(iter_fn_get.ok_or_else(|| rte.clone())?)(&fo.iter, self)?.into(),
+            &vec![],
+            self,
+            None,
+        )?;
+        let (next_fn_t, next_fn_get, _) = iter
+            .get_type()
+            .prop_type("next")
+            .ok_or_else(|| rte.clone())?;
+        let next_fn = (next_fn_get.ok_or_else(|| rte.clone())?)(&iter.into(), self)?.into();
+        let next_fn_call = next_fn_t
+            .call_result(vec![], None)
+            .ok_or_else(|| rte.clone())?
+            .1;
         self.variables.push(VarScope {
             vars: HashMap::new(),
             blocking: false,
             name: "for",
         });
         loop {
-            let next_val = iter
-                .get_prop("next")
-                .map_err(|e| e.stack_loc(fo.iter_loc))
-                .inspect_err(|_| {
-                    self.variables.pop();
-                })?
-                .call(vec![], self, None)
-                .inspect_err(|_| {
-                    self.variables.pop();
-                })?;
+            let next_val = (next_fn_call)(&next_fn, &vec![], self, None).inspect_err(|_| {
+                self.variables.pop();
+            })?;
             match next_val.downcast::<Maybe>() {
                 Some(Maybe {
                     output: _,
@@ -420,15 +404,7 @@ impl Interpreter {
     }
 
     fn eval_call(&mut self, call: &Call, expected_type: Datatype) -> Result<Value, RuntimeError> {
-        let base = self.eval_expr(&call.base)?;
-        let params = {
-            let mut res = vec![];
-            for p in call.params.iter() {
-                res.push(self.eval_expr(p)?)
-            }
-            res
-        };
-        base.call(params, self, Some(expected_type))
+        (call.res)(&call.base, &call.params, self, Some(expected_type))
             .map_err(|e| e.stack_loc(call.loc))
     }
 

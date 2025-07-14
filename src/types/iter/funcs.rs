@@ -1,3 +1,5 @@
+use crate::parser::ExprContents;
+
 use super::*;
 
 static ITER_T_NAME: &str = "__IterT";
@@ -29,8 +31,11 @@ pub fn next_fn(
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Iter>() {
         Ok(Box::new(
-            me.next_fn
-                .call(vec![], i, None)?
+            (me.next_fn
+                .get_type()
+                .call_result(vec![], None)
+                .ok_or_else(|| RuntimeError::partial("Invalid next function"))?.1)
+                (&me.next_fn.into(), &vec![], i, None)?
                 .downcast::<Maybe>()
                 .ok_or_else(|| RuntimeError::partial("Invalid iter function return value"))?,
         ))
@@ -89,7 +94,8 @@ pub fn map_fn(
         output: mapper
             .get_type()
             .call_result(vec![me.output.dup()], None)
-            .ok_or_else(|| RuntimeError::partial("map func has invalid input"))?,
+            .ok_or_else(|| RuntimeError::partial("map func has invalid input"))?
+            .0,
         next_fn: Box::new(
             MAP_ITER_SIG
                 .insert_generics(&HashMap::from_iter([
@@ -126,13 +132,19 @@ fn map_iter_fn(
     let next = next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
         .ok_or_else(|| RuntimeError::partial("map iter next is invalid"))?;
+    let (map_res, map_call) = mapper
+        .get_type()
+        .call_result(vec![me.output.dup()], None)
+        .ok_or_else(|| RuntimeError::partial("map func is invalid"))?;
     Ok(Box::new(Maybe {
-        output: mapper
-            .get_type()
-            .call_result(vec![me.output.dup()], None)
-            .ok_or_else(|| RuntimeError::partial("map func is invalid"))?,
+        output: map_res,
         contents: if let Some(c) = next.contents {
-            Some(mapper.call(vec![c], i, None)?)
+            Some((map_call)(
+                &(Box::new(mapper) as Value).into(),
+                &vec![c.into()],
+                i,
+                None,
+            )?)
         } else {
             None
         },
@@ -220,19 +232,28 @@ fn filter_iter_fn(
     let filter = it
         .next_as::<Func>()
         .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let filter_expr = (Box::new(filter.clone()) as Value).into();
     let mut res = Maybe {
         output: me.output.clone(),
         contents: None,
     };
+    let (_, call) = filter
+        .get_type()
+        .call_result(vec![me.output.clone()], Some(Box::new(BoolT)))
+        .ok_or_else(|| RuntimeError::partial("Invalid filter function"))?;
     while let Some(next) = &next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
         .ok_or_else(|| RuntimeError::partial("Invalid call"))?
         .contents
     {
-        let filter_res = filter
-            .call(vec![next.clone()], i, Some(Box::new(BoolT)))?
-            .downcast::<bool>()
-            .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        let filter_res = (call)(
+            &filter_expr,
+            &vec![next.clone().into()],
+            i,
+            Some(Box::new(BoolT)),
+        )?
+        .downcast::<bool>()
+        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
         if filter_res {
             res.contents = Some(next.clone());
             break;
@@ -272,13 +293,27 @@ pub fn fold_fn(
     let folder = it
         .next_as::<Func>()
         .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+    let folder_expr = Expr {
+        contents: ExprContents::Value(Box::new(folder.clone())),
+        output: folder.get_type(),
+    };
     let mut curr = initial;
-    while let Some(next) = &next_fn(vec![me.dup()], i, None)?
+    let it_t = curr.get_type();
+    let (_, call) = folder
+        .get_type()
+        .call_result(vec![it_t.clone(), it_t.clone()], None)
+        .ok_or_else(|| RuntimeError::partial("Invalid folder function"))?;
+    while let Some(next) = next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
         .ok_or_else(|| RuntimeError::partial(""))?
         .contents
     {
-        curr = folder.call(vec![curr, next.clone()], i, None)?;
+        curr = (call)(
+            &folder_expr,
+            &vec![curr.into(), next.into()],
+            i,
+            None,
+        )?;
     }
     Ok(curr)
 }

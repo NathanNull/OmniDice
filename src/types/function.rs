@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ op_list, parser::Expr, type_init};
+use crate::{op_list, parser::Expr, type_init};
 
 use super::*;
 
@@ -238,18 +238,40 @@ impl Type for FuncT {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<Datatype> {
+    ) -> Option<(Datatype, CallFn)> {
         let generic_matches = self.get_generics(params, &expected_output)?;
         let res = self.output.insert_generics(&generic_matches)?;
         if res.get_generics().iter().any(|g| self.generic.contains(g)) {
             println!("Unconstrained generic");
             return None;
         }
-        Some(if let Some(o) = expected_output {
-            o.assert_same(&res)
-        } else {
-            res
-        })
+        fn call(
+            me: &Expr,
+            args: &Vec<Expr>,
+            i: &mut Interpreter,
+            out: Option<Datatype>,
+        ) -> OpResult {
+            let me = i.try_eval_as::<Func>(me)?;
+            let generics = me
+                .get_type()
+                .downcast::<FuncT>()
+                .ok_or_else(|| RuntimeError::partial("Func type isn't FuncT"))?
+                .get_generics(args.iter().map(|p| p.output.clone()).collect(), &out)
+                .ok_or_else(|| RuntimeError::partial("Couldn't resolve generics"))?;
+            let params = args
+                .into_iter()
+                .map(|a| i.eval_expr(a))
+                .collect::<Result<_, _>>()?;
+            me.contents.eval(generics, i, params, out)
+        }
+        Some((
+            if let Some(o) = expected_output {
+                o.assert_same(&res)
+            } else {
+                res
+            },
+            call,
+        ))
     }
 
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
@@ -350,25 +372,6 @@ impl Type for FuncT {
     }
 }
 impl Val for Func {
-    fn call(
-        &self,
-        params: Vec<Value>,
-        interpreter: &mut Interpreter,
-        expected_output: Option<Datatype>,
-    ) -> Result<Value, RuntimeError> {
-        let generics = self
-            .get_type()
-            .downcast::<FuncT>()
-            .ok_or_else(|| RuntimeError::partial("Func type isn't FuncT"))?
-            .get_generics(
-                params.iter().map(|p| p.get_type()).collect(),
-                &expected_output,
-            )
-            .ok_or_else(|| RuntimeError::partial("Couldn't resolve generics"))?;
-        self.contents
-            .eval(generics, interpreter, params, expected_output)
-    }
-
     fn insert_generics(&self, generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
         let new_ty = self
             .get_type()

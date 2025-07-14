@@ -159,28 +159,8 @@ impl Parser {
         let res = match contents {
             ExprContents::Accessor(acc) => match acc {
                 Accessor::Variable(var, _) => self.get_var_type(var)?,
-                Accessor::Property(base, prop, _) => {
-                    let ty = &base.output;
-                    match ty.prop_type(&prop) {
-                        Some(pt) => pt,
-                        None => {
-                            return self
-                                .make_error(format!("Invalid property {prop} for type {ty:?}"));
-                        }
-                    }
-                }
-                Accessor::Index(indexed, index, _) => {
-                    let ty = &indexed.output;
-                    match ty.index_type(&index.output) {
-                        Some(pt) => pt,
-                        None => {
-                            return self.make_error(format!(
-                                "Invalid index type {:?} for type {ty:?}",
-                                index.output
-                            ));
-                        }
-                    }
-                }
+                Accessor::Property(.., out) => out.clone(),
+                Accessor::Index(.., out) => out.clone(),
             },
             ExprContents::Value(literal) => literal.get_type(),
             ExprContents::Binop(binop) => binop.out.clone(),
@@ -227,7 +207,7 @@ impl Parser {
                     .output
                     .call_result(params.clone(), expected_type.clone())
                 {
-                    Some(ct) => ct,
+                    Some((ct, ..)) => ct,
                     None => {
                         return self.make_error(format!(
                             "Can't call {} with params ({:?}){}",
@@ -296,7 +276,7 @@ impl Parser {
             true
         } && self.tokens.peek().unwrap() != expected_end.last().unwrap()
         {
-            let contents = self.parse_expr(0, &expected_end, true, false)?;
+            let contents = self.parse_expr(0, &expected_end, true, false, None)?;
             let is_last = self.tokens.peek().unwrap() == expected_end.last().unwrap();
             exprs.push(
                 *self.new_expr(contents, if is_last { expected_type.clone() } else { None })?,
@@ -324,6 +304,7 @@ impl Parser {
         expected_end: &Vec<Token>,
         allow_imply_eol: bool,
         allow_join: bool,
+        expected_type: Option<Datatype>,
     ) -> Result<ExprContents, ParseError> {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
@@ -345,6 +326,7 @@ impl Parser {
                         &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
                         false,
                         true,
+                        None,
                     )?;
                     self.tokens
                         .expect(Token::OpLike(OpLike::Bracket(Bracket::RBracket)))
@@ -364,7 +346,7 @@ impl Parser {
             Token::OpLike(op) => {
                 if let Some(((), r_bp)) = PREFIX_BINDING_POWER.get(&op) {
                     let op_loc = self.tokens.pos;
-                    let rhs = self.parse_expr(*r_bp, expected_end, false, false)?;
+                    let rhs = self.parse_expr(*r_bp, expected_end, false, false, None)?;
                     self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix, op_loc)?
                 } else {
                     return self.make_error(format!("Invalid prefix operator {op:?}"));
@@ -411,6 +393,7 @@ impl Parser {
                     expected_end,
                     false,
                     false,
+                    typehint.clone(),
                 )?;
 
                 self.parse_assign(AssignType::Create, ident, rhs, typehint, op_loc)?
@@ -435,13 +418,14 @@ impl Parser {
                 VOID.contents.clone()
             }
             Token::Keyword(Keyword::Return) => {
-                let ret = self.parse_expr(
-                    INFIX_BINDING_POWER[&OpLike::Assign].1,
-                    expected_end,
-                    allow_imply_eol,
-                    allow_join,
-                )?;
-                if let Some(ret_type) = self.return_t_stack.last() {
+                if let Some(ret_type) = self.return_t_stack.last().cloned() {
+                    let ret = self.parse_expr(
+                        INFIX_BINDING_POWER[&OpLike::Assign].1,
+                        expected_end,
+                        allow_imply_eol,
+                        allow_join,
+                        Some(ret_type.clone())
+                    )?;
                     let expected_type = Some(ret_type.clone());
                     let ret = self.new_expr(ret, expected_type)?;
                     ExprContents::Return(Return { ret })
@@ -485,15 +469,19 @@ impl Parser {
                         &vec![Token::OpLike(OpLike::Bracket(Bracket::RSquare))],
                         false,
                         true,
+                        None,
                     )?;
                     self.tokens
                         .expect(Token::OpLike(OpLike::Bracket(Bracket::RSquare)))
                         .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
-                    lhs = ExprContents::Accessor(Accessor::Index(
-                        self.new_expr(lhs, None)?,
-                        self.new_expr(index, None)?,
-                        op_loc
-                    ));
+                    let base = self.new_expr(lhs, None)?;
+                    let index = self.new_expr(index, None)?;
+                    
+                    lhs = ExprContents::Accessor(Accessor::new_index(
+                        base,
+                        index,
+                        op_loc,
+                    )?);
                     continue;
                 }
                 Token::OpLike(OpLike::Bracket(Bracket::LBracket)) => {
@@ -519,6 +507,7 @@ impl Parser {
                             &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
                             false,
                             true,
+                            None,
                         )? {
                             ExprContents::Tuple(tup) => tup.elements,
                             expr => vec![*self.new_expr(expr, None)?],
@@ -528,11 +517,8 @@ impl Parser {
                             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
                         p
                     };
-                    lhs = ExprContents::Call(Call {
-                        base: self.new_expr(lhs, None)?,
-                        params,
-                        loc
-                    });
+                    let base = self.new_expr(lhs, None)?;
+                    lhs = ExprContents::Call(Call::new(base, params, loc, expected_type.clone())?);
                     continue;
                 }
                 Token::OpLike(OpLike::Comma) if allow_join => {
@@ -551,7 +537,7 @@ impl Parser {
                     loop {
                         if !expected_end.contains(self.tokens.peek().unwrap()) {
                             let next =
-                                self.parse_expr(*r_bp, &new_end, allow_imply_eol, allow_join)?;
+                                self.parse_expr(*r_bp, &new_end, allow_imply_eol, allow_join, None)?;
                             elements.push(*self.new_expr(next, None)?);
                         }
                         match self.tokens.next() {
@@ -622,7 +608,7 @@ impl Parser {
             }
             self.tokens.next();
             let op_loc = self.tokens.pos;
-            let rhs = self.parse_expr(*r_bp, expected_end, false, allow_join)?;
+            let rhs = self.parse_expr(*r_bp, expected_end, false, allow_join, None)?;
             lhs = self.make_expr(lhs, rhs, op, OpType::Infix, op_loc)?;
         }
         Ok(lhs)
@@ -696,14 +682,15 @@ impl Parser {
             &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
             false,
             false,
+            None,
         )?;
         let iter_loc = self.tokens.pos;
         let iter = self.new_expr(it, None)?;
         let i_type = match iter
             .output
             .prop_type("iter")
-            .and_then(|i_fn| i_fn.call_result(vec![], None))
-            .and_then(|i| i.downcast::<IterT>())
+            .and_then(|(i_fn, ..)| i_fn.call_result(vec![], None))
+            .and_then(|(i, ..)| i.downcast::<IterT>())
         {
             Some(i_type) => i_type.output,
             None => {
@@ -746,6 +733,7 @@ impl Parser {
             &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
             false,
             false,
+            Some(Box::new(BoolT)),
         )?;
         let clause = self.new_expr(expr, Some(BOOL.output.clone()))?;
         self.tokens
@@ -783,8 +771,8 @@ impl Parser {
             AssignType::Reassign => {
                 let old_type = match &assignee {
                     Accessor::Variable(v, _) => self.get_var_type(v)?,
-                    Accessor::Property(base, prop, _) => match base.output.prop_type(prop) {
-                        Some(pt) => pt,
+                    Accessor::Property(base, prop, ..) => match base.output.prop_type(prop) {
+                        Some((pt, ..)) => pt,
                         None => {
                             return self.make_error(format!(
                                 "Unknown property type {prop} for base {}",
@@ -792,9 +780,9 @@ impl Parser {
                             ));
                         }
                     },
-                    Accessor::Index(indexed, index, _) => {
+                    Accessor::Index(indexed, index, ..) => {
                         match indexed.output.index_type(&index.output) {
-                            Some(it) => it,
+                            Some((it, ..)) => it,
                             None => {
                                 return self.make_error(format!(
                                     "Unknown property type {} for base {}",
@@ -814,7 +802,7 @@ impl Parser {
                 fn is_assignable(me: &mut Parser, assignee: &Accessor) -> bool {
                     match &assignee {
                         Accessor::Variable(v, _) => me.var_is_mutable(v),
-                        Accessor::Property(base, _, _) | Accessor::Index(base, _, _) => {
+                        Accessor::Property(base, ..) | Accessor::Index(base, ..) => {
                             match &base.contents {
                                 ExprContents::Accessor(accessor) => is_assignable(me, accessor),
                                 _ => false,
@@ -864,6 +852,7 @@ impl Parser {
                 ],
                 false,
                 false,
+                expected_type.clone(),
             )?;
             let to_push = self.new_expr(expr, expected_type)?;
             expected_type = Some(to_push.output.clone());
@@ -1118,21 +1107,7 @@ impl Parser {
                     OpLike::Op(o) => o,
                     _ => unreachable!("Must have been an op to get here"),
                 };
-                let (out, res) = lhs
-                    .output
-                    .bin_op_result(&rhs.output, op.clone())
-                    .ok_or_else(|| ParseError {
-                        location: op_loc,
-                        info: "Invalid operation".to_string(),
-                    })?;
-                Binop {
-                    lhs,
-                    rhs,
-                    op,
-                    op_loc,
-                    res,
-                    out,
-                }
+                Binop::new(lhs, rhs, op, op_loc)?
             }),
             (OpLike::Op(Op::Minus | Op::Not), OpType::Prefix) => ExprContents::Prefix({
                 let rhs = self.new_expr(rhs, None)?;
@@ -1140,20 +1115,8 @@ impl Parser {
                     OpLike::Op(o) => o,
                     _ => unreachable!("Must have been an op to get here"),
                 };
-                let (out, res) =
-                    rhs.output
-                        .pre_op_result(op.clone())
-                        .ok_or_else(|| ParseError {
-                            location: op_loc,
-                            info: "Invalid operation".to_string(),
-                        })?;
-                Prefix {
-                    op,
-                    rhs,
-                    op_loc,
-                    res,
-                    out,
-                }
+
+                Prefix::new(op, rhs, op_loc)?
             }),
             // "d6" expands to "1d6"
             (OpLike::Op(Op::D), OpType::Prefix) => self.make_expr(
@@ -1176,7 +1139,8 @@ impl Parser {
                     ExprContents::Accessor(Accessor::Variable(var, _)) => var,
                     _ => return self.make_error(format!("Expected property, found {rhs:?}")),
                 };
-                ExprContents::Accessor(Accessor::Property(self.new_expr(lhs, None)?, rhs, op_loc))
+                let base = self.new_expr(lhs, None)?;
+                ExprContents::Accessor(Accessor::new_property(base, rhs, op_loc)?)
             }
             (OpLike::Bracket(_) | OpLike::Colon | OpLike::Comma | OpLike::LTurbofish, _) => {
                 unreachable!(

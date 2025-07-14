@@ -39,7 +39,11 @@ static UNWRAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Result<Value, RuntimeError> {
+fn unwrap_fn(
+    params: Vec<Value>,
+    _i: &mut Interpreter,
+    _o: Option<Datatype>,
+) -> Result<Value, RuntimeError> {
     let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Maybe>() {
         match me.contents {
@@ -52,10 +56,23 @@ fn unwrap_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
 }
 
 impl Type for MaybeT {
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+        fn get_unwrap(me: &Expr, i: &mut Interpreter) -> OpResult {
+            Ok(Box::new(UNWRAP_SIG.clone().make_rust_member(
+                unwrap_fn,
+                Box::new(i.try_eval_as::<Maybe>(me)?),
+            )?))
+        }
+        fn get_filled(me: &Expr, i: &mut Interpreter) -> OpResult {
+            Ok(Box::new(i.try_eval_as::<Maybe>(me)?.contents.is_some()))
+        }
         match name {
-            "unwrap" => Some(Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).ok()?)),
-            "filled" => Some(Box::new(BoolT)),
+            "unwrap" => Some((
+                Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).ok()?),
+                Some(get_unwrap),
+                None,
+            )),
+            "filled" => Some((Box::new(BoolT), Some(get_filled), None)),
             _ => None,
         }
     }
@@ -76,13 +93,6 @@ impl Type for MaybeT {
     }
 }
 impl Val for Maybe {
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
-        Ok(match name {
-            "unwrap" => Box::new(UNWRAP_SIG.clone().make_rust_member(unwrap_fn, self.dup())?),
-            "filled" => Box::new(self.contents.is_some()),
-            _ => invalid!("Prop", self, name),
-        })
-    }
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         if let Some(c) = &self.contents {
             c.as_ref().hash(h)?;

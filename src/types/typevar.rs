@@ -96,12 +96,14 @@ impl Type for TypeVar {
                 } else {
                     None
                 };
-                base.call_result(params, expected_output)?
+                base.call_result(params, expected_output)?.0
             }
-            TypeVar::Index(base, index) => base
-                .insert_generics(generics)?
-                .index_type(&index.insert_generics(generics)?)?,
-            TypeVar::Prop(base, prop) => base.insert_generics(generics)?.prop_type(&prop)?,
+            TypeVar::Index(base, index) => {
+                base.insert_generics(generics)?
+                    .index_type(&index.insert_generics(generics)?)?
+                    .0
+            }
+            TypeVar::Prop(base, prop) => base.insert_generics(generics)?.prop_type(&prop)?.0,
             TypeVar::MustBeSame(types) => {
                 let mut t_iter = types.iter();
                 let mut res = t_iter.next()?.insert_generics(generics)?;

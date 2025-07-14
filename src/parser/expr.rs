@@ -7,8 +7,8 @@ use std::{
 use strum::EnumIter;
 
 use crate::{
-    error::LineIndex,
-    types::{BinOpFn, Datatype, UnOpFn, Value},
+    error::{LineIndex, ParseError},
+    types::{BinOpFn, CallFn, Datatype, SetAtFn, SetFn, UnOpFn, Value},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -66,7 +66,7 @@ impl Debug for Op {
 
 pub type Scope = Vec<Expr>;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum ExprContents {
     Value(Value),
     Binop(Binop),
@@ -91,7 +91,7 @@ pub enum ExprContents {
     Continue(Continue),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Expr {
     pub contents: ExprContents,
     pub output: Datatype,
@@ -182,8 +182,10 @@ impl Display for Expr {
             ),
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(v, _) => (format!("{v}"), vec![]),
-                Accessor::Property(base, prop, _) => (format!("prop {prop} of"), vec![&base]),
-                Accessor::Index(indexed, index, _) => ("index".to_string(), vec![&indexed, &index]),
+                Accessor::Property(base, prop, ..) => (format!("prop {prop} of"), vec![&base]),
+                Accessor::Index(indexed, index, ..) => {
+                    ("index".to_string(), vec![&indexed, &index])
+                }
             },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
@@ -478,19 +480,31 @@ impl Expr {
         };
         let new_contents = match &self.contents {
             ExprContents::Value(val) => ExprContents::Value(val.clone()),
-            ExprContents::Binop(binop) => ExprContents::Binop(Binop {
-                lhs: binop.lhs.replace_generics(generics)?,
-                rhs: binop.rhs.replace_generics(generics)?,
-                ..binop.clone()
-            }),
-            ExprContents::Prefix(prefix) => ExprContents::Prefix(Prefix {
-                rhs: prefix.rhs.replace_generics(generics)?,
-                ..prefix.clone()
-            }),
-            ExprContents::Postfix(postfix) => ExprContents::Postfix(Postfix {
-                lhs: postfix.lhs.replace_generics(generics)?,
-                ..postfix.clone()
-            }),
+            ExprContents::Binop(binop) => ExprContents::Binop(
+                Binop::new(
+                    binop.lhs.replace_generics(generics)?,
+                    binop.rhs.replace_generics(generics)?,
+                    binop.op,
+                    binop.op_loc,
+                )
+                .map_err(|e| e.info)?,
+            ),
+            ExprContents::Prefix(prefix) => ExprContents::Prefix(
+                Prefix::new(
+                    prefix.op,
+                    prefix.rhs.replace_generics(generics)?,
+                    prefix.op_loc,
+                )
+                .map_err(|e| e.info)?,
+            ),
+            ExprContents::Postfix(postfix) => ExprContents::Postfix(
+                Postfix::new(
+                    postfix.op,
+                    postfix.lhs.replace_generics(generics)?,
+                    postfix.op_loc,
+                )
+                .map_err(|e| e.info)?,
+            ),
             ExprContents::Assign(assign) => ExprContents::Assign(Assign {
                 assignee: accessor_replace_generics(&assign.assignee, generics)?,
                 val: assign.val.replace_generics(generics)?,
@@ -564,16 +578,17 @@ impl Expr {
                 contents: function.contents.replace_generics(generics)?,
                 generic: function.generic.clone(),
             }),
-            ExprContents::Call(call) => ExprContents::Call(Call {
-                base: call.base.replace_generics(generics)?,
-                params: {
+            ExprContents::Call(call) => ExprContents::Call({
+                let base = call.base.replace_generics(generics)?;
+                let params = {
                     let mut res = vec![];
                     for i in call.params.iter().map(|p| p.replace_generics(generics)) {
                         res.push(*i?);
                     }
                     res
-                },
-                loc: call.loc,
+                };
+                let out = if base != call.base || params != call.params {None} else {Some(call.out.clone())};
+                Call::new(base, params, call.loc, out).map_err(|e| e.info)?
             }),
             ExprContents::GenericSpecify(gspec) => ExprContents::GenericSpecify(GenericSpecify {
                 base: gspec.base.replace_generics(generics)?,
@@ -592,11 +607,21 @@ impl Expr {
     }
 }
 
+impl From<Value> for Expr {
+    fn from(value: Value) -> Self {
+        let output = value.get_type();
+        Self {
+            contents: ExprContents::Value(value),
+            output,
+        }
+    }
+}
+
 fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
     match accessor {
         Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
-        Accessor::Property(base, _, _) => base.used_variables(),
-        Accessor::Index(indexed, index, _) => {
+        Accessor::Property(base, ..) => base.used_variables(),
+        Accessor::Index(indexed, index, ..) => {
             Box::new(indexed.used_variables().chain(index.used_variables()))
         }
     }
@@ -605,8 +630,8 @@ fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = Str
 fn accessor_assigned_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
     match accessor {
         Accessor::Variable(_, _) => Box::new([].into_iter()),
-        Accessor::Property(base, _, _) => base.assigned_variables(),
-        Accessor::Index(indexed, index, _) => Box::new(
+        Accessor::Property(base, ..) => base.assigned_variables(),
+        Accessor::Index(indexed, index, ..) => Box::new(
             indexed
                 .assigned_variables()
                 .chain(index.assigned_variables()),
@@ -620,18 +645,20 @@ fn accessor_replace_generics(
 ) -> Result<Accessor, String> {
     Ok(match accessor {
         Accessor::Variable(_, _) => accessor.clone(),
-        Accessor::Property(base, prop, i) => {
-            Accessor::Property(base.replace_generics(generics)?, prop.clone(), *i)
+        Accessor::Property(base, prop, i, ..) => {
+            Accessor::new_property(base.replace_generics(generics)?, prop.clone(), *i)
+                .map_err(|e| e.info)?
         }
-        Accessor::Index(base, index, i) => Accessor::Index(
+        Accessor::Index(base, index, i, ..) => Accessor::new_index(
             base.replace_generics(generics)?,
             index.replace_generics(generics)?,
             *i,
-        ),
+        )
+        .map_err(|e| e.info)?,
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Binop {
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
@@ -641,7 +668,32 @@ pub struct Binop {
     pub out: Datatype,
 }
 
-#[derive(Debug, Clone)]
+impl Binop {
+    pub fn new(
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+        op: Op,
+        op_loc: LineIndex,
+    ) -> Result<Self, ParseError> {
+        let (out, res) = lhs
+            .output
+            .bin_op_result(&rhs.output, op.clone())
+            .ok_or_else(|| ParseError {
+                location: op_loc,
+                info: "Invalid operation".to_string(),
+            })?;
+        Ok(Self {
+            lhs,
+            rhs,
+            op,
+            op_loc,
+            out,
+            res,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Prefix {
     pub op: Op,
     pub rhs: Box<Expr>,
@@ -650,13 +702,51 @@ pub struct Prefix {
     pub out: Datatype,
 }
 
-#[derive(Debug, Clone)]
+impl Prefix {
+    pub fn new(op: Op, rhs: Box<Expr>, op_loc: LineIndex) -> Result<Self, ParseError> {
+        let (out, res) = rhs
+            .output
+            .pre_op_result(op.clone())
+            .ok_or_else(|| ParseError {
+                location: op_loc,
+                info: "Invalid operation".to_string(),
+            })?;
+        Ok(Self {
+            op,
+            rhs,
+            op_loc,
+            out,
+            res,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Postfix {
     pub op: Op,
     pub lhs: Box<Expr>,
     pub op_loc: LineIndex,
     pub res: UnOpFn,
     pub out: Datatype,
+}
+
+impl Postfix {
+    pub fn new(op: Op, lhs: Box<Expr>, op_loc: LineIndex) -> Result<Self, ParseError> {
+        let (out, res) = lhs
+            .output
+            .post_op_result(op.clone())
+            .ok_or_else(|| ParseError {
+                location: op_loc,
+                info: "Invalid operation".to_string(),
+            })?;
+        Ok(Self {
+            op,
+            lhs,
+            op_loc,
+            out,
+            res,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -678,7 +768,7 @@ impl Display for AssignType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
@@ -686,24 +776,57 @@ pub struct Assign {
     pub a_loc: LineIndex,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum Accessor {
     Variable(String, LineIndex),
-    Property(Box<Expr>, String, LineIndex),
-    Index(Box<Expr>, Box<Expr>, LineIndex),
+    Property(
+        Box<Expr>,
+        String,
+        LineIndex,
+        Option<UnOpFn>,
+        Option<SetFn>,
+        Datatype,
+    ),
+    Index(Box<Expr>, Box<Expr>, LineIndex, BinOpFn, SetAtFn, Datatype),
+}
+
+impl Accessor {
+    pub fn new_property(base: Box<Expr>, prop: String, loc: LineIndex) -> Result<Self, ParseError> {
+        let (out, get, set) = base.output.prop_type(&prop).ok_or_else(|| ParseError {
+            info: format!("Invalid property {prop}"),
+            location: loc,
+        })?;
+        Ok(Self::Property(base, prop, loc, get, set, out))
+    }
+
+    pub fn new_index(
+        indexed: Box<Expr>,
+        index: Box<Expr>,
+        loc: LineIndex,
+    ) -> Result<Self, ParseError> {
+        let (out, get, set) =
+            indexed
+                .output
+                .index_type(&index.output)
+                .ok_or_else(|| ParseError {
+                    location: loc,
+                    info: "Invalid index type".to_string(),
+                })?;
+        Ok(Self::Index(indexed, index, loc, get, set, out))
+    }
 }
 
 impl Debug for Accessor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Variable(name, _) => write!(f, "{name}"),
-            Self::Property(accessor, name, _) => write!(f, "{accessor:?}.{name}"),
-            Self::Index(indexed, index, _) => write!(f, "{indexed:?}[{index:?}]"),
+            Self::Property(accessor, name, ..) => write!(f, "{accessor:?}.{name}"),
+            Self::Index(indexed, index, ..) => write!(f, "{indexed:?}[{index:?}]"),
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Conditional {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
@@ -720,7 +843,7 @@ impl Debug for Conditional {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct While {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
@@ -732,7 +855,7 @@ impl Debug for While {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct For {
     pub var: String,
     pub iter: Box<Expr>,
@@ -750,7 +873,7 @@ impl Debug for For {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Array {
     pub elements: Vec<Expr>,
 }
@@ -769,7 +892,7 @@ impl Debug for Array {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Tuple {
     pub elements: Vec<Expr>,
 }
@@ -788,33 +911,54 @@ impl Debug for Tuple {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub params: Vec<(String, Datatype)>,
     pub contents: Box<Expr>,
     pub generic: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Call {
     pub base: Box<Expr>,
     pub params: Vec<Expr>,
     pub loc: LineIndex,
+    pub res: CallFn,
+    pub out: Datatype,
 }
 
-#[derive(Clone)]
+impl Call {
+    pub fn new(base: Box<Expr>, params: Vec<Expr>, loc: LineIndex, out: Option<Datatype>) -> Result<Self, ParseError> {
+        let (new_out, res) = base
+            .output
+            .call_result(params.iter().map(|p| p.output.clone()).collect(), out)
+            .ok_or_else(|| ParseError {
+                location: loc,
+                info: "Invalid function call".to_string(),
+            })?;
+        Ok(Self {
+            base,
+            params,
+            loc,
+            res,
+            out: new_out,
+        })
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct GenericSpecify {
     pub base: Box<Expr>,
     pub types: Vec<Datatype>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Return {
     pub ret: Box<Expr>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Break;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Continue;

@@ -66,11 +66,7 @@ static PUSH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
-fn push_fn(
-    params: Vec<Value>,
-    _i: &mut Interpreter,
-    _o: Option<Datatype>,
-) -> OpResult {
+fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if let Some(to_push) = p_iter.next() {
@@ -93,11 +89,7 @@ static POP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
-fn pop_fn(
-    params: Vec<Value>,
-    _i: &mut Interpreter,
-    _o: Option<Datatype>,
-) -> OpResult {
+fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         let contents = arr.inner_mut().elements.pop();
@@ -127,11 +119,7 @@ pub static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     })),
 });
 
-fn iter_fn(
-    params: Vec<Value>,
-    _i: &mut Interpreter,
-    _o: Option<Datatype>,
-) -> OpResult {
+fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if p_iter.next().is_none() {
@@ -147,11 +135,7 @@ fn iter_fn(
     invalid!("Call", "iter", params);
 }
 
-pub fn iter_ret_fn(
-    params: Vec<Value>,
-    _i: &mut Interpreter,
-    _o: Option<Datatype>,
-) -> OpResult {
+pub fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut it = params.iter().cloned();
     let me = it
         .next_as::<Tuple>()
@@ -182,11 +166,7 @@ static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
 });
 
-fn length_fn(
-    params: Vec<Value>,
-    _i: &mut Interpreter,
-    _o: Option<Datatype>,
-) -> OpResult {
+fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let arr = params[0]
         .downcast::<Arr>()
         .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
@@ -195,18 +175,14 @@ fn length_fn(
 
 gen_fn_map!(
     ARR_FNS,
-    ("push", PUSH_SIG, push_fn),
-    ("pop", POP_SIG, pop_fn),
-    ("iter", ITER_SIG, iter_fn),
-    ("length", LENGTH_SIG, length_fn),
+    ("push", PUSH_SIG, push_fn, push_prop),
+    ("pop", POP_SIG, pop_fn, pop_prop),
+    ("iter", ITER_SIG, iter_fn, iter_prop),
+    ("length", LENGTH_SIG, length_fn, length_prop),
 );
 
 impl Type for ArrT {
-    fn real_bin_op_result(
-        &self,
-        other: &Datatype,
-        op: Op,
-    ) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         if other == self {
             op_list!(op => {
                 Plus(l: Arr, r: Arr) -> (self.clone()) |l: Arr,r: Arr| Ok(Arr::new(
@@ -224,26 +200,168 @@ impl Type for ArrT {
         }
     }
 
-    fn real_prop_type(&self, name: &str) -> Option<Datatype> {
+    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
         match name {
             n if ARR_FNS.contains_key(n) => {
-                Some(ARR_FNS[n].0.clone().with_owner(self.dup()).ok()?.dup())
+                let f = &ARR_FNS[n];
+                Some((
+                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                    Some(f.2),
+                    None,
+                ))
             }
             _ => None,
         }
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Option<Datatype> {
+    fn real_index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
         if index == &IntT {
-            Some(self.entry.clone())
+            fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
+                let idx = i.try_eval_as::<i32>(idx)?;
+                Ok(i.try_eval_as::<Arr>(me)?
+                    .inner()
+                    .elements
+                    .get(idx as usize)
+                    .ok_or_else(|| {
+                        RuntimeError::partial(&format!("Array has no element at index {idx}"))
+                    })?
+                    .dup())
+            }
+            fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+                let val = i.eval_expr(val)?;
+                let me = i.try_eval_as::<Arr>(me)?;
+                let idx = i.try_eval_as::<i32>(idx)?;
+                if val.get_type() != me.inner().entry {
+                    return Err(RuntimeError::partial(&format!(
+                        "Tried to set array index to different type ({}) than allowed ({})",
+                        val.get_type(),
+                        me.inner().entry
+                    )));
+                }
+                *me.inner_mut()
+                    .elements
+                    .get_mut(idx as usize)
+                    .ok_or_else(|| {
+                        RuntimeError::partial(&format!("Array has no element at index {idx}"))
+                    })? = val;
+                Ok(())
+            }
+            Some((self.entry.clone(), get_fn, set_fn))
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
             if tup.entries.iter().all(|e| e == &IntT) {
-                Some(self.dup())
+                fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
+                    let me = i.try_eval_as::<Arr>(me)?;
+                    let idxs = i.try_eval_as::<Tuple>(idx)?;
+                    let eles = &me.inner().elements;
+                    Ok(Box::new(Arr::new(
+                        idxs.inner()
+                            .elements
+                            .iter()
+                            .map(|idx| {
+                                if let Some(i) = idx.downcast::<i32>() {
+                                    Ok(eles
+                                        .get(i as usize)
+                                        .ok_or_else(|| {
+                                            RuntimeError::partial(&format!(
+                                                "Array has no element at index {i}"
+                                            ))
+                                        })?
+                                        .dup())
+                                } else {
+                                    invalid!("Index", &me, idx.get_type())
+                                }
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
+                        me.inner().entry.clone(),
+                    )))
+                }
+                fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+                    let vals = i.try_eval_as::<Arr>(val)?;
+                    let me = i.try_eval_as::<Arr>(me)?;
+                    let idxs = i.try_eval_as::<Tuple>(idx)?;
+                    let entry = me.inner().entry.clone();
+                    if vals.inner().entry != entry {
+                        return Err(RuntimeError::partial(&format!(
+                            "Tried to set array index to different type ({}) than allowed ({})",
+                            vals.inner().entry,
+                            entry
+                        )));
+                    }
+                    idxs.inner()
+                        .elements
+                        .iter()
+                        .zip(vals.inner().elements.iter())
+                        .map(|(idx, val)| {
+                            if let Some(i) = idx.downcast::<i32>() {
+                                *me.inner_mut().elements.get_mut(i as usize).ok_or_else(
+                                    || {
+                                        RuntimeError::partial(&format!(
+                                            "Array has no element at index {i}"
+                                        ))
+                                    },
+                                )? = val.dup();
+                            } else {
+                                invalid!("Index", &me, idx.get_type())
+                            }
+                            Ok(())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(())
+                }
+                Some((self.dup(), get_fn, set_fn))
             } else {
                 None
             }
         } else if index == &RangeT {
-            Some(self.dup())
+            fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
+                let range = i.try_eval_as::<Range>(idx)?;
+                let me = i.try_eval_as::<Arr>(me)?;
+                let eles = &me.inner().elements;
+                Ok(Box::new(Arr::new(
+                    (range.inner().curr + 1..range.inner().last)
+                        .map(|idx| {
+                            Ok(eles
+                                .get(idx as usize)
+                                .ok_or_else(|| {
+                                    RuntimeError::partial(&format!(
+                                        "Array has no element at index {idx}"
+                                    ))
+                                })?
+                                .dup())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    me.inner().entry.clone(),
+                )))
+            }
+            fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
+                let vals = i.try_eval_as::<Arr>(val)?;
+                let me = i.try_eval_as::<Arr>(me)?;
+                let range = i.try_eval_as::<Range>(idx)?;
+                let entry = me.inner().entry.clone();
+                if vals.inner().entry != entry {
+                    return Err(RuntimeError::partial(&format!(
+                        "Tried to set array index to different type ({}) than allowed ({})",
+                        vals.inner().entry,
+                        entry
+                    )));
+                }
+                (range.inner().curr + 1..range.inner().last)
+                    .zip(vals.inner().elements.iter())
+                    .map(|(idx, val)| {
+                        *me.inner_mut()
+                            .elements
+                            .get_mut(idx as usize)
+                            .ok_or_else(|| {
+                                RuntimeError::partial(&format!(
+                                    "Array has no element at index {idx}"
+                                ))
+                            })? = val.dup();
+                        Ok(())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(())
+            }
+            Some((self.dup(), get_fn, set_fn))
         } else {
             None
         }
@@ -266,151 +384,6 @@ impl Type for ArrT {
 }
 
 impl Val for Arr {
-    fn get_prop(&self, name: &str) -> OpResult {
-        match name {
-            n if ARR_FNS.contains_key(n) => Ok(Box::new(
-                ARR_FNS[n]
-                    .0
-                    .clone()
-                    .make_rust_member(ARR_FNS[n].1, self.dup())?,
-            )),
-            _ => invalid!("Prop", self, name),
-        }
-    }
-
-    fn get_index(&self, index: Value) -> OpResult {
-        if let Some(idx) = index.downcast::<i32>() {
-            Ok(self
-                .inner()
-                .elements
-                .get(idx as usize)
-                .ok_or_else(|| {
-                    RuntimeError::partial(&format!("Array has no element at index {idx}"))
-                })?
-                .dup())
-        } else if let Some(idxs) = index.downcast::<Tuple>() {
-            let eles = &self.inner().elements;
-            Ok(Box::new(Self::new(
-                idxs.inner()
-                    .elements
-                    .iter()
-                    .map(|idx| {
-                        if let Some(i) = idx.downcast::<i32>() {
-                            Ok(eles
-                                .get(i as usize)
-                                .ok_or_else(|| {
-                                    RuntimeError::partial(&format!(
-                                        "Array has no element at index {i}"
-                                    ))
-                                })?
-                                .dup())
-                        } else {
-                            invalid!("Index", self, idx.get_type())
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-                self.inner().entry.clone(),
-            )))
-        } else if let Some(range) = index.downcast::<Range>() {
-            let eles = &self.inner().elements;
-            Ok(Box::new(Self::new(
-                (range.inner().curr + 1..range.inner().last)
-                    .map(|idx| {
-                        Ok(eles
-                            .get(idx as usize)
-                            .ok_or_else(|| {
-                                RuntimeError::partial(&format!(
-                                    "Array has no element at index {idx}"
-                                ))
-                            })?
-                            .dup())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-                self.inner().entry.clone(),
-            )))
-        } else {
-            invalid!("Index", self, index.get_type())
-        }
-    }
-
-    fn set_index(&self, index: Value, value: Value) -> Result<(), RuntimeError> {
-        if let Some(idx) = index.downcast::<i32>() {
-            if value.get_type() != self.inner().entry {
-                return Err(RuntimeError::partial(&format!(
-                    "Tried to set array index to different type ({}) than allowed ({})",
-                    value.get_type(),
-                    self.inner().entry
-                )));
-            }
-            *self
-                .inner_mut()
-                .elements
-                .get_mut(idx as usize)
-                .ok_or_else(|| {
-                    RuntimeError::partial(&format!("Array has no element at index {idx}"))
-                })? = value;
-        } else if let Some(idxs) = index.downcast::<Tuple>() {
-            let entry = self.inner().entry.clone();
-            let vals = value.downcast::<Arr>().ok_or_else(|| {
-                RuntimeError::partial("Array setindex using tuple as index must use array as value")
-            })?;
-            if vals.inner().entry != entry {
-                return Err(RuntimeError::partial(&format!(
-                    "Tried to set array index to different type ({}) than allowed ({})",
-                    vals.inner().entry,
-                    entry
-                )));
-            }
-            idxs.inner()
-                .elements
-                .iter()
-                .zip(vals.inner().elements.iter())
-                .map(|(idx, val)| {
-                    if let Some(i) = idx.downcast::<i32>() {
-                        *self
-                            .inner_mut()
-                            .elements
-                            .get_mut(i as usize)
-                            .ok_or_else(|| {
-                                RuntimeError::partial(&format!("Array has no element at index {i}"))
-                            })? = val.dup();
-                    } else {
-                        invalid!("Index", self, idx.get_type())
-                    }
-                    Ok(())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-        } else if let Some(range) = index.downcast::<Range>() {
-            let entry = self.inner().entry.clone();
-            let vals = value.downcast::<Arr>().ok_or_else(|| {
-                RuntimeError::partial("Array setindex using range as index must use array as value")
-            })?;
-            if vals.inner().entry != entry {
-                return Err(RuntimeError::partial(&format!(
-                    "Tried to set array index to different type ({}) than allowed ({})",
-                    vals.inner().entry,
-                    entry
-                )));
-            }
-            (range.inner().curr + 1..range.inner().last)
-                .zip(vals.inner().elements.iter())
-                .map(|(idx, val)| {
-                    *self
-                        .inner_mut()
-                        .elements
-                        .get_mut(idx as usize)
-                        .ok_or_else(|| {
-                            RuntimeError::partial(&format!("Array has no element at index {idx}"))
-                        })? = val.dup();
-                    Ok(())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-        } else {
-            invalid!("Index", self, index.get_type())
-        }
-        Ok(())
-    }
-
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()
             .elements
