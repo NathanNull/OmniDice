@@ -50,15 +50,15 @@ impl Type for RefT {
         }
     }
 
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         self.ty.bin_op_result(other, op)
     }
 
-    fn real_pre_op_result(&self, op: Op) -> Option<Datatype> {
+    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
         self.ty.pre_op_result(op)
     }
 
-    fn real_post_op_result(&self, op: Op) -> Option<Datatype> {
+    fn real_post_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
         self.ty.post_op_result(op)
     }
 
@@ -110,18 +110,6 @@ impl Val for Ref {
         } else {
             self.inner().val.set_prop(prop, value)
         }
-    }
-
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        self.inner().val.bin_op(other, op)
-    }
-
-    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
-        self.inner().val.pre_op(op)
-    }
-
-    fn post_op(&self, op: Op) -> Result<Value, RuntimeError> {
-        self.inner().val.post_op(op)
     }
 
     fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {

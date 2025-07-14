@@ -7,7 +7,7 @@ use crate::{
         Accessor, Array, Assign, AssignType, Binop, Call, Conditional, Expr, ExprContents, For,
         Function, GenericSpecify, Postfix, Prefix, Return, Scope, Tuple as TupleExpr, While,
     },
-    types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, Tuple, Value, Void},
+    types::{Arr, ArrT, Datatype, Downcast, Func, InnerFunc, Maybe, Tuple, Val, Value, Void},
 };
 
 pub struct VarScope<T: Debug> {
@@ -35,6 +35,7 @@ impl<T: Debug> Debug for VarScope<T> {
 pub struct Interpreter {
     ast: Expr,
     variables: Vec<VarScope<Value>>,
+    is_const: bool,
 }
 
 impl Interpreter {
@@ -46,6 +47,18 @@ impl Interpreter {
                 blocking: true,
                 name: "builtins",
             }],
+            is_const: false,
+        }
+    }
+
+    pub fn new_const() -> Self {
+        Self {
+            ast: Expr {
+                contents: ExprContents::Value(Box::new(Void)),
+                output: Box::new(Void),
+            },
+            variables: vec![],
+            is_const: true,
         }
     }
 
@@ -79,32 +92,37 @@ impl Interpreter {
     }
 
     fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
-        let res = match &expr.contents {
-            ExprContents::Accessor(acc) => self.eval_accessor(acc),
-            ExprContents::Value(val) => Ok(val.clone()),
-            ExprContents::Binop(binop) => self.eval_binop(binop),
-            ExprContents::Prefix(prefix) => self.eval_prefix(prefix),
-            ExprContents::Postfix(postfix) => self.eval_postfix(postfix),
-            ExprContents::Assign(assign) => self.eval_assign(assign),
-            ExprContents::Scope(scope) => self.eval_scope(scope),
-            ExprContents::Conditional(cond) => self.eval_conditional(cond),
-            ExprContents::While(wh) => self.eval_while(wh),
-            ExprContents::For(fo) => self.eval_for(fo),
-            ExprContents::Array(arr) => self.eval_array(
+        let res = match (&expr.contents, self.is_const) {
+            (ExprContents::Accessor(acc), false) => self.eval_accessor(acc),
+            (ExprContents::Value(val), _) => Ok(val.clone()),
+            (ExprContents::Binop(binop), _) => self.eval_binop(binop),
+            (ExprContents::Prefix(prefix), _) => self.eval_prefix(prefix),
+            (ExprContents::Postfix(postfix), _) => self.eval_postfix(postfix),
+            (ExprContents::Assign(assign), false) => self.eval_assign(assign),
+            (ExprContents::Scope(scope), _) => self.eval_scope(scope),
+            (ExprContents::Conditional(cond), false) => self.eval_conditional(cond),
+            (ExprContents::While(wh), false) => self.eval_while(wh),
+            (ExprContents::For(fo), false) => self.eval_for(fo),
+            (ExprContents::Array(arr), false) => self.eval_array(
                 arr,
                 expr.output
                     .downcast::<ArrT>()
-                    .expect("Array should be array")
+                    .ok_or_else(|| RuntimeError::partial("Array should be array"))?
                     .entry
                     .clone(),
             ),
-            ExprContents::Tuple(tup) => self.eval_tuple(tup),
-            ExprContents::Function(func) => self.eval_function(func),
-            ExprContents::Call(call) => self.eval_call(call, expr.output.clone()),
-            ExprContents::GenericSpecify(gspec) => self.eval_specify_generics(gspec),
-            ExprContents::Return(ret) => self.eval_return(ret),
-            ExprContents::Break(_) => self.eval_break(),
-            ExprContents::Continue(_) => self.eval_continue(),
+            (ExprContents::Tuple(tup), false) => self.eval_tuple(tup),
+            (ExprContents::Function(func), false) => self.eval_function(func),
+            (ExprContents::Call(call), false) => self.eval_call(call, expr.output.clone()),
+            (ExprContents::GenericSpecify(gspec), false) => self.eval_specify_generics(gspec),
+            (ExprContents::Return(ret), false) => self.eval_return(ret),
+            (ExprContents::Break(_), false) => self.eval_break(),
+            (ExprContents::Continue(_), false) => self.eval_continue(),
+            (_, true) => {
+                return Err(RuntimeError::partial(
+                    "Can't evaluate this at constant time",
+                ));
+            }
         }?;
         if res.get_type() != expr.output {
             return Err(RuntimeError::partial(&format!(
@@ -126,13 +144,6 @@ impl Interpreter {
                 self.eval_expr(&indexed)?.get_index(self.eval_expr(&index)?)
             }
         }
-    }
-
-    fn eval_binop(&mut self, binop: &Binop) -> Result<Value, RuntimeError> {
-        let lhs = self.eval_expr(&binop.lhs)?;
-        let rhs = self.eval_expr(&binop.rhs)?;
-        lhs.bin_op(&rhs, binop.op)
-            .map_err(|e| e.stack_loc(binop.op_loc))
     }
 
     fn get_var(&mut self, var: &str) -> Result<&Value, RuntimeError> {
@@ -182,16 +193,16 @@ impl Interpreter {
         )));
     }
 
+    fn eval_binop(&mut self, binop: &Binop) -> Result<Value, RuntimeError> {
+        (binop.res)(&binop.lhs, &binop.rhs, self).map_err(|e| e.stack_loc(binop.op_loc))
+    }
+
     fn eval_prefix(&mut self, prefix: &Prefix) -> Result<Value, RuntimeError> {
-        let rhs = self.eval_expr(&prefix.rhs)?;
-        rhs.pre_op(prefix.op)
-            .map_err(|e| e.stack_loc(prefix.op_loc))
+        (prefix.res)(&prefix.rhs, self).map_err(|e| e.stack_loc(prefix.op_loc))
     }
 
     fn eval_postfix(&mut self, postfix: &Postfix) -> Result<Value, RuntimeError> {
-        let lhs = self.eval_expr(&postfix.lhs)?;
-        lhs.post_op(postfix.op)
-            .map_err(|e| e.stack_loc(postfix.op_loc))
+        (postfix.res)(&postfix.lhs, self).map_err(|e| e.stack_loc(postfix.op_loc))
     }
 
     fn eval_assign(&mut self, assign: &Assign) -> Result<Value, RuntimeError> {
@@ -455,5 +466,11 @@ impl Interpreter {
 
     fn eval_continue(&mut self) -> Result<Value, RuntimeError> {
         Err(RuntimeError::special(RuntimeErrorType::Continue))
+    }
+
+    pub fn try_eval_as<T: Val + Clone>(&mut self, expr: &Expr) -> Result<T, RuntimeError> {
+        self.eval_expr(expr)?
+            .downcast::<T>()
+            .ok_or_else(|| RuntimeError::partial("Expression evaluated to the wrong type"))
     }
 }

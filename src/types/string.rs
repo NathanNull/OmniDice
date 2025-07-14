@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use super::*;
-use crate::{invalid, type_init};
+use crate::{invalid, op_list, type_init};
 
 static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
@@ -23,14 +23,13 @@ fn length_fn(
 
 type_init!(StringT, String, "string");
 impl Type for StringT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         if other == &StringT {
-            match op {
-                Op::Plus => Some(Box::new(StringT)),
-                Op::Equal => Some(Box::new(BoolT)),
-                Op::NotEqual => Some(Box::new(BoolT)),
-                _ => None,
-            }
+            op_list!(op => {
+                Plus(l: String, r: String) -> (StringT) |l,r: String|Ok(l+r.as_str());
+                Equal(l: String, r: String) -> (BoolT) |l,r|Ok(l==r);
+                NotEqual(l: String, r: String) -> (BoolT) |l,r|Ok(l!=r);
+            })
         } else {
             None
         }
@@ -49,19 +48,6 @@ impl Type for StringT {
 }
 
 impl Val for String {
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if let Some(rhs) = other.downcast::<String>() {
-            Ok(match op {
-                Op::Plus => Box::new(self.clone() + &rhs),
-                Op::Equal => Box::new(self == &rhs),
-                Op::NotEqual => Box::new(self != &rhs),
-                _ => invalid!(op, self, other),
-            })
-        } else {
-            invalid!(op, self, other)
-        }
-    }
-
     fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         Ok(match name {
             "length" => Box::new(LENGTH_SIG.clone().make_rust_member(length_fn, self.dup())?),

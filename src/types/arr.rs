@@ -1,7 +1,7 @@
 use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
-use crate::{gen_fn_map, invalid, mut_type_init, type_init};
+use crate::{gen_fn_map, invalid, mut_type_init, op_list, type_init};
 
 #[derive(Clone, PartialEq)]
 pub struct _InnerArr {
@@ -70,7 +70,7 @@ fn push_fn(
     params: Vec<Value>,
     _i: &mut Interpreter,
     _o: Option<Datatype>,
-) -> Result<Value, RuntimeError> {
+) -> OpResult {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if let Some(to_push) = p_iter.next() {
@@ -97,7 +97,7 @@ fn pop_fn(
     params: Vec<Value>,
     _i: &mut Interpreter,
     _o: Option<Datatype>,
-) -> Result<Value, RuntimeError> {
+) -> OpResult {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         let contents = arr.inner_mut().elements.pop();
@@ -106,16 +106,6 @@ fn pop_fn(
     }
     invalid!("Call", "push", params)
 }
-
-// fn iter_sig(params: Vec<Datatype>, _o: Option<Datatype>) -> Option<Datatype> {
-//     let mut p_iter = params.iter().cloned();
-//     if let Some(arr) = p_iter.next_as::<ArrT>() {
-//         if p_iter.next().is_none() {
-//             return Some(Box::new(IterT { output: arr.entry }));
-//         }
-//     }
-//     None
-// }
 
 static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
@@ -141,7 +131,7 @@ fn iter_fn(
     params: Vec<Value>,
     _i: &mut Interpreter,
     _o: Option<Datatype>,
-) -> Result<Value, RuntimeError> {
+) -> OpResult {
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Arr>() {
         if p_iter.next().is_none() {
@@ -161,7 +151,7 @@ pub fn iter_ret_fn(
     params: Vec<Value>,
     _i: &mut Interpreter,
     _o: Option<Datatype>,
-) -> Result<Value, RuntimeError> {
+) -> OpResult {
     let mut it = params.iter().cloned();
     let me = it
         .next_as::<Tuple>()
@@ -196,7 +186,7 @@ fn length_fn(
     params: Vec<Value>,
     _i: &mut Interpreter,
     _o: Option<Datatype>,
-) -> Result<Value, RuntimeError> {
+) -> OpResult {
     let arr = params[0]
         .downcast::<Arr>()
         .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
@@ -212,12 +202,23 @@ gen_fn_map!(
 );
 
 impl Type for ArrT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(
+        &self,
+        other: &Datatype,
+        op: Op,
+    ) -> Option<(Datatype, BinOpFn)> {
         if other == self {
-            match op {
-                Op::Plus => Some(self.dup()),
-                _ => None,
-            }
+            op_list!(op => {
+                Plus(l: Arr, r: Arr) -> (self.clone()) |l: Arr,r: Arr| Ok(Arr::new(
+                    l.inner()
+                        .elements
+                        .iter()
+                        .chain(r.inner().elements.iter())
+                        .cloned()
+                        .collect(),
+                    l.inner().entry.clone(),
+                ));
+            })
         } else {
             None
         }
@@ -265,31 +266,7 @@ impl Type for ArrT {
 }
 
 impl Val for Arr {
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if other.get_type() == self.get_type() {
-            let rhs = other.downcast::<Self>().ok_or_else(|| {
-                RuntimeError::partial(
-                    "arrbinop lhs and rhs aren't the same, despite just testing for that",
-                )
-            })?;
-            match op {
-                Op::Plus => Ok(Box::new(Self::new(
-                    self.inner()
-                        .elements
-                        .iter()
-                        .chain(rhs.inner().elements.iter())
-                        .cloned()
-                        .collect(),
-                    self.inner().entry.clone(),
-                ))),
-                _ => invalid!(op, self, other),
-            }
-        } else {
-            invalid!(op, self, other);
-        }
-    }
-
-    fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
+    fn get_prop(&self, name: &str) -> OpResult {
         match name {
             n if ARR_FNS.contains_key(n) => Ok(Box::new(
                 ARR_FNS[n]
@@ -301,7 +278,7 @@ impl Val for Arr {
         }
     }
 
-    fn get_index(&self, index: Value) -> Result<Value, RuntimeError> {
+    fn get_index(&self, index: Value) -> OpResult {
         if let Some(idx) = index.downcast::<i32>() {
             Ok(self
                 .inner()

@@ -1,51 +1,33 @@
-use crate::{invalid, type_init};
 use super::*;
+use crate::{op_list, type_init};
 
 type_init!(BoolT, bool, "bool");
 impl Type for BoolT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         if other == &BoolT {
-            match op {
-                Op::And | Op::Or | Op::Equal | Op::NotEqual => Some(self.dup()),
-                _ => None,
-            }
+            // TODO: consider not using the macro here so that I can allow short-circuiting
+            // maybe just pull out and/or
+            op_list!(op => {
+                And(l: bool, r: bool) -> (BoolT) |l,r| Ok(l && r);
+                Or(l: bool, r: bool) -> (BoolT) |l,r| Ok(l || r);
+                Equal(l: bool, r: bool) -> (BoolT) |l,r| Ok(l == r);
+                NotEqual(l: bool, r: bool) -> (BoolT) |l,r| Ok(l != r);
+            })
         } else {
             None
         }
     }
 
-    fn real_pre_op_result(&self, op: Op) -> Option<Datatype> {
-        match op {
-            Op::Not => Some(self.dup()),
-            _ => None,
-        }
+    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+        op_list!(op => {
+            Not(v: bool) -> (BoolT) |v: bool| Ok(!v);
+        })
     }
     fn is_hashable(&self) -> bool {
         true
     }
 }
 impl Val for bool {
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if let Some(rhs) = other.downcast::<bool>() {
-            Ok(Box::new(match op {
-                Op::And => *self && rhs,
-                Op::Or => *self || rhs,
-                Op::Equal => self == &rhs,
-                Op::NotEqual => self != &rhs,
-                _ => invalid!(op, self, other),
-            }))
-        } else {
-            invalid!(op, self, other)
-        }
-    }
-
-    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
-        match op {
-            Op::Not => Ok(Box::new(!self)),
-            _ => invalid!(op, self, ()),
-        }
-    }
-
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_u8(*self as u8);
         Ok(())

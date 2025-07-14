@@ -75,14 +75,14 @@ impl Type for TypeVar {
             TypeVar::BinOp(lhs, rhs, op) => {
                 let lhs = lhs.insert_generics(generics)?;
                 let rhs = rhs.insert_generics(generics)?;
-                lhs.bin_op_result(&rhs, *op)?
+                lhs.bin_op_result(&rhs, *op)?.0
             }
             TypeVar::UnaryOp(operand, op, pre) => {
                 let operand = operand.insert_generics(generics)?;
                 if *pre {
-                    operand.pre_op_result(*op)?
+                    operand.pre_op_result(*op)?.0
                 } else {
-                    operand.post_op_result(*op)?
+                    operand.post_op_result(*op)?.0
                 }
             }
             TypeVar::Call(base, items, expected_output) => {

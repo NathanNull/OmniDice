@@ -2,8 +2,7 @@ use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
 use crate::{
-    gen_fn_map, invalid, mut_type_init, type_init,
-    types::arr::{ITER_RET_SIG, iter_ret_fn},
+    gen_fn_map, invalid, mut_type_init, op_list, type_init, types::arr::{iter_ret_fn, ITER_RET_SIG}
 };
 
 #[derive(Clone)]
@@ -211,12 +210,22 @@ gen_fn_map!(
 );
 
 impl Type for MapT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         if other == self {
-            match op {
-                Op::Plus => Some(self.dup()),
-                _ => None,
-            }
+            op_list!(op => {
+                Plus(l: Map, r: Map) -> (self.clone()) |l: Map,r: Map| Map::new(
+                        {
+                            let mut m = l.inner().elements.clone();
+                            for (k, v) in r.inner().elements.iter() {
+                                m.insert(k.clone(), v.clone());
+                            }
+                            m
+                        },
+                        l.inner().key.clone(),
+                        l.inner().value.clone(),
+                    )
+                    .map_err(|e| RuntimeError::partial(&e));
+            })
         } else {
             None
         }
@@ -280,33 +289,6 @@ impl Type for MapT {
 }
 
 impl Val for Map {
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if other.get_type() == self.get_type() {
-            let rhs = other.downcast::<Self>().ok_or_else(|| {
-                RuntimeError::partial("mapbinop rhs wrong type, despite just checking")
-            })?;
-            Ok(match op {
-                Op::Plus => Box::new(
-                    Self::new(
-                        {
-                            let mut m = self.inner().elements.clone();
-                            for (k, v) in rhs.inner().elements.iter() {
-                                m.insert(k.clone(), v.clone());
-                            }
-                            m
-                        },
-                        self.inner().key.clone(),
-                        self.inner().value.clone(),
-                    )
-                    .map_err(|e| RuntimeError::partial(&e))?,
-                ),
-                _ => invalid!(op, self, other),
-            })
-        } else {
-            invalid!(op, self, other);
-        }
-    }
-
     fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         Ok(match name {
             "length" => Box::new(self.inner().elements.len() as i32),

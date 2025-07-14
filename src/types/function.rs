@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{invalid, parser::Expr, type_init};
+use crate::{ op_list, parser::Expr, type_init};
 
 use super::*;
 
@@ -237,11 +237,15 @@ impl Type for FuncT {
         })
     }
 
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if op == Op::Plus && other.possible_call() {
-            Some(Box::new(FuncSumT {
-                f_types: vec![self.dup(), other.dup()],
-            }))
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+        if other.downcast::<FuncSumT>().is_some() {
+            op_list!(op => {
+                Plus(l: Func, r: FuncSum) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
+            })
+        } else if other.downcast::<FuncT>().is_some() {
+            op_list!(op => {
+                Plus(l: Func, r: Func) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
+            })
         } else {
             None
         }
@@ -350,13 +354,6 @@ impl Val for Func {
             .eval(generics, interpreter, params, expected_output)
     }
 
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if op == Op::Plus && other.get_type().possible_call() {
-            Ok(Box::new(FuncSum::new(vec![self.dup(), other.dup()])))
-        } else {
-            invalid!(op, self, other);
-        }
-    }
     fn insert_generics(&self, generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
         let new_ty = self
             .get_type()

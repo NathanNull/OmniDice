@@ -6,7 +6,12 @@ use std::{
     sync::Arc,
 };
 
-use crate::{distribution::Distribution, interpreter::Interpreter, parser::Op, error::RuntimeError};
+use crate::{
+    distribution::Distribution,
+    error::RuntimeError,
+    interpreter::Interpreter,
+    parser::{Expr, Op},
+};
 
 mod num;
 pub use num::{FloatT, IntT};
@@ -65,6 +70,10 @@ trait BaseType {
     fn dup(&self) -> Datatype;
 }
 
+type OpResult = Result<Value, RuntimeError>;
+pub type BinOpFn = fn(&Expr, &Expr, &mut Interpreter) -> OpResult;
+pub type UnOpFn = fn(&Expr, &mut Interpreter) -> OpResult;
+
 #[allow(private_bounds)]
 pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn prop_type(&self, name: &str) -> Option<Datatype> {
@@ -81,23 +90,38 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             self.real_index_type(index)
         }
     }
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         if !self.get_generics().is_empty() || !other.get_generics().is_empty() {
-            Some(Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)))
+            fn err(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            Some((Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)), err))
         } else {
             self.real_bin_op_result(other, op)
         }
     }
-    fn pre_op_result(&self, op: Op) -> Option<Datatype> {
+    fn pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
         if !self.get_generics().is_empty() {
-            Some(Box::new(TypeVar::UnaryOp(self.dup(), op, true)))
+            fn err(_: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            Some((Box::new(TypeVar::UnaryOp(self.dup(), op, true)), err))
         } else {
             self.real_pre_op_result(op)
         }
     }
-    fn post_op_result(&self, op: Op) -> Option<Datatype> {
+    fn post_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
         if !self.get_generics().is_empty() {
-            Some(Box::new(TypeVar::UnaryOp(self.dup(), op, false)))
+            fn err(_: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "Can't operate on generic types directly",
+                ))
+            }
+            Some((Box::new(TypeVar::UnaryOp(self.dup(), op, false)), err))
         } else {
             self.real_post_op_result(op)
         }
@@ -119,13 +143,13 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn real_index_type(&self, _index: &Datatype) -> Option<Datatype> {
         None
     }
-    fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<Datatype> {
+    fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<(Datatype, BinOpFn)> {
         None
     }
-    fn real_pre_op_result(&self, _op: Op) -> Option<Datatype> {
+    fn real_pre_op_result(&self, _op: Op) -> Option<(Datatype, UnOpFn)> {
         None
     }
-    fn real_post_op_result(&self, _op: Op) -> Option<Datatype> {
+    fn real_post_op_result(&self, _op: Op) -> Option<(Datatype, UnOpFn)> {
         None
     }
     fn real_call_result(
@@ -182,34 +206,40 @@ trait BaseVal {
 
 #[allow(private_bounds)]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
-    fn get_prop(&self, _name: &str) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' has no properties.", self.get_type())))
+    fn get_prop(&self, _name: &str) -> OpResult {
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' has no properties.",
+            self.get_type()
+        )))
     }
-    fn set_prop(&self, _prop: &str, _value: Value) -> Result<(),RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' has no writable properties.", self.get_type())))
+    fn set_prop(&self, _prop: &str, _value: Value) -> Result<(), RuntimeError> {
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' has no writable properties.",
+            self.get_type()
+        )))
     }
-    fn get_index(&self, _index: Value) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' can't be indexed.", self.get_type())))
+    fn get_index(&self, _index: Value) -> OpResult {
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' can't be indexed.",
+            self.get_type()
+        )))
     }
     fn set_index(&self, _index: Value, _value: Value) -> Result<(), RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' can't be indexed writably.", self.get_type())))
-    }
-    fn bin_op(&self, _other: &Value, _op: Op) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' has no binary operations.", self.get_type())))
-    }
-    fn pre_op(&self, _op: Op) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' has no prefix operations.", self.get_type())))
-    }
-    fn post_op(&self, _op: Op) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' has no postfix operations.", self.get_type())))
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' can't be indexed writably.",
+            self.get_type()
+        )))
     }
     fn call(
         &self,
         _params: Vec<Value>,
         _interpreter: &mut Interpreter,
         _expected_output: Option<Datatype>,
-    ) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' cannot be called.", self.get_type())))
+    ) -> OpResult {
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' cannot be called.",
+            self.get_type()
+        )))
     }
     fn get_type(&self) -> Datatype {
         self.base_get_type()
@@ -217,11 +247,17 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn dup(&self) -> Value {
         self.base_dup()
     }
-    fn insert_generics(&self, _generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' cannot have generics inserted", self.get_type())))
+    fn insert_generics(&self, _generics: &Vec<Datatype>) -> OpResult {
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' cannot have generics inserted",
+            self.get_type()
+        )))
     }
     fn hash(&self, _h: &mut dyn Hasher) -> Result<(), RuntimeError> {
-        Err(RuntimeError::partial(&format!("Type '{}' cannot be hashed", self.get_type())))
+        Err(RuntimeError::partial(&format!(
+            "Type '{}' cannot be hashed",
+            self.get_type()
+        )))
     }
 }
 
@@ -231,7 +267,9 @@ macro_rules! invalid {
         let op = $op;
         let lhs = $lhs;
         let rhs = $rhs;
-        return Err(RuntimeError::partial(&format!("Invalid operation {op:?} on {lhs:?}, {rhs:?}")))
+        return Err(RuntimeError::partial(&format!(
+            "Invalid operation {op:?} on {lhs:?}, {rhs:?}"
+        )));
     }};
 }
 
@@ -358,6 +396,23 @@ macro_rules! type_init {
     };
 }
 
+#[macro_export]
+macro_rules! op_list {
+    ($match_op:expr => { $($op:ident ($($var:ident : $ty:ty),+) -> ($out:expr) $func:expr);+$(;)? }) => {{
+        $(
+        #[allow(non_snake_case)]
+        fn $op($($var: &Expr),+, i: &mut Interpreter) -> OpResult {
+            Ok(Box::new(
+                ($func)($(i.try_eval_as::<$ty>($var)?),+)?,
+            ))
+        })+
+        match $match_op {
+            $(Op::$op => Some((Box::new($out), $op)),)+
+            _ => None,
+        }
+    }}
+}
+
 pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
 
@@ -395,7 +450,7 @@ impl Eq for Value {}
 
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let _ = self.as_ref().hash(state).inspect_err(|e|panic!("{e}"));
+        let _ = self.as_ref().hash(state).inspect_err(|e| panic!("{e}"));
     }
 }
 
@@ -433,7 +488,9 @@ impl Downcast for Datatype {
 type_init!(Void, Void, "()");
 impl Type for Void {}
 impl Val for Void {
-    fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {Ok(())}
+    fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        Ok(())
+    }
 }
 
 impl PartialEq for Void {
@@ -441,16 +498,6 @@ impl PartialEq for Void {
         true
     }
 }
-
-const NUM_OPS: [Op; 4] = [Op::Plus, Op::Minus, Op::Times, Op::Divided];
-const ORD_OPS: [Op; 6] = [
-    Op::Equal,
-    Op::NotEqual,
-    Op::Greater,
-    Op::Less,
-    Op::Geq,
-    Op::Leq,
-];
 
 #[macro_export]
 macro_rules! gen_fn_map {

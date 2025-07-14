@@ -2,13 +2,15 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     ops::Deref,
+    sync::{LazyLock, Mutex},
 };
 
 use strum::EnumIter;
 
 use crate::{
     error::LineIndex,
-    types::{Arr, ArrT, Datatype, Downcast, Tuple as Tup, Value},
+    interpreter::Interpreter,
+    types::{Arr, ArrT, BinOpFn, Datatype, Downcast, Tuple as Tup, UnOpFn, Value},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -101,21 +103,12 @@ impl Debug for ExprContents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(num) => write!(f, "{:?}", num),
-            Self::Binop(Binop {
-                op,
-                lhs,
-                rhs,
-                op_loc: _,
-            }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
+            Self::Binop(Binop { op, lhs, rhs, .. }) => write!(f, "(b{op:?} {lhs:?} {rhs:?})"),
             Self::Prefix(Prefix {
-                op: prefix,
-                rhs,
-                op_loc: _,
+                op: prefix, rhs, ..
             }) => write!(f, "(pr{prefix:?} {rhs:?})"),
             Self::Postfix(Postfix {
-                op: postfix,
-                lhs,
-                op_loc: _,
+                op: postfix, lhs, ..
             }) => write!(f, "(po{postfix:?} {lhs:?})"),
             Self::Assign(Assign {
                 assignee,
@@ -266,6 +259,9 @@ impl Display for Expr {
         Ok(())
     }
 }
+
+static CONST_INTERPRETER: LazyLock<Mutex<Interpreter>> =
+    LazyLock::new(|| Mutex::new(Interpreter::new_const()));
 
 impl Expr {
     pub fn used_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
@@ -490,18 +486,15 @@ impl Expr {
             ExprContents::Binop(binop) => ExprContents::Binop(Binop {
                 lhs: binop.lhs.replace_generics(generics)?,
                 rhs: binop.rhs.replace_generics(generics)?,
-                op: binop.op,
-                op_loc: binop.op_loc,
+                ..binop.clone()
             }),
             ExprContents::Prefix(prefix) => ExprContents::Prefix(Prefix {
-                op: prefix.op,
                 rhs: prefix.rhs.replace_generics(generics)?,
-                op_loc: prefix.op_loc,
+                ..prefix.clone()
             }),
             ExprContents::Postfix(postfix) => ExprContents::Postfix(Postfix {
-                op: postfix.op,
                 lhs: postfix.lhs.replace_generics(generics)?,
-                op_loc: postfix.op_loc,
+                ..postfix.clone()
             }),
             ExprContents::Assign(assign) => ExprContents::Assign(Assign {
                 assignee: accessor_replace_generics(&assign.assignee, generics)?,
@@ -604,27 +597,12 @@ impl Expr {
     }
 
     pub fn try_const_eval(&self) -> Option<Value> {
+        let mut i = CONST_INTERPRETER.try_lock().ok()?;
         match &self.contents {
             ExprContents::Value(val) => Some(val.clone()),
-            ExprContents::Binop(binop) => {
-                if let Some((lhs, rhs)) = binop
-                    .lhs
-                    .try_const_eval()
-                    .and_then(|l| binop.rhs.try_const_eval().map(|r| (l, r)))
-                {
-                    lhs.bin_op(&rhs, binop.op).ok()
-                } else {
-                    None
-                }
-            }
-            ExprContents::Prefix(prefix) => prefix
-                .rhs
-                .try_const_eval()
-                .and_then(|rhs| rhs.pre_op(prefix.op).ok()),
-            ExprContents::Postfix(postfix) => postfix
-                .lhs
-                .try_const_eval()
-                .and_then(|lhs| lhs.post_op(postfix.op).ok()),
+            ExprContents::Binop(binop) => (binop.res)(&binop.lhs, &binop.rhs, &mut i).ok(),
+            ExprContents::Prefix(prefix) => (prefix.res)(&prefix.rhs, &mut i).ok(),
+            ExprContents::Postfix(postfix) => (postfix.res)(&postfix.lhs, &mut i).ok(),
             ExprContents::Assign(_) => None,
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(_, _) => None,
@@ -729,6 +707,8 @@ pub struct Binop {
     pub rhs: Box<Expr>,
     pub op: Op,
     pub op_loc: LineIndex,
+    pub res: BinOpFn,
+    pub out: Datatype,
 }
 
 #[derive(Debug, Clone)]
@@ -736,6 +716,8 @@ pub struct Prefix {
     pub op: Op,
     pub rhs: Box<Expr>,
     pub op_loc: LineIndex,
+    pub res: UnOpFn,
+    pub out: Datatype,
 }
 
 #[derive(Debug, Clone)]
@@ -743,6 +725,8 @@ pub struct Postfix {
     pub op: Op,
     pub lhs: Box<Expr>,
     pub op_loc: LineIndex,
+    pub res: UnOpFn,
+    pub out: Datatype,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,20 +1,31 @@
-use crate::{invalid, type_init};
 use super::*;
+use crate::{invalid, op_list, type_init};
 
 type_init!(DiceT, Distribution, "dice");
 impl Type for DiceT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if (other == &IntT || other == &DiceT) && NUM_OPS.contains(&op) {
-            Some(Box::new(DiceT))
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+        if other == &IntT {
+            op_list!(op => {
+                Plus(l: Distribution, r: i32) -> (DiceT) |l,r: i32|Ok(l + r.into());
+                Minus(l: Distribution, r: i32) -> (DiceT) |l,r: i32|Ok(l - r.into());
+                Times(l: Distribution, r: i32) -> (DiceT) |l,r: i32|Ok(l * r.into());
+                Divided(l: Distribution, r: i32) -> (DiceT) |l,r: i32|Ok(l / r.into());
+            })
+        } else if other == &DiceT {
+            op_list!(op => {
+                Plus(l: Distribution, r: Distribution) -> (DiceT) |l,r|Ok(l + r);
+                Minus(l: Distribution, r: Distribution) -> (DiceT) |l,r|Ok(l - r);
+                Times(l: Distribution, r: Distribution) -> (DiceT) |l,r|Ok(l * r);
+                Divided(l: Distribution, r: Distribution) -> (DiceT) |l,r|Ok(l / r);
+            })
         } else {
             None
         }
     }
-    fn real_pre_op_result(&self, op: Op) -> Option<Datatype> {
-        match op {
-            Op::Minus => Some(Box::new(DiceT)),
-            _ => None,
-        }
+    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+        op_list!(op => {
+            Minus(v: Distribution) -> (DiceT) |v|Ok(v * (-1).into());
+        })
     }
     fn real_prop_type(&self, name: &str) -> Option<Datatype> {
         match name {
@@ -25,35 +36,6 @@ impl Type for DiceT {
     }
 }
 impl Val for Distribution {
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if let Some(rhs) = other.downcast::<i32>() {
-            Ok(match op {
-                Op::Plus => Box::new(self.clone() + rhs.into()),
-                Op::Minus => Box::new(self.clone() - rhs.into()),
-                Op::Times => Box::new(self.clone() * rhs.into()),
-                Op::Divided => Box::new(self.clone() / rhs.into()),
-                _ => invalid!(op, self, other),
-            })
-        } else if let Some(rhs) = other.downcast::<Distribution>() {
-            Ok(match op {
-                Op::Plus => Box::new(self.clone() + rhs.clone()),
-                Op::Minus => Box::new(self.clone() - rhs.clone()),
-                Op::Times => Box::new(self.clone() * rhs.clone()),
-                Op::Divided => Box::new(self.clone() / rhs.clone()),
-                _ => invalid!(op, self, other),
-            })
-        } else {
-            invalid!(op, self, other)
-        }
-    }
-
-    fn pre_op(&self, op: Op) -> Result<Value, RuntimeError> {
-        Ok(match op {
-            Op::Minus => Box::new(self.clone() * Into::<_>::into(-1)),
-            _ => invalid!(op, self, ()),
-        })
-    }
-
     fn get_prop(&self, name: &str) -> Result<Value, RuntimeError> {
         Ok(match name {
             "mean" => Box::new(self.mean()),

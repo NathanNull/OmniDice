@@ -184,35 +184,9 @@ impl Parser {
                 }
             },
             ExprContents::Value(literal) => literal.get_type(),
-            ExprContents::Binop(binop) => {
-                match binop.lhs.output.bin_op_result(&binop.rhs.output, binop.op) {
-                    None => {
-                        return self.make_error(format!(
-                            "Invalid binary operation {:?} on {}, {}",
-                            binop.op, binop.lhs.output, binop.rhs.output
-                        ));
-                    }
-                    Some(bt) => bt,
-                }
-            }
-            ExprContents::Prefix(prefix) => match prefix.rhs.output.pre_op_result(prefix.op) {
-                None => {
-                    return self.make_error(format!(
-                        "Invalid prefix operation {:?} on {}",
-                        prefix.op, prefix.rhs.output
-                    ));
-                }
-                Some(pt) => pt,
-            },
-            ExprContents::Postfix(postfix) => match postfix.lhs.output.post_op_result(postfix.op) {
-                None => {
-                    return self.make_error(format!(
-                        "Invalid prefix operation {:?} on {:?}",
-                        postfix.op, postfix.lhs.output
-                    ));
-                }
-                Some(pt) => pt,
-            },
+            ExprContents::Binop(binop) => binop.out.clone(),
+            ExprContents::Prefix(prefix) => prefix.out.clone(),
+            ExprContents::Postfix(postfix) => postfix.out.clone(),
             ExprContents::Assign(assign) => assign.val.output.clone(),
             ExprContents::Scope(scope) => scope
                 .last()
@@ -1119,49 +1093,77 @@ impl Parser {
     ) -> Result<ExprContents, ParseError> {
         Ok(match (op, op_type) {
             (
-                OpLike::Op(Op::Plus)
-                | OpLike::Op(Op::Minus)
-                | OpLike::Op(Op::Times)
-                | OpLike::Op(Op::Divided)
-                | OpLike::Op(Op::Mod)
-                | OpLike::Op(Op::D)
-                | OpLike::Op(Op::Range)
-                | OpLike::Op(Op::RangeEq)
-                | OpLike::Op(Op::Equal)
-                | OpLike::Op(Op::NotEqual)
-                | OpLike::Op(Op::Greater)
-                | OpLike::Op(Op::Less)
-                | OpLike::Op(Op::Geq)
-                | OpLike::Op(Op::Leq)
-                | OpLike::Op(Op::And)
-                | OpLike::Op(Op::Or),
+                OpLike::Op(
+                    Op::Plus
+                    | Op::Minus
+                    | Op::Times
+                    | Op::Divided
+                    | Op::Mod
+                    | Op::D
+                    | Op::Range
+                    | Op::RangeEq
+                    | Op::Equal
+                    | Op::NotEqual
+                    | Op::Greater
+                    | Op::Less
+                    | Op::Geq
+                    | Op::Leq
+                    | Op::And
+                    | Op::Or,
+                ),
                 OpType::Infix,
-            ) => ExprContents::Binop(Binop {
-                lhs: self.new_expr(lhs, None)?,
-                rhs: self.new_expr(rhs, None)?,
-                op: match op {
+            ) => ExprContents::Binop({
+                let lhs = self.new_expr(lhs, None)?;
+                let rhs = self.new_expr(rhs, None)?;
+                let op = match op {
                     OpLike::Op(o) => o,
                     _ => unreachable!("Must have been an op to get here"),
-                },
-                op_loc,
+                };
+                let (out, res) = lhs
+                    .output
+                    .bin_op_result(&rhs.output, op.clone())
+                    .ok_or_else(|| ParseError {
+                        location: op_loc,
+                        info: "Invalid operation".to_string(),
+                    })?;
+                Binop {
+                    lhs,
+                    rhs,
+                    op,
+                    op_loc,
+                    res,
+                    out,
+                }
             }),
-            (OpLike::Op(Op::Minus), OpType::Prefix) => ExprContents::Prefix(Prefix {
-                op: Op::Minus,
-                rhs: self.new_expr(rhs, None)?,
-                op_loc,
-            }),
-            (OpLike::Op(Op::Not), OpType::Prefix) => ExprContents::Prefix(Prefix {
-                op: Op::Not,
-                rhs: self.new_expr(rhs, None)?,
-                op_loc,
+            (OpLike::Op(Op::Minus | Op::Not), OpType::Prefix) => ExprContents::Prefix({
+                let rhs = self.new_expr(rhs, None)?;
+                let op = match op {
+                    OpLike::Op(o) => o,
+                    _ => unreachable!("Must have been an op to get here"),
+                };
+                let (out, res) =
+                    rhs.output
+                        .pre_op_result(op.clone())
+                        .ok_or_else(|| ParseError {
+                            location: op_loc,
+                            info: "Invalid operation".to_string(),
+                        })?;
+                Prefix {
+                    op,
+                    rhs,
+                    op_loc,
+                    res,
+                    out,
+                }
             }),
             // "d6" expands to "1d6"
-            (OpLike::Op(Op::D), OpType::Prefix) => ExprContents::Binop(Binop {
-                lhs: self.new_expr(ExprContents::Value(Box::new(1)), Some(Box::new(IntT)))?,
-                rhs: self.new_expr(rhs, None)?,
-                op: Op::D,
+            (OpLike::Op(Op::D), OpType::Prefix) => self.make_expr(
+                ExprContents::Value(Box::new(1)),
+                rhs,
+                op,
+                OpType::Infix,
                 op_loc,
-            }),
+            )?,
             (OpLike::Assign, OpType::Infix) => {
                 let prev_type = self.new_expr(lhs.clone(), None)?.output;
                 self.parse_assign(AssignType::Reassign, lhs, rhs, Some(prev_type), op_loc)?

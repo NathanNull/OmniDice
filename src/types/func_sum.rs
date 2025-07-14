@@ -1,6 +1,8 @@
-use crate::{invalid, type_init};
+use crate::{invalid, op_list, type_init};
 
 use super::*;
+
+// TODO: this should really be combined with the base Func, probably as another enum variant.
 
 #[derive(Clone, Debug)]
 pub struct FuncSum {
@@ -53,8 +55,6 @@ impl Display for FuncSumT {
     }
 }
 
-// TODO: idk if this needed anything but if it does, add it
-// TODO: what did I mean by this
 impl Type for FuncSumT {
     fn real_call_result(
         &self,
@@ -72,11 +72,15 @@ impl Type for FuncSumT {
         true
     }
 
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<Datatype> {
-        if op == Op::Plus && other.possible_call() {
-            Some(Box::new(FuncSumT {
-                f_types: vec![self.dup(), other.dup()],
-            }))
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+        if other.downcast::<FuncSumT>().is_some() {
+            op_list!(op => {
+                Plus(l: FuncSum, r: FuncSum) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
+            })
+        } else if other.downcast::<FuncT>().is_some() {
+            op_list!(op => {
+                Plus(l: FuncSum, r: Func) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
+            })
         } else {
             None
         }
@@ -124,12 +128,5 @@ impl Val for FuncSum {
             }
         }
         invalid!("Call", self, ());
-    }
-    fn bin_op(&self, other: &Value, op: Op) -> Result<Value, RuntimeError> {
-        if op == Op::Plus && other.get_type().possible_call() {
-            Ok(Box::new(FuncSum::new(vec![self.dup(), other.dup()])))
-        } else {
-            invalid!(op, self, other);
-        }
     }
 }
