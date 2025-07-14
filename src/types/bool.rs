@@ -5,14 +5,27 @@ type_init!(BoolT, bool, "bool");
 impl Type for BoolT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
         if other == &BoolT {
-            // TODO: consider not using the macro here so that I can allow short-circuiting
-            // maybe just pull out and/or
-            op_list!(op => {
-                And(l: bool, r: bool) -> (BoolT) |l,r| Ok(l && r);
-                Or(l: bool, r: bool) -> (BoolT) |l,r| Ok(l || r);
-                Equal(l: bool, r: bool) -> (BoolT) |l,r| Ok(l == r);
-                NotEqual(l: bool, r: bool) -> (BoolT) |l,r| Ok(l != r);
-            })
+            // And and Or are pulled out separately so short-circuiting works
+            if op == Op::And {
+                fn and(l: &Expr, r: &Expr, i: &mut Interpreter) -> OpResult {
+                    Ok(Box::new(
+                        i.try_eval_as::<bool>(l)? && i.try_eval_as::<bool>(r)?,
+                    ))
+                }
+                Some((self.dup(), and))
+            } else if op == Op::Or {
+                fn or(l: &Expr, r: &Expr, i: &mut Interpreter) -> OpResult {
+                    Ok(Box::new(
+                        i.try_eval_as::<bool>(l)? || i.try_eval_as::<bool>(r)?,
+                    ))
+                }
+                Some((self.dup(), or))
+            } else {
+                op_list!(op => {
+                    Equal(l: bool, r: bool) -> (BoolT) |l,r| Ok(l == r);
+                    NotEqual(l: bool, r: bool) -> (BoolT) |l,r| Ok(l != r);
+                })
+            }
         } else {
             None
         }
