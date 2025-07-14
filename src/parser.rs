@@ -4,7 +4,7 @@ use crate::{
     TokenIter, TokenWidth,
     builtins::BUILTINS,
     error::{LineIndex, ParseError},
-    interpreter::VarScope,
+    interpreter::{Interpreter, VarScope},
     lexer::{Bracket, Keyword, OpLike, Token, TokenString},
     types::{
         ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
@@ -74,13 +74,12 @@ impl Parser {
             output: output.clone(),
             contents,
         });
-        Ok(if let Some(val) = expr.try_const_eval() {
-            Box::new(Expr {
+        Ok(match Interpreter::new_const().eval_expr(&expr) {
+            Ok(val) => Box::new(Expr {
                 contents: ExprContents::Value(val),
                 output,
-            })
-        } else {
-            expr
+            }),
+            Err(_) => expr,
         })
     }
 

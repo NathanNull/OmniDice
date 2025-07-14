@@ -2,15 +2,13 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     ops::Deref,
-    sync::{LazyLock, Mutex},
 };
 
 use strum::EnumIter;
 
 use crate::{
     error::LineIndex,
-    interpreter::Interpreter,
-    types::{Arr, ArrT, BinOpFn, Datatype, Downcast, Tuple as Tup, UnOpFn, Value},
+    types::{BinOpFn, Datatype, UnOpFn, Value},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -259,9 +257,6 @@ impl Display for Expr {
         Ok(())
     }
 }
-
-static CONST_INTERPRETER: LazyLock<Mutex<Interpreter>> =
-    LazyLock::new(|| Mutex::new(Interpreter::new_const()));
 
 impl Expr {
     pub fn used_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
@@ -594,71 +589,6 @@ impl Expr {
             contents: new_contents,
             output: new_type,
         }))
-    }
-
-    pub fn try_const_eval(&self) -> Option<Value> {
-        let mut i = CONST_INTERPRETER.try_lock().ok()?;
-        match &self.contents {
-            ExprContents::Value(val) => Some(val.clone()),
-            ExprContents::Binop(binop) => (binop.res)(&binop.lhs, &binop.rhs, &mut i).ok(),
-            ExprContents::Prefix(prefix) => (prefix.res)(&prefix.rhs, &mut i).ok(),
-            ExprContents::Postfix(postfix) => (postfix.res)(&postfix.lhs, &mut i).ok(),
-            ExprContents::Assign(_) => None,
-            ExprContents::Accessor(accessor) => match accessor {
-                Accessor::Variable(_, _) => None,
-                Accessor::Property(base, prop, _) => base
-                    .try_const_eval()
-                    .and_then(|b| b.get_prop(prop).ok())
-                    .and_then(|v| {
-                        if v.get_type().possible_call() {
-                            None
-                        } else {
-                            Some(v)
-                        }
-                    }),
-                Accessor::Index(base, index, _) => {
-                    if let Some((b, i)) = base
-                        .try_const_eval()
-                        .and_then(|l| index.try_const_eval().map(|r| (l, r)))
-                    {
-                        b.get_index(i).ok()
-                    } else {
-                        None
-                    }
-                }
-            },
-            ExprContents::Array(array) => {
-                fn arr_eval(arr: &Array, out: Datatype) -> Option<Arr> {
-                    let mut vals = vec![];
-                    for expr in &arr.elements {
-                        vals.push(expr.try_const_eval()?)
-                    }
-                    Some(Arr::new(vals, out))
-                }
-                arr_eval(array, self.output.downcast::<ArrT>().unwrap().entry)
-                    .map(|a| Box::new(a) as Value)
-            }
-            ExprContents::Tuple(tuple) => {
-                fn tup_eval(tup: &Tuple) -> Option<Tup> {
-                    let mut vals = vec![];
-                    for expr in &tup.elements {
-                        vals.push(expr.try_const_eval()?)
-                    }
-                    Some(Tup::new(vals))
-                }
-                tup_eval(tuple).map(|t| Box::new(t) as Value)
-            }
-            ExprContents::Scope(_)
-            | ExprContents::Conditional(_)
-            | ExprContents::While(_)
-            | ExprContents::For(_)
-            | ExprContents::Function(_)
-            | ExprContents::Call(_)
-            | ExprContents::GenericSpecify(_)
-            | ExprContents::Return(_)
-            | ExprContents::Break(_)
-            | ExprContents::Continue(_) => None,
-        }
     }
 }
 

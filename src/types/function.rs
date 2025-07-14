@@ -4,7 +4,7 @@ use crate::{ op_list, parser::Expr, type_init};
 
 use super::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Func {
     pub params: Vec<Datatype>,
     pub owner_t: Option<Datatype>,
@@ -13,12 +13,27 @@ pub struct Func {
     pub contents: InnerFunc,
 }
 
+impl Debug for Func {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Func {{ contents: {:?} }}", self.contents)
+    }
+}
+
 type RustFunc = fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, RuntimeError>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum InnerFunc {
     Code(Expr, Vec<String>, HashMap<String, Value>),
     Rust(RustFunc, Option<Value>),
+}
+
+impl Debug for InnerFunc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InnerFunc::Code(expr, _, _) => write!(f, "Code({expr:?})"),
+            InnerFunc::Rust(func, _) => write!(f, "Internal({func:?})"),
+        }
+    }
 }
 
 impl InnerFunc {

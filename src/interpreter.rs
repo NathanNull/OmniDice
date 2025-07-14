@@ -91,19 +91,16 @@ impl Interpreter {
         Ok(last)
     }
 
-    fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
+    pub fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         let res = match (&expr.contents, self.is_const) {
-            (ExprContents::Accessor(acc), false) => self.eval_accessor(acc),
+            // const-legal expressions (everything that has no side effects and doesn't loop)
             (ExprContents::Value(val), _) => Ok(val.clone()),
             (ExprContents::Binop(binop), _) => self.eval_binop(binop),
             (ExprContents::Prefix(prefix), _) => self.eval_prefix(prefix),
             (ExprContents::Postfix(postfix), _) => self.eval_postfix(postfix),
-            (ExprContents::Assign(assign), false) => self.eval_assign(assign),
             (ExprContents::Scope(scope), _) => self.eval_scope(scope),
-            (ExprContents::Conditional(cond), false) => self.eval_conditional(cond),
-            (ExprContents::While(wh), false) => self.eval_while(wh),
-            (ExprContents::For(fo), false) => self.eval_for(fo),
-            (ExprContents::Array(arr), false) => self.eval_array(
+            (ExprContents::Accessor(acc), _) => self.eval_accessor(acc),
+            (ExprContents::Array(arr), _) => self.eval_array(
                 arr,
                 expr.output
                     .downcast::<ArrT>()
@@ -111,16 +108,22 @@ impl Interpreter {
                     .entry
                     .clone(),
             ),
-            (ExprContents::Tuple(tup), false) => self.eval_tuple(tup),
-            (ExprContents::Function(func), false) => self.eval_function(func),
+            (ExprContents::Tuple(tup), _) => self.eval_tuple(tup),
+            (ExprContents::Conditional(cond), _) => self.eval_conditional(cond),
+            (ExprContents::Function(func), _) => self.eval_function(func),
+            (ExprContents::GenericSpecify(gspec), _) => self.eval_specify_generics(gspec),
+
+            // runtime-only expressions (side effects and loops)
+            (ExprContents::Assign(assign), false) => self.eval_assign(assign),
+            (ExprContents::While(wh), false) => self.eval_while(wh),
+            (ExprContents::For(fo), false) => self.eval_for(fo),
             (ExprContents::Call(call), false) => self.eval_call(call, expr.output.clone()),
-            (ExprContents::GenericSpecify(gspec), false) => self.eval_specify_generics(gspec),
             (ExprContents::Return(ret), false) => self.eval_return(ret),
             (ExprContents::Break(_), false) => self.eval_break(),
             (ExprContents::Continue(_), false) => self.eval_continue(),
             (_, true) => {
                 return Err(RuntimeError::partial(
-                    "Can't evaluate this at constant time",
+                    "Can't evaluate this at compile time",
                 ));
             }
         }?;
