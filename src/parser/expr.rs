@@ -183,9 +183,13 @@ impl Display for Expr {
             ExprContents::Accessor(accessor) => match accessor {
                 Accessor::Variable(v, _) => (format!("{v}"), vec![]),
                 Accessor::Property(base, prop, ..) => (format!("prop {prop} of"), vec![&base]),
-                Accessor::Index(indexed, index, ..) => {
-                    ("index".to_string(), vec![&indexed, &index])
-                }
+                Accessor::Index(indexed, _, indices) => (
+                    "index".to_string(),
+                    vec![&indexed as &Expr]
+                        .into_iter()
+                        .chain(indices.iter().map(|i| &i.0 as &Expr))
+                        .collect(),
+                ),
             },
             ExprContents::Scope(exprs) => ("scope".to_string(), exprs.iter().collect()),
             ExprContents::Conditional(cond) => ("if".to_string(), {
@@ -587,7 +591,11 @@ impl Expr {
                     }
                     res
                 };
-                let out = if base != call.base || params != call.params {None} else {Some(call.out.clone())};
+                let out = if base != call.base || params != call.params {
+                    None
+                } else {
+                    Some(call.out.clone())
+                };
                 Call::new(base, params, call.loc, out).map_err(|e| e.info)?
             }),
             ExprContents::GenericSpecify(gspec) => ExprContents::GenericSpecify(GenericSpecify {
@@ -621,8 +629,14 @@ fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = Str
     match accessor {
         Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
         Accessor::Property(base, ..) => base.used_variables(),
-        Accessor::Index(indexed, index, ..) => {
-            Box::new(indexed.used_variables().chain(index.used_variables()))
+        Accessor::Index(indexed, _, indices) => {
+            // FIXME: this doesn't filter out variables assigned in previous indices
+            let mut vars: Box<dyn Iterator<Item = String> + 'a> =
+                Box::new(indexed.used_variables());
+            for (index, ..) in indices {
+                vars = Box::new(vars.chain(index.used_variables()))
+            }
+            vars
         }
     }
 }
@@ -631,11 +645,14 @@ fn accessor_assigned_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item =
     match accessor {
         Accessor::Variable(_, _) => Box::new([].into_iter()),
         Accessor::Property(base, ..) => base.assigned_variables(),
-        Accessor::Index(indexed, index, ..) => Box::new(
-            indexed
-                .assigned_variables()
-                .chain(index.assigned_variables()),
-        ),
+        Accessor::Index(indexed, _, indices) => {
+            let mut vars: Box<dyn Iterator<Item = String> + 'a> =
+                Box::new(indexed.used_variables());
+            for (index, ..) in indices {
+                vars = Box::new(vars.chain(index.used_variables()))
+            }
+            vars
+        }
     }
 }
 
@@ -649,9 +666,12 @@ fn accessor_replace_generics(
             Accessor::new_property(base.replace_generics(generics)?, prop.clone(), *i)
                 .map_err(|e| e.info)?
         }
-        Accessor::Index(base, index, i, ..) => Accessor::new_index(
+        Accessor::Index(base, i, indices) => Accessor::new_index(
             base.replace_generics(generics)?,
-            index.replace_generics(generics)?,
+            indices
+                .iter()
+                .map(|(index, ..)| index.replace_generics(generics).map(|i| *i))
+                .collect::<Result<Vec<_>, _>>()?,
             *i,
         )
         .map_err(|e| e.info)?,
@@ -787,7 +807,11 @@ pub enum Accessor {
         Option<SetFn>,
         Datatype,
     ),
-    Index(Box<Expr>, Box<Expr>, LineIndex, BinOpFn, SetAtFn, Datatype),
+    Index(
+        Box<Expr>,
+        LineIndex,
+        Vec<(Box<Expr>, BinOpFn, SetAtFn, Datatype)>,
+    ),
 }
 
 impl Accessor {
@@ -801,18 +825,22 @@ impl Accessor {
 
     pub fn new_index(
         indexed: Box<Expr>,
-        index: Box<Expr>,
+        indices: Vec<Expr>,
         loc: LineIndex,
     ) -> Result<Self, ParseError> {
-        let (out, get, set) =
-            indexed
-                .output
-                .index_type(&index.output)
-                .map_err(|e| ParseError {
-                    location: loc,
-                    info: e,
-                })?;
-        Ok(Self::Index(indexed, index, loc, get, set, out))
+        let mut res = vec![];
+        for index in indices {
+            let (out, get, set) =
+                indexed
+                    .output
+                    .index_type(&index.output)
+                    .map_err(|e| ParseError {
+                        location: loc,
+                        info: e,
+                    })?;
+            res.push((Box::new(index), get, set, out));
+        }
+        Ok(Self::Index(indexed, loc, res))
     }
 }
 
@@ -928,7 +956,12 @@ pub struct Call {
 }
 
 impl Call {
-    pub fn new(base: Box<Expr>, params: Vec<Expr>, loc: LineIndex, out: Option<Datatype>) -> Result<Self, ParseError> {
+    pub fn new(
+        base: Box<Expr>,
+        params: Vec<Expr>,
+        loc: LineIndex,
+        out: Option<Datatype>,
+    ) -> Result<Self, ParseError> {
         let (new_out, res) = base
             .output
             .call_result(params.iter().map(|p| p.output.clone()).collect(), out)

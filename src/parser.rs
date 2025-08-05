@@ -160,7 +160,10 @@ impl Parser {
             ExprContents::Accessor(acc) => match acc {
                 Accessor::Variable(var, _) => self.get_var_type(var)?,
                 Accessor::Property(.., out) => out.clone(),
-                Accessor::Index(.., out) => out.clone(),
+                Accessor::Index(.., indices) => match indices.len() {
+                    1 => indices[0].3.clone(),
+                    _ => Box::new(TupT { entries: indices.iter().map(|(..,out)|out.clone()).collect() })
+                },
             },
             ExprContents::Value(literal) => literal.get_type(),
             ExprContents::Binop(binop) => binop.out.clone(),
@@ -267,7 +270,7 @@ impl Parser {
             true
         } && self.tokens.peek().unwrap() != expected_end.last().unwrap()
         {
-            let contents = self.parse_expr(0, &expected_end, true, false, None)?;
+            let contents = self.parse_expr(0, &expected_end, true, None)?;
             let is_last = self.tokens.peek().unwrap() == expected_end.last().unwrap();
             exprs.push(
                 *self.new_expr(contents, if is_last { expected_type.clone() } else { None })?,
@@ -287,14 +290,11 @@ impl Parser {
 
     /// expected_end is what the expression is allowed to stop on, and allow_imply_eol is whether
     /// the parser can insert semicolons where it sees that they are needed (i.e. after RCURLY).
-    /// allow_join is whether the resulting expression can be an exposed (no brackets) tuple, and
-    /// should generally be false.
     fn parse_expr(
         &mut self,
         min_bp: u8,
         expected_end: &Vec<Token>,
         allow_imply_eol: bool,
-        allow_join: bool,
         expected_type: Option<Datatype>,
     ) -> Result<ExprContents, ParseError> {
         let mut imply_eol = false;
@@ -312,17 +312,25 @@ impl Parser {
                     self.tokens.next();
                     VOID.contents.clone()
                 } else {
-                    let lhs = self.parse_expr(
-                        0,
-                        &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
-                        false,
-                        true,
-                        None,
-                    )?;
-                    self.tokens
-                        .expect(Token::OpLike(OpLike::Bracket(Bracket::RBracket)))
-                        .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
-                    lhs
+                    let mut elements = vec![];
+                    loop {
+                        elements.push(self.parse_expr(
+                            0,
+                            &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket)), Token::Comma],
+                            false,
+                            None,
+                        )?);
+                        match self.tokens.next() {
+                            Some(Token::Comma) => continue,
+                            Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                            Some(tk) => return self.make_error(format!("Expected ] or , but found {tk}")),
+                            None => return self.make_error("Unexpected EOF".to_string()),
+                        }
+                    }
+                    match elements.len() {
+                        1 => elements[0].clone(),
+                        _ => ExprContents::Tuple(Tuple { elements: elements.into_iter().map(|e|self.new_expr(e, None).map(|i|*i)).collect::<Result<_,_>>()? })
+                    }
                 }
             }
             Token::OpLike(OpLike::Bracket(Bracket::LCurly)) => {
@@ -337,7 +345,7 @@ impl Parser {
             Token::OpLike(op) => {
                 if let Some(((), r_bp)) = PREFIX_BINDING_POWER.get(&op) {
                     let op_loc = self.tokens.pos;
-                    let rhs = self.parse_expr(*r_bp, expected_end, false, false, None)?;
+                    let rhs = self.parse_expr(*r_bp, expected_end, false, None)?;
                     self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix, op_loc)?
                 } else {
                     return self.make_error(format!("Invalid prefix operator {op:?}"));
@@ -368,7 +376,7 @@ impl Parser {
                     }
                 };
 
-                let typehint = if self.tokens.eat([Token::OpLike(OpLike::Colon)]).is_some() {
+                let typehint = if self.tokens.eat([Token::Colon]).is_some() {
                     Some(self.parse_type()?)
                 } else {
                     None
@@ -382,7 +390,6 @@ impl Parser {
                 let rhs = self.parse_expr(
                     INFIX_BINDING_POWER[&OpLike::Assign].1,
                     expected_end,
-                    false,
                     false,
                     typehint.clone(),
                 )?;
@@ -414,7 +421,6 @@ impl Parser {
                         INFIX_BINDING_POWER[&OpLike::Assign].1,
                         expected_end,
                         allow_imply_eol,
-                        allow_join,
                         Some(ret_type.clone())
                     )?;
                     let expected_type = Some(ret_type.clone());
@@ -455,24 +461,36 @@ impl Parser {
                         break;
                     }
                     self.tokens.next(); // Remove the [
-                    let index = self.parse_expr(
-                        0,
-                        &vec![Token::OpLike(OpLike::Bracket(Bracket::RSquare))],
-                        false,
-                        true,
-                        None,
-                    )?;
-                    self.tokens
-                        .expect(Token::OpLike(OpLike::Bracket(Bracket::RSquare)))
-                        .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+                    let mut indices = vec![];
+                    loop {
+                        indices.push(self.parse_expr(
+                            0,
+                            &vec![Token::OpLike(OpLike::Bracket(Bracket::RSquare)), Token::Comma],
+                            false,
+                            None,
+                        )?);
+                        match self.tokens.next() {
+                            Some(Token::Comma) => continue,
+                            Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
+                            Some(tk) => return self.make_error(format!("Expected ] or , but found {tk}")),
+                            None => return self.make_error("Unexpected EOF".to_string()),
+                        }
+                    }
                     let base = self.new_expr(lhs, None)?;
-                    let index = self.new_expr(index, None)?;
+                    let indices = {
+                        let mut res = vec![];
+                        for index in indices {
+                            res.push(*self.new_expr(index, None)?);
+                        }
+                        res
+                    };
                     
                     lhs = ExprContents::Accessor(Accessor::new_index(
                         base,
-                        index,
+                        indices,
                         op_loc,
                     )?);
+                    
                     continue;
                 }
                 Token::OpLike(OpLike::Bracket(Bracket::LBracket)) => {
@@ -493,55 +511,27 @@ impl Parser {
                     {
                         vec![]
                     } else {
-                        let p = match self.parse_expr(
-                            0,
-                            &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket))],
-                            false,
-                            true,
-                            None,
-                        )? {
-                            ExprContents::Tuple(tup) => tup.elements,
-                            expr => vec![*self.new_expr(expr, None)?],
-                        };
-                        self.tokens
-                            .expect(Token::OpLike(OpLike::Bracket(Bracket::RBracket)))
-                            .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
-                        p
+                        let mut params = vec![];
+                        loop {
+                            let contents = self.parse_expr(
+                                0,
+                                &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket)), Token::Comma],
+                                false,
+                                None,
+                            )?;
+                            params.push(*self.new_expr(contents, None)?);
+                            match self.tokens.next() {
+                                Some(Token::Comma) => continue,
+                                Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
+                                Some(tk) => return self.make_error(format!("Expected ] or , but found {tk}")),
+                                None => return self.make_error("Unexpected EOF".to_string()),
+                            }
+                        }
+                        params
                     };
                     let base = self.new_expr(lhs, None)?;
                     lhs = ExprContents::Call(Call::new(base, params, loc, expected_type.clone())?);
                     continue;
-                }
-                Token::OpLike(OpLike::Comma) if allow_join => {
-                    let (l_bp, r_bp) = INFIX_BINDING_POWER.get(&OpLike::Comma).unwrap();
-                    if *l_bp < min_bp {
-                        break;
-                    }
-                    let mut elements = vec![*self.new_expr(lhs, None)?];
-                    self.tokens.next();
-                    if expected_end.contains(&self.tokens.peek().unwrap()) {
-                        lhs = ExprContents::Tuple(Tuple { elements });
-                        break;
-                    }
-                    let mut new_end = expected_end.clone();
-                    new_end.push(Token::OpLike(OpLike::Comma));
-                    loop {
-                        if !expected_end.contains(self.tokens.peek().unwrap()) {
-                            let next =
-                                self.parse_expr(*r_bp, &new_end, allow_imply_eol, allow_join, None)?;
-                            elements.push(*self.new_expr(next, None)?);
-                        }
-                        match self.tokens.next() {
-                            Some(Token::OpLike(OpLike::Comma)) => (),
-                            Some(tk) if expected_end.contains(&tk) => {
-                                lhs = ExprContents::Tuple(Tuple { elements });
-                                self.tokens.replace(tk);
-                                break;
-                            }
-                            tk => return self.make_error(format!("Unexpected token {tk:?}")),
-                        }
-                    }
-                    break;
                 }
                 Token::OpLike(OpLike::LTurbofish) => {
                     self.tokens.next();
@@ -551,7 +541,7 @@ impl Parser {
                         match self.tokens.next() {
                             None => return self.make_error("Unexpected EOF".to_string()),
                             Some(Token::OpLike(OpLike::Op(Op::Greater))) => break,
-                            Some(Token::OpLike(OpLike::Comma)) => continue,
+                            Some(Token::Comma) => continue,
                             Some(tk) => {
                                 return self.make_error(format!(
                                     "Unexpected token {tk:?} in generic specification"
@@ -599,7 +589,7 @@ impl Parser {
             }
             self.tokens.next();
             let op_loc = self.tokens.pos;
-            let rhs = self.parse_expr(*r_bp, expected_end, false, allow_join, None)?;
+            let rhs = self.parse_expr(*r_bp, expected_end, false, None)?;
             lhs = self.make_expr(lhs, rhs, op, OpType::Infix, op_loc)?;
         }
         Ok(lhs)
@@ -672,7 +662,6 @@ impl Parser {
             0,
             &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
             false,
-            false,
             None,
         )?;
         let iter_loc = self.tokens.pos;
@@ -723,7 +712,6 @@ impl Parser {
             0,
             &vec![Token::OpLike(OpLike::Bracket(Bracket::LCurly))],
             false,
-            false,
             Some(Box::new(BoolT)),
         )?;
         let clause = self.new_expr(expr, Some(BOOL.output.clone()))?;
@@ -768,12 +756,11 @@ impl Parser {
                             return self.make_error(e);
                         }
                     },
-                    Accessor::Index(indexed, index, ..) => {
-                        match indexed.output.index_type(&index.output) {
-                            Ok((it, ..)) => it,
-                            Err(e) => {
-                                return self.make_error(e);
-                            }
+                    Accessor::Index(_, _, indices) => {
+                        if indices.len() != 1 {
+                            return self.make_error("Can't use multiple-index pattern for assignment".to_string())
+                        } else {
+                            indices[0].3.clone()
                         }
                     }
                 };
@@ -839,10 +826,9 @@ impl Parser {
             let expr = self.parse_expr(
                 0,
                 &vec![
-                    Token::OpLike(OpLike::Comma),
+                    Token::Comma,
                     Token::OpLike(OpLike::Bracket(Bracket::RSquare)),
                 ],
-                false,
                 false,
                 expected_type.clone(),
             )?;
@@ -850,7 +836,7 @@ impl Parser {
             expected_type = Some(to_push.output.clone());
             elements.push(*to_push);
             match self.tokens.next() {
-                Some(Token::OpLike(OpLike::Comma)) => (),
+                Some(Token::Comma) => (),
                 Some(Token::OpLike(OpLike::Bracket(Bracket::RSquare))) => break,
                 next => {
                     return self
@@ -878,7 +864,7 @@ impl Parser {
                     tk => return self.make_error(format!("Expected identifier, found {tk:?}")),
                 });
                 match self.tokens.next() {
-                    Some(Token::OpLike(OpLike::Comma)) => continue,
+                    Some(Token::Comma) => continue,
                     Some(Token::OpLike(OpLike::Op(Op::Greater))) => break,
                     tk => return self.make_error(format!("Unexpected token {tk:?}")),
                 }
@@ -910,12 +896,12 @@ impl Parser {
                 tk => return self.make_error(format!("Expected identifier, found {tk:?}")),
             };
             self.tokens
-                .expect(Token::OpLike(OpLike::Colon))
+                .expect(Token::Colon)
                 .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
             let ty = self.parse_type()?;
             params.push((name, ty));
             match self.tokens.next() {
-                Some(Token::OpLike(OpLike::Comma)) => (),
+                Some(Token::Comma) => (),
                 Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                 tk => return self.make_error(format!("Unexpected token {tk:?}")),
             }
@@ -1003,7 +989,7 @@ impl Parser {
                     }
                     params.push(self.parse_type()?);
                     match self.tokens.next() {
-                        Some(Token::OpLike(OpLike::Comma)) => (),
+                        Some(Token::Comma) => (),
                         Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                         Some(tk) => {
                             return self
@@ -1036,7 +1022,7 @@ impl Parser {
                         loop {
                             entries.push(self.parse_type()?);
                             match self.tokens.next() {
-                                Some(Token::OpLike(OpLike::Comma)) => (),
+                                Some(Token::Comma) => (),
                                 Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
                                 Some(tk) => {
                                     return self.make_error(format!(
@@ -1134,7 +1120,7 @@ impl Parser {
                 let base = self.new_expr(lhs, None)?;
                 ExprContents::Accessor(Accessor::new_property(base, rhs, op_loc)?)
             }
-            (OpLike::Bracket(_) | OpLike::Colon | OpLike::Comma | OpLike::LTurbofish, _) => {
+            (OpLike::Bracket(_) | OpLike::LTurbofish, _) => {
                 unreachable!(
                     "{:?} is not a valid operation and should not parse as such",
                     op
@@ -1171,7 +1157,6 @@ impl Parser {
 // Ordered from lowest to highest binding power
 static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
     vec![
-        (vec![OpLike::Comma], OpType::Infix, false),
         (
             Op::iter()
                 .map(|op| OpLike::OpAssign(op))

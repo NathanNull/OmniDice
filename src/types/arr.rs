@@ -318,7 +318,7 @@ impl Type for ArrT {
                 let me = i.try_eval_as::<Arr>(me)?;
                 let eles = &me.inner().elements;
                 Ok(Box::new(Arr::new(
-                    (range.inner().curr + 1..range.inner().last)
+                    (range.inner().curr + 1..=range.inner().last)
                         .map(|idx| {
                             Ok(eles
                                 .get(idx as usize)
@@ -345,7 +345,7 @@ impl Type for ArrT {
                         entry
                     )));
                 }
-                (range.inner().curr + 1..range.inner().last)
+                (range.inner().curr + 1..=range.inner().last)
                     .zip(vals.inner().elements.iter())
                     .map(|(idx, val)| {
                         *me.inner_mut()

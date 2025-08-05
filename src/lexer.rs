@@ -14,6 +14,8 @@ pub enum Token {
     OpLike(OpLike),
     EOL,
     EOF,
+    Comma,
+    Colon,
     Arrow,
 }
 
@@ -26,6 +28,8 @@ impl Display for Token {
             Self::OpLike(ol) => write!(f, "{ol}"),
             Self::EOL => write!(f, ";"),
             Self::EOF => write!(f, "EOF"),
+            Self::Comma => write!(f, ","),
+            Self::Colon => write!(f, ":"),
             Self::Arrow => write!(f, "->"),
         }
     }
@@ -106,8 +110,6 @@ pub enum OpLike {
     OpAssign(Op),
     Access,
     Bracket(Bracket),
-    Colon,
-    Comma,
     LTurbofish,
 }
 
@@ -119,8 +121,6 @@ impl Display for OpLike {
             OpLike::OpAssign(op) => write!(f, "{op:?}="),
             OpLike::Access => write!(f, "."),
             OpLike::Bracket(b) => write!(f, "{b}"),
-            OpLike::Colon => write!(f, ":"),
-            OpLike::Comma => write!(f, ","),
             OpLike::LTurbofish => write!(f, "::<"),
         }
     }
@@ -134,8 +134,6 @@ impl Debug for OpLike {
             Self::OpAssign(op) => &format!("{op:?}="),
             Self::Access => ".",
             Self::Bracket(b) => &format!("{b:?}"),
-            Self::Colon => ":",
-            Self::Comma => ",",
             Self::LTurbofish => "::<",
         };
         write!(f, "{c}")
@@ -399,8 +397,8 @@ impl<'a> Lexer<'a> {
             ("]", Token::OpLike(OpLike::Bracket(Bracket::RSquare))),
             ("=", Token::OpLike(OpLike::Assign)),
             (".", Token::OpLike(OpLike::Access)),
-            (",", Token::OpLike(OpLike::Comma)),
-            (":", Token::OpLike(OpLike::Colon)),
+            (",", Token::Comma),
+            (":", Token::Colon),
             (";", Token::EOL),
         ] {
             if self.code.eat_str(pattern) {

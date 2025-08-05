@@ -144,7 +144,16 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::single("Can't get this property", *loc))?)(
                 &base, self,
             ),
-            Accessor::Index(indexed, index, _, get, ..) => (get)(&indexed, &index, self),
+            Accessor::Index(indexed, _, indices) => {
+                let res = indices
+                    .iter()
+                    .map(|(index, get, _, _)| (get)(&indexed, &index, self))
+                    .collect::<Result<Vec<_>, _>>()?;
+                match res.len() {
+                    1 => Ok(res[0].clone()),
+                    _ => Ok(Box::new(Tuple::new(res)))
+                }
+            }
         }
     }
 
@@ -236,8 +245,8 @@ impl Interpreter {
                 )
                 .map_err(|e| e.stack_loc(assign.a_loc))?;
             }
-            Accessor::Index(indexed, index, _, _, set, ..) => {
-                (set)(indexed, index, &assign.val, self).map_err(|e| e.stack_loc(assign.a_loc))?;
+            Accessor::Index(indexed, _, indices) => {
+                (indices[0].2)(indexed, &indices[0].0, &assign.val, self).map_err(|e| e.stack_loc(assign.a_loc))?;
             }
         }
         Ok(val)
