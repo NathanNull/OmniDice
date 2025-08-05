@@ -406,7 +406,7 @@ macro_rules! op_list {
         })+
         match $match_op {
             $(Op::$op => Ok((Box::new($out), $op)),)+
-            op => Err(format!("Invalid operation {op:?}")),
+            op => Err(format!("Operation {op:?} is invalid here")),
         }
     }}
 }

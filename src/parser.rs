@@ -788,10 +788,17 @@ impl Parser {
                     match &assignee {
                         Accessor::Variable(v, _) => me.var_is_mutable(v),
                         Accessor::Property(base, ..) | Accessor::Index(base, ..) => {
-                            match &base.contents {
+                            (match &base.contents {
                                 ExprContents::Accessor(accessor) => is_assignable(me, accessor),
+                                // TODO: allow for other expression types to be assignable
+                                // eg. somefunction().returned_param = 17;
+                                // Actually I think this is legal in basically all cases, though its usefulness is questionable.
                                 _ => false,
-                            }
+                            } && match &assignee {
+                                Accessor::Property(_, _, _, _, setter, _) => setter.is_some(),
+                                Accessor::Index(..) => true,
+                                Accessor::Variable(..) => unreachable!("How did you even get here")
+                            })
                         }
                     }
                 }
