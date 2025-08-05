@@ -42,7 +42,10 @@ impl Ref {
 type_init!(RefT, Ref, "ref", (RwLockReadGuard<_InnerRef>), ty: Datatype);
 
 impl Type for RefT {
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if name == "inner" {
             fn get_inner(me: &Expr, i: &mut Interpreter) -> OpResult {
                 Ok(i.try_eval_as::<Ref>(me)?.inner().val.clone())
@@ -51,21 +54,21 @@ impl Type for RefT {
                 i.try_eval_as::<Ref>(me)?.inner_mut().val = i.eval_expr(val)?;
                 Ok(())
             }
-            Some((self.ty.dup(), Some(get_inner), Some(set_inner)))
+            Ok((self.ty.dup(), Some(get_inner), Some(set_inner)))
         } else {
             self.ty.prop_type(name)
         }
     }
 
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         self.ty.bin_op_result(other, op)
     }
 
-    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn real_pre_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         self.ty.pre_op_result(op)
     }
 
-    fn real_post_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn real_post_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         self.ty.post_op_result(op)
     }
 
@@ -73,11 +76,11 @@ impl Type for RefT {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<(Datatype, CallFn)> {
+    ) -> Result<(Datatype, CallFn), String> {
         self.ty.call_result(params, expected_output)
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
         self.ty.index_type(index)
     }
 
@@ -85,13 +88,18 @@ impl Type for RefT {
         self.ty.possible_call()
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(Box::new(Self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(Box::new(Self {
             ty: self.ty.insert_generics(generics)?,
         }))
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        self.ty.try_match(&other.downcast::<Self>()?.ty)
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        self.ty.try_match(
+            &other
+                .downcast::<Self>()
+                .ok_or_else(|| format!("Can't match {self} with {other}"))?
+                .ty,
+        )
     }
     fn get_generics(&self) -> Vec<String> {
         self.ty.get_generics()

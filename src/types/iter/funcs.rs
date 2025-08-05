@@ -34,10 +34,10 @@ pub fn next_fn(
             (me.next_fn
                 .get_type()
                 .call_result(vec![], None)
-                .ok_or_else(|| RuntimeError::partial("Invalid next function"))?.1)
-                (&me.next_fn.into(), &vec![], i, None)?
-                .downcast::<Maybe>()
-                .ok_or_else(|| RuntimeError::partial("Invalid iter function return value"))?,
+                .map_err(|e| RuntimeError::partial(&e))?
+                .1)(&me.next_fn.into(), &vec![], i, None)?
+            .downcast::<Maybe>()
+            .ok_or_else(|| RuntimeError::partial("Invalid iter function return value"))?,
         ))
     } else {
         invalid!("Call", "next", params)
@@ -94,7 +94,7 @@ pub fn map_fn(
         output: mapper
             .get_type()
             .call_result(vec![me.output.dup()], None)
-            .ok_or_else(|| RuntimeError::partial("map func has invalid input"))?
+            .map_err(|e| RuntimeError::partial(&e))?
             .0,
         next_fn: Box::new(
             MAP_ITER_SIG
@@ -102,7 +102,7 @@ pub fn map_fn(
                     (ITER_T_NAME.to_string(), me.output.clone()),
                     (TV2_NAME.to_string(), mapper.output.clone()),
                 ]))
-                .ok_or_else(|| RuntimeError::partial("map func is invalid"))?
+                .map_err(|e| RuntimeError::partial(&e))?
                 .downcast::<FuncT>()
                 .ok_or_else(|| RuntimeError::partial("map func degenericization isn't a function"))?
                 .make_rust_member(
@@ -135,7 +135,7 @@ fn map_iter_fn(
     let (map_res, map_call) = mapper
         .get_type()
         .call_result(vec![me.output.dup()], None)
-        .ok_or_else(|| RuntimeError::partial("map func is invalid"))?;
+        .map_err(|e| RuntimeError::partial(&e))?;
     Ok(Box::new(Maybe {
         output: map_res,
         contents: if let Some(c) = next.contents {
@@ -205,7 +205,7 @@ pub fn filter_fn(
                     ITER_T_NAME.to_string(),
                     me.output.clone(),
                 )]))
-                .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+                .map_err(|e| RuntimeError::partial(&e))?
                 .downcast::<FuncT>()
                 .ok_or_else(|| RuntimeError::partial("Invalid call"))?
                 .make_rust_member(
@@ -240,7 +240,7 @@ fn filter_iter_fn(
     let (_, call) = filter
         .get_type()
         .call_result(vec![me.output.clone()], Some(Box::new(BoolT)))
-        .ok_or_else(|| RuntimeError::partial("Invalid filter function"))?;
+        .map_err(|e| RuntimeError::partial(&e))?;
     while let Some(next) = &next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
         .ok_or_else(|| RuntimeError::partial("Invalid call"))?
@@ -302,18 +302,13 @@ pub fn fold_fn(
     let (_, call) = folder
         .get_type()
         .call_result(vec![it_t.clone(), it_t.clone()], None)
-        .ok_or_else(|| RuntimeError::partial("Invalid folder function"))?;
+        .map_err(|e| RuntimeError::partial(&e))?;
     while let Some(next) = next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
         .ok_or_else(|| RuntimeError::partial(""))?
         .contents
     {
-        curr = (call)(
-            &folder_expr,
-            &vec![curr.into(), next.into()],
-            i,
-            None,
-        )?;
+        curr = (call)(&folder_expr, &vec![curr.into(), next.into()], i, None)?;
     }
     Ok(curr)
 }

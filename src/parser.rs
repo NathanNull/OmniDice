@@ -207,27 +207,18 @@ impl Parser {
                     .output
                     .call_result(params.clone(), expected_type.clone())
                 {
-                    Some((ct, ..)) => ct,
-                    None => {
-                        return self.make_error(format!(
-                            "Can't call {} with params ({:?}){}",
-                            call.base.output,
-                            params,
-                            if let Some(e) = expected_type.as_ref() {
-                                format!(" and expect output {e}")
-                            } else {
-                                "".to_string()
-                            }
-                        ));
+                    Ok((ct, ..)) => ct,
+                    Err(e) => {
+                        return self.make_error(e);
                     }
                 }
             }
             ExprContents::GenericSpecify(gspec) => {
                 match gspec.base.output.specify_generics(&gspec.types) {
-                    Some(gt) => gt,
-                    None => {
+                    Ok(gt) => gt,
+                    Err(e) => {
                         return self
-                            .make_error("Couldn't specify generics for this type".to_string());
+                            .make_error(e);
                     }
                 }
             }
@@ -690,12 +681,12 @@ impl Parser {
             .output
             .prop_type("iter")
             .and_then(|(i_fn, ..)| i_fn.call_result(vec![], None))
-            .and_then(|(i, ..)| i.downcast::<IterT>())
+            .and_then(|(i, ..)| i.downcast::<IterT>().ok_or_else(||"Couldn't downcast".to_string()))
         {
-            Some(i_type) => i_type.output,
-            None => {
+            Ok(i_type) => i_type.output,
+            Err(e) => {
                 return self
-                    .make_error(format!("Non-iterable {} passed into for loop", iter.output));
+                    .make_error(e);
             }
         };
         self.tokens
@@ -772,22 +763,16 @@ impl Parser {
                 let old_type = match &assignee {
                     Accessor::Variable(v, _) => self.get_var_type(v)?,
                     Accessor::Property(base, prop, ..) => match base.output.prop_type(prop) {
-                        Some((pt, ..)) => pt,
-                        None => {
-                            return self.make_error(format!(
-                                "Unknown property type {prop} for base {}",
-                                base.output
-                            ));
+                        Ok((pt, ..)) => pt,
+                        Err(e) => {
+                            return self.make_error(e);
                         }
                     },
                     Accessor::Index(indexed, index, ..) => {
                         match indexed.output.index_type(&index.output) {
-                            Some((it, ..)) => it,
-                            None => {
-                                return self.make_error(format!(
-                                    "Unknown property type {} for base {}",
-                                    index.output, indexed.output
-                                ));
+                            Ok((it, ..)) => it,
+                            Err(e) => {
+                                return self.make_error(e);
                             }
                         }
                     }

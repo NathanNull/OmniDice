@@ -3,7 +3,7 @@ use crate::{op_list, type_init};
 
 type_init!(FloatT, f32, "float");
 impl Type for FloatT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &FloatT {
             op_list!(op => {
                 Plus(l: f32, r: f32) -> (FloatT) |l,r| Ok(l + r);
@@ -25,10 +25,10 @@ impl Type for FloatT {
                 Divided(l: f32, r: i32) -> (FloatT) |l,r|Ok(l / r as f32);
             })
         } else {
-            None
+            Err(format!("Can't operate {self} {op:?} {other}"))
         }
     }
-    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn real_pre_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         op_list!(op => {
             Minus(v: f32) -> (FloatT) |v: f32|Ok(-v);
         })
@@ -46,7 +46,7 @@ impl Val for f32 {
 
 type_init!(IntT, i32, "int");
 impl Type for IntT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &IntT {
             op_list!(op => {
                 Plus(l: i32, r: i32) -> (IntT) |l,r|Ok(l + r);
@@ -128,10 +128,10 @@ impl Type for IntT {
                 );
             })
         } else {
-            None
+            Err(format!("Can't operate {self} {op:?} {other}"))
         }
     }
-    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn real_pre_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         op_list!(op => {
             Minus(v: i32) -> (IntT) |v: i32|Ok(-v);
         })

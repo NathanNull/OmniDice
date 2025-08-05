@@ -314,7 +314,7 @@ fn dicemap_fn(
                         })],
                         Some(Box::new(IntT)),
                     )
-                    .ok_or_else(|| RuntimeError::partial("Invalid dicemap function"))?
+                    .map_err(|e| RuntimeError::partial(&e))?
                     .1)(
                     &func.dup().into(),
                     &vec![(Box::new(param) as Value).into()],

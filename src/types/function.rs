@@ -137,9 +137,9 @@ impl FuncT {
         &self,
         params: Vec<Datatype>,
         expected_output: &Option<Datatype>,
-    ) -> Option<HashMap<String, Datatype>> {
+    ) -> Result<HashMap<String, Datatype>, String> {
         if params.len() != self.params.len() {
-            return None;
+            return Err(format!("Incorrect number of parameters for {self}"));
         }
         let mut generic_matches = HashMap::new();
         for (given, expected) in params
@@ -152,14 +152,14 @@ impl FuncT {
             for (g, ty) in generics {
                 if let Some(prev_ty) = generic_matches.get(&g) {
                     if *prev_ty != ty {
-                        return None;
+                        return Err(format!("Couldn't match generics for {self}"));
                     }
                 } else {
                     generic_matches.insert(g, ty);
                 }
             }
         }
-        Some(generic_matches)
+        Ok(generic_matches)
     }
 
     pub fn make_rust(self, func: RustFunc) -> Func {
@@ -188,7 +188,7 @@ impl FuncT {
             .owner_t
             .as_ref()
             .ok_or_else(|| RuntimeError::partial("Can't make this function into a member"))?;
-        let generics = me_owner.try_match(&owner).ok_or_else(|| {
+        let generics = me_owner.try_match(&owner).map_err(|_| {
             RuntimeError::partial(&format!(
                 "Invalid owner for this function (expected {}, found {})",
                 me_owner, owner
@@ -214,18 +214,18 @@ impl FuncT {
             .map(|p| {
                 *p = p
                     .insert_generics(&generics)
-                    .ok_or_else(|| RuntimeError::partial("Invalid generic here"))?;
+                    .map_err(|e| RuntimeError::partial(&e))?;
                 Ok(())
             })
             .collect::<Result<Vec<_>, _>>()?;
         self.output = self
             .output
             .insert_generics(&generics)
-            .ok_or_else(|| RuntimeError::partial("Invalid generic here"))?;
+            .map_err(|e| RuntimeError::partial(&e))?;
         self.owner_t = match &self.owner_t {
             Some(o) => Some(
                 o.insert_generics(&generics)
-                    .ok_or_else(|| RuntimeError::partial("Invalid generic here"))?,
+                    .map_err(|e| RuntimeError::partial(&e))?,
             ),
             None => None,
         };
@@ -238,12 +238,11 @@ impl Type for FuncT {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<(Datatype, CallFn)> {
+    ) -> Result<(Datatype, CallFn), String> {
         let generic_matches = self.get_generics(params, &expected_output)?;
         let res = self.output.insert_generics(&generic_matches)?;
         if res.get_generics().iter().any(|g| self.generic.contains(g)) {
-            println!("Unconstrained generic");
-            return None;
+            return Err("Unconstrained generic".to_string());
         }
         fn call(
             me: &Expr,
@@ -257,14 +256,14 @@ impl Type for FuncT {
                 .downcast::<FuncT>()
                 .ok_or_else(|| RuntimeError::partial("Func type isn't FuncT"))?
                 .get_generics(args.iter().map(|p| p.output.clone()).collect(), &out)
-                .ok_or_else(|| RuntimeError::partial("Couldn't resolve generics"))?;
+                .map_err(|e| RuntimeError::partial(&e))?;
             let params = args
                 .into_iter()
                 .map(|a| i.eval_expr(a))
                 .collect::<Result<_, _>>()?;
             me.contents.eval(generics, i, params, out)
         }
-        Some((
+        Ok((
             if let Some(o) = expected_output {
                 o.assert_same(&res)
             } else {
@@ -274,7 +273,7 @@ impl Type for FuncT {
         ))
     }
 
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other.downcast::<FuncSumT>().is_some() {
             op_list!(op => {
                 Plus(l: Func, r: FuncSum) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
@@ -284,7 +283,7 @@ impl Type for FuncT {
                 Plus(l: Func, r: Func) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
             })
         } else {
-            None
+            Err(format!("Can't operate {self} {op:?} {other}"))
         }
     }
 
@@ -292,7 +291,7 @@ impl Type for FuncT {
         true
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
         let mut params = vec![];
         for t in &self.params {
             params.push(t.insert_generics(generics)?);
@@ -302,7 +301,7 @@ impl Type for FuncT {
         } else {
             None
         };
-        Some(Box::new(Self {
+        Ok(Box::new(Self {
             params,
             output: self.output.insert_generics(generics)?,
             generic: self.generic.clone(),
@@ -322,15 +321,17 @@ impl Type for FuncT {
             .filter(|g| !self.generic.contains(g))
             .collect()
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        let other = other.downcast::<Self>()?;
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        let other = other
+            .downcast::<Self>()
+            .ok_or_else(|| format!("Can't match {self} with {other}"))?;
         let mut generics = self.get_generics(other.params, &Some(other.output))?;
         match (&self.owner_t, &other.owner_t) {
             (Some(l), Some(r)) => {
                 for (k, v) in l.try_match(r)? {
                     if let Some(val) = generics.get(&k) {
                         if *val != v {
-                            return None;
+                            return Err(format!("Can't match {l} with {r} (mismatched generic {k} as {val} or {v})"));
                         }
                     } else {
                         generics.insert(k.clone(), v.clone());
@@ -338,14 +339,14 @@ impl Type for FuncT {
                 }
             }
             (None, None) => (),
-            _ => return None,
+            _ => return Err(format!("Can't match function generics")),
         }
-        Some(generics)
+        Ok(generics)
     }
 
-    fn specify_generics(&self, generics: &Vec<Datatype>) -> Option<Datatype> {
+    fn specify_generics(&self, generics: &Vec<Datatype>) -> Result<Datatype, String> {
         if generics.len() != self.generic.len() {
-            return None;
+            return Err(format!("Incorrect number of generics for {self}"));
         }
         let g_map = HashMap::from_iter(
             self.generic
@@ -363,7 +364,7 @@ impl Type for FuncT {
         } else {
             None
         };
-        Some(Box::new(FuncT {
+        Ok(Box::new(FuncT {
             params: new_params,
             output: new_output,
             generic: vec![],
@@ -376,7 +377,7 @@ impl Val for Func {
         let new_ty = self
             .get_type()
             .specify_generics(generics)
-            .ok_or_else(|| RuntimeError::partial("Couldn't resolve generics"))?
+            .map_err(|e| RuntimeError::partial(&e))?
             .downcast::<FuncT>()
             .ok_or_else(|| RuntimeError::partial("Generic specification result wasn't a Func"))?;
         Ok(Box::new(Func {

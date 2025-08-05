@@ -3,7 +3,7 @@ use crate::{op_list, type_init};
 
 type_init!(BoolT, bool, "bool");
 impl Type for BoolT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &BoolT {
             // And and Or are pulled out separately so short-circuiting works
             if op == Op::And {
@@ -12,14 +12,14 @@ impl Type for BoolT {
                         i.try_eval_as::<bool>(l)? && i.try_eval_as::<bool>(r)?,
                     ))
                 }
-                Some((self.dup(), and))
+                Ok((self.dup(), and))
             } else if op == Op::Or {
                 fn or(l: &Expr, r: &Expr, i: &mut Interpreter) -> OpResult {
                     Ok(Box::new(
                         i.try_eval_as::<bool>(l)? || i.try_eval_as::<bool>(r)?,
                     ))
                 }
-                Some((self.dup(), or))
+                Ok((self.dup(), or))
             } else {
                 op_list!(op => {
                     Equal(l: bool, r: bool) -> (BoolT) |l,r| Ok(l == r);
@@ -27,11 +27,11 @@ impl Type for BoolT {
                 })
             }
         } else {
-            None
+            Err(format!("Can't operate {self} {op:?} {other}",))
         }
     }
 
-    fn real_pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn real_pre_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         op_list!(op => {
             Not(v: bool) -> (BoolT) |v: bool| Ok(!v);
         })

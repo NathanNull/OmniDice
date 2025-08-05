@@ -63,8 +63,8 @@ impl BaseType for TypeVar {
 }
 
 impl Type for TypeVar {
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(match self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(match self {
             TypeVar::Var(v) => {
                 if let Some(dt) = generics.get(v) {
                     dt.dup()
@@ -106,7 +106,10 @@ impl Type for TypeVar {
             TypeVar::Prop(base, prop) => base.insert_generics(generics)?.prop_type(&prop)?.0,
             TypeVar::MustBeSame(types) => {
                 let mut t_iter = types.iter();
-                let mut res = t_iter.next()?.insert_generics(generics)?;
+                let mut res = t_iter
+                    .next()
+                    .ok_or_else::<String, _>(|| unreachable!("This should never be empty"))?
+                    .insert_generics(generics)?;
                 for t in t_iter {
                     res = res.assert_same(&t.insert_generics(generics)?);
                 }
@@ -115,8 +118,8 @@ impl Type for TypeVar {
         })
     }
 
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        Some(match self {
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        Ok(match self {
             TypeVar::Var(v) => {
                 let ret = HashMap::from_iter([(v.clone(), other.dup())]);
                 if let Some(Self::Var(var)) = other.downcast::<Self>() {
@@ -132,18 +135,27 @@ impl Type for TypeVar {
                 }
                 let mut matches = HashMap::new();
                 for k in t_matches.iter().map(|m| m.keys()).flatten() {
-                    let match_val = t_matches.iter().find(|m| m.contains_key(k))?.get(k)?;
+                    let match_val = t_matches
+                        .iter()
+                        .find(|m| m.contains_key(k))
+                        .ok_or_else(|| format!("Can't match {self} with {other}"))?
+                        .get(k)
+                        .ok_or_else(|| format!("Can't match {self} with {other}"))?;
                     matches.insert(k.clone(), match_val.clone());
                     if t_matches
                         .iter()
                         .any(|m| m.get(k).is_some_and(|v| v != match_val))
                     {
-                        return None;
+                        return Err(format!("Can't match all of {types:?} with {other}"));
                     }
                 }
                 matches
             }
-            _ => return None,
+            _ => {
+                return Err(format!(
+                    "Can't match {self} with {other} (should be unreachable since it should get stopped in try_match before reaching this code)"
+                ));
+            }
         })
     }
 

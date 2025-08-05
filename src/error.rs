@@ -146,4 +146,8 @@ impl RuntimeError {
     pub fn err_type(&self) -> &RuntimeErrorType {
         &self.err_type
     }
+
+    pub fn info(self) -> String {
+        self.info
+    }
 }

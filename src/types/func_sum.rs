@@ -60,19 +60,19 @@ impl Type for FuncSumT {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<(Datatype, CallFn)> {
+    ) -> Result<(Datatype, CallFn), String> {
         for f in self.f_types.iter().rev() {
-            if let Some(res) = f.call_result(params.clone(), expected_output.clone()) {
-                return Some(res);
+            if let Ok(res) = f.call_result(params.clone(), expected_output.clone()) {
+                return Ok(res);
             }
         }
-        None
+        Err(format!("Couldn't match function sum {self} with args {params:?}"))
     }
     fn possible_call(&self) -> bool {
         true
     }
 
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other.downcast::<FuncSumT>().is_some() {
             op_list!(op => {
                 Plus(l: FuncSum, r: FuncSum) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
@@ -82,18 +82,18 @@ impl Type for FuncSumT {
                 Plus(l: FuncSum, r: Func) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
             })
         } else {
-            None
+            Err(format!("Can't operate {self} {op:?} {other}"))
         }
     }
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
         let mut f_types = vec![];
         for t in &self.f_types {
             f_types.push(t.insert_generics(generics)?);
         }
-        Some(Box::new(Self { f_types }))
+        Ok(Box::new(Self { f_types }))
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        let other = other.downcast::<Self>()?;
+    fn try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        let other = other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?;
         let mut vars = HashMap::new();
         for t in &self.f_types {
             for v in &other.f_types {
@@ -102,7 +102,7 @@ impl Type for FuncSumT {
                 }
             }
         }
-        Some(vars)
+        Ok(vars)
     }
     fn get_generics(&self) -> Vec<String> {
         self.f_types

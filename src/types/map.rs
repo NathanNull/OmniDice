@@ -211,7 +211,7 @@ gen_fn_map!(
 );
 
 impl Type for MapT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
             op_list!(op => {
                 Plus(l: Map, r: Map) -> (self.clone()) |l: Map,r: Map| Map::new(
@@ -228,31 +228,34 @@ impl Type for MapT {
                     .map_err(|e| RuntimeError::partial(&e));
             })
         } else {
-            None
+            Err(format!("Can't operate {self} {op:?} {other}"))
         }
     }
 
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         fn get_length(me: &Expr, i: &mut Interpreter) -> OpResult {
             Ok(Box::new(
                 i.try_eval_as::<Map>(me)?.inner().elements.len() as i32
             ))
         }
         match name {
-            "length" => Some((Box::new(IntT), Some(get_length), None)),
+            "length" => Ok((Box::new(IntT), Some(get_length), None)),
             n if MAP_FNS.contains_key(n) => {
                 let f = &MAP_FNS[n];
-                Some((
-                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                Ok((
+                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e| e.info())?),
                     Some(f.2),
                     None,
                 ))
             }
-            _ => None,
+            _ => Err(format!("Can't get prop {name} of {self}")),
         }
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
         if index == &self.key {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let index = i.eval_expr(idx)?;
@@ -283,7 +286,7 @@ impl Type for MapT {
                 })? = val;
                 Ok(())
             }
-            Some((self.value.clone(), get_fn, set_fn))
+            Ok((self.value.clone(), get_fn, set_fn))
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
             if tup.entries.iter().all(|e| e == &self.key) {
                 fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
@@ -298,37 +301,39 @@ impl Type for MapT {
                     TODO: Map tuple indexing not implemented yet",
                     ))
                 }
-                Some((self.dup(), get_fn, set_fn))
+                Ok((self.dup(), get_fn, set_fn))
             } else {
-                None
+                Err(format!("Can't get index {index} of {self}"))
             }
         } else {
-            None
+            Err(format!("Can't get index {index} of {self}"))
         }
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(Box::new(Self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(Box::new(Self {
             key: self.key.insert_generics(generics)?,
             value: self.value.insert_generics(generics)?,
         }))
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        let other = other.downcast::<Self>()?;
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        let other = other
+            .downcast::<Self>()
+            .ok_or_else(|| format!("Can't match {self} with {other}"))?;
         let mut vars = HashMap::new();
         for (t, v) in [(&self.key, &other.key), (&self.value, &other.value)] {
             let matched = t.try_match(v)?;
             for (name, var) in matched {
                 if let Some(res) = vars.get(&name) {
                     if *res != *var {
-                        return None;
+                        return Err(format!("Can't match {self} with {other}"));
                     }
                 } else {
                     vars.insert(name, var);
                 }
             }
         }
-        Some(vars)
+        Ok(vars)
     }
     fn get_generics(&self) -> Vec<String> {
         self.key
@@ -339,5 +344,4 @@ impl Type for MapT {
     }
 }
 
-impl Val for Map {
-}
+impl Val for Map {}

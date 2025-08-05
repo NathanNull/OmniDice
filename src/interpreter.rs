@@ -292,10 +292,10 @@ impl Interpreter {
             .iter
             .output
             .prop_type("iter")
-            .ok_or_else(|| rte.clone())?;
+            .map_err(|e| RuntimeError::single(&e, fo.iter_loc))?;
         let iter = (iter_fn_t
             .call_result(vec![], None)
-            .ok_or_else(|| rte.clone())?
+            .map_err(|e| RuntimeError::single(&e, fo.iter_loc))?
             .1)(
             &(iter_fn_get.ok_or_else(|| rte.clone())?)(&fo.iter, self)?.into(),
             &vec![],
@@ -305,11 +305,11 @@ impl Interpreter {
         let (next_fn_t, next_fn_get, _) = iter
             .get_type()
             .prop_type("next")
-            .ok_or_else(|| rte.clone())?;
+            .map_err(|e| RuntimeError::single(&e, fo.iter_loc))?;
         let next_fn = (next_fn_get.ok_or_else(|| rte.clone())?)(&iter.into(), self)?.into();
         let next_fn_call = next_fn_t
             .call_result(vec![], None)
-            .ok_or_else(|| rte.clone())?
+            .map_err(|e| RuntimeError::single(&e, fo.iter_loc))?
             .1;
         self.variables.push(VarScope {
             vars: HashMap::new(),

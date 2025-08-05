@@ -475,8 +475,8 @@ impl Expr {
         generics: &HashMap<String, Datatype>,
     ) -> Result<Box<Self>, String> {
         let new_type = match self.output.insert_generics(&generics) {
-            Some(nt) => nt,
-            None => return Err("Invalid type".to_string()),
+            Ok(nt) => nt,
+            Err(e) => return Err(e),
         };
         let new_contents = match &self.contents {
             ExprContents::Value(val) => ExprContents::Value(val.clone()),
@@ -568,8 +568,8 @@ impl Expr {
                         res.push((
                             n,
                             match t {
-                                Some(t) => t,
-                                None => return Err("Invalid".to_string()),
+                                Ok(t) => t,
+                                Err(e) => return Err(e),
                             },
                         ));
                     }
@@ -678,9 +678,9 @@ impl Binop {
         let (out, res) = lhs
             .output
             .bin_op_result(&rhs.output, op.clone())
-            .ok_or_else(|| ParseError {
+            .map_err(|e| ParseError {
                 location: op_loc,
-                info: "Invalid operation".to_string(),
+                info: e,
             })?;
         Ok(Self {
             lhs,
@@ -707,9 +707,9 @@ impl Prefix {
         let (out, res) = rhs
             .output
             .pre_op_result(op.clone())
-            .ok_or_else(|| ParseError {
+            .map_err(|e| ParseError {
                 location: op_loc,
-                info: "Invalid operation".to_string(),
+                info: e,
             })?;
         Ok(Self {
             op,
@@ -735,9 +735,9 @@ impl Postfix {
         let (out, res) = lhs
             .output
             .post_op_result(op.clone())
-            .ok_or_else(|| ParseError {
+            .map_err(|e| ParseError {
                 location: op_loc,
-                info: "Invalid operation".to_string(),
+                info: e,
             })?;
         Ok(Self {
             op,
@@ -792,8 +792,8 @@ pub enum Accessor {
 
 impl Accessor {
     pub fn new_property(base: Box<Expr>, prop: String, loc: LineIndex) -> Result<Self, ParseError> {
-        let (out, get, set) = base.output.prop_type(&prop).ok_or_else(|| ParseError {
-            info: format!("Invalid property {prop}"),
+        let (out, get, set) = base.output.prop_type(&prop).map_err(|e| ParseError {
+            info: e,
             location: loc,
         })?;
         Ok(Self::Property(base, prop, loc, get, set, out))
@@ -808,9 +808,9 @@ impl Accessor {
             indexed
                 .output
                 .index_type(&index.output)
-                .ok_or_else(|| ParseError {
+                .map_err(|e| ParseError {
                     location: loc,
-                    info: "Invalid index type".to_string(),
+                    info: e,
                 })?;
         Ok(Self::Index(indexed, index, loc, get, set, out))
     }
@@ -932,9 +932,9 @@ impl Call {
         let (new_out, res) = base
             .output
             .call_result(params.iter().map(|p| p.output.clone()).collect(), out)
-            .ok_or_else(|| ParseError {
+            .map_err(|e| ParseError {
                 location: loc,
-                info: "Invalid function call".to_string(),
+                info: e,
             })?;
         Ok(Self {
             base,

@@ -105,42 +105,42 @@ const PROPS: [(UnOpFn, SetFn); 32] = idx_props!(
 );
 
 impl Type for TupT {
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if let Some(idx) = as_idx(name) {
             self.entries.get(idx).and_then(|e| {
                 let (get, set) = PROPS.get(idx)?;
                 Some((e.clone(), Some(*get), Some(*set)))
-            })
+            }).ok_or_else(||format!("Can't get prop {name} of {self}"))
         } else {
-            None
+            Err(format!("Can't get prop {name} of {self}"))
         }
     }
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
         let mut entries = vec![];
         for t in &self.entries {
             entries.push(t.insert_generics(generics)?);
         }
-        Some(Box::new(Self { entries }))
+        Ok(Box::new(Self { entries }))
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        let other = other.downcast::<Self>()?;
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        let other = other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?;
         let mut vars = HashMap::new();
         if self.entries.len() != other.entries.len() {
-            return None;
+            return Err(format!("Can't match {self} with {other}"));
         }
         for (t, v) in self.entries.iter().zip(other.entries.iter()) {
             let matched = t.try_match(v)?;
             for (name, var) in matched {
                 if let Some(res) = vars.get(&name) {
                     if *res != *var {
-                        return None;
+                        return Err(format!("Can't match {self} with {other}"));
                     }
                 } else {
                     vars.insert(name, var);
                 }
             }
         }
-        Some(vars)
+        Ok(vars)
     }
     fn get_generics(&self) -> Vec<String> {
         self.entries

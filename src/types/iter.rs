@@ -38,31 +38,38 @@ gen_fn_map!(
 );
 
 impl Type for IterT {
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         match name {
             n if ITER_FNS.contains_key(n) => {
                 let f = &ITER_FNS[n];
-                Some((
-                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                Ok((
+                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e| e.info())?),
                     Some(f.2),
                     None,
                 ))
             }
-            _ => None,
+            _ => Err(format!("Can't get prop {name} of {self}")),
         }
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(Box::new(Self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(Box::new(Self {
             output: self.output.insert_generics(generics)?,
         }))
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        self.output.try_match(&other.downcast::<Self>()?.output)
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        self.output.try_match(
+            &other
+                .downcast::<Self>()
+                .ok_or_else(|| format!("Can't match {self} with {other}"))?
+                .output,
+        )
     }
     fn get_generics(&self) -> Vec<String> {
         self.output.get_generics()
     }
 }
-impl Val for Iter {
-}
+impl Val for Iter {}

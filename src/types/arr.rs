@@ -182,7 +182,7 @@ gen_fn_map!(
 );
 
 impl Type for ArrT {
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
             op_list!(op => {
                 Plus(l: Arr, r: Arr) -> (self.clone()) |l: Arr,r: Arr| Ok(Arr::new(
@@ -196,25 +196,25 @@ impl Type for ArrT {
                 ));
             })
         } else {
-            None
+            Err(format!("Type {self} has no binary operations"))
         }
     }
 
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         match name {
             n if ARR_FNS.contains_key(n) => {
                 let f = &ARR_FNS[n];
-                Some((
-                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                Ok((
+                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e|e.info())?),
                     Some(f.2),
                     None,
                 ))
             }
-            _ => None,
+            _ => Err("Unknown array property".to_string()),
         }
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
         if index == &IntT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let idx = i.try_eval_as::<i32>(idx)?;
@@ -246,7 +246,7 @@ impl Type for ArrT {
                     })? = val;
                 Ok(())
             }
-            Some((self.entry.clone(), get_fn, set_fn))
+            Ok((self.entry.clone(), get_fn, set_fn))
         } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
             if tup.entries.iter().all(|e| e == &IntT) {
                 fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
@@ -308,9 +308,9 @@ impl Type for ArrT {
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(())
                 }
-                Some((self.dup(), get_fn, set_fn))
+                Ok((self.dup(), get_fn, set_fn))
             } else {
-                None
+                Err(format!("Can't index {self} with {index}"))
             }
         } else if index == &RangeT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
@@ -361,19 +361,19 @@ impl Type for ArrT {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(())
             }
-            Some((self.dup(), get_fn, set_fn))
+            Ok((self.dup(), get_fn, set_fn))
         } else {
-            None
+            Err(format!("Can't index {self} with {index}"))
         }
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(Box::new(Self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(Box::new(Self {
             entry: self.entry.insert_generics(generics)?,
         }))
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        self.entry.try_match(&other.downcast::<Self>()?.entry)
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        self.entry.try_match(&other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?.entry)
     }
     fn get_generics(&self) -> Vec<String> {
         self.entry.get_generics()

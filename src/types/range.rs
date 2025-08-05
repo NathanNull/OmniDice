@@ -97,17 +97,17 @@ fn range_iter_fn(
 gen_fn_map!(RANGE_FNS, ("iter", RANGE_SIG, range_fn, range_prop));
 
 impl Type for RangeT {
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         match name {
             n if RANGE_FNS.contains_key(n) => {
                 let f = &RANGE_FNS[n];
-                Some((
-                    Box::new(f.0.clone().with_owner(self.dup()).ok()?),
+                Ok((
+                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e|e.info())?),
                     Some(f.2),
                     None,
                 ))
             },
-            _ => None,
+            _ => Err(format!("Can't get prop {name} of {self}")),
         }
     }
     fn is_hashable(&self) -> bool {

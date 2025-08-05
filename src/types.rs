@@ -80,7 +80,7 @@ pub type SetAtFn = fn(&Expr, &Expr, &Expr, &mut Interpreter) -> VoidResult;
 
 #[allow(private_bounds)]
 pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
-    fn prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if !self.get_generics().is_empty() {
             fn get_err(_: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
@@ -92,7 +92,7 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                     "Can't operate on generic types directly",
                 ))
             }
-            Some((
+            Ok((
                 Box::new(TypeVar::Prop(self.dup(), name.to_string())),
                 Some(get_err),
                 Some(set_err),
@@ -101,7 +101,7 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             self.real_prop_type(name)
         }
     }
-    fn index_type(&self, index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
+    fn index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
         if !self.get_generics().is_empty() {
             fn get_err(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
@@ -113,43 +113,43 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                     "Can't operate on generic types directly",
                 ))
             }
-            Some((Box::new(TypeVar::Index(self.dup(), index.clone())), get_err, set_err))
+            Ok((Box::new(TypeVar::Index(self.dup(), index.clone())), get_err, set_err))
         } else {
             self.real_index_type(index)
         }
     }
-    fn bin_op_result(&self, other: &Datatype, op: Op) -> Option<(Datatype, BinOpFn)> {
+    fn bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if !self.get_generics().is_empty() || !other.get_generics().is_empty() {
             fn err(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
                     "Can't operate on generic types directly",
                 ))
             }
-            Some((Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)), err))
+            Ok((Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)), err))
         } else {
             self.real_bin_op_result(other, op)
         }
     }
-    fn pre_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn pre_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         if !self.get_generics().is_empty() {
             fn err(_: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
                     "Can't operate on generic types directly",
                 ))
             }
-            Some((Box::new(TypeVar::UnaryOp(self.dup(), op, true)), err))
+            Ok((Box::new(TypeVar::UnaryOp(self.dup(), op, true)), err))
         } else {
             self.real_pre_op_result(op)
         }
     }
-    fn post_op_result(&self, op: Op) -> Option<(Datatype, UnOpFn)> {
+    fn post_op_result(&self, op: Op) -> Result<(Datatype, UnOpFn), String> {
         if !self.get_generics().is_empty() {
             fn err(_: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
                     "Can't operate on generic types directly",
                 ))
             }
-            Some((Box::new(TypeVar::UnaryOp(self.dup(), op, false)), err))
+            Ok((Box::new(TypeVar::UnaryOp(self.dup(), op, false)), err))
         } else {
             self.real_post_op_result(op)
         }
@@ -158,54 +158,54 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
         &self,
         params: Vec<Datatype>,
         expected_output: Option<Datatype>,
-    ) -> Option<(Datatype, CallFn)> {
+    ) -> Result<(Datatype, CallFn), String> {
         if !self.get_generics().is_empty() || params.iter().any(|p| !p.get_generics().is_empty()) {
             fn err(_: &Expr, _: &Vec<Expr>, _: &mut Interpreter, _: Option<Datatype>) -> OpResult {
                 Err(RuntimeError::partial(
                     "Can't operate on generic types directly",
                 ))
             }
-            Some((Box::new(TypeVar::Call(self.dup(), params, expected_output)), err))
+            Ok((Box::new(TypeVar::Call(self.dup(), params, expected_output)), err))
         } else {
             self.real_call_result(params, expected_output)
         }
     }
-    fn real_prop_type(&self, _name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
-        None
+    fn real_prop_type(&self, _name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+        Err(format!("Type {self} has no properties"))
     }
-    fn real_index_type(&self, _index: &Datatype) -> Option<(Datatype, BinOpFn, SetAtFn)> {
-        None
+    fn real_index_type(&self, _index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
+        Err(format!("Type {self} can't be indexed"))
     }
-    fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Option<(Datatype, BinOpFn)> {
-        None
+    fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Result<(Datatype, BinOpFn), String> {
+        Err(format!("Type {self} has no binary operations"))
     }
-    fn real_pre_op_result(&self, _op: Op) -> Option<(Datatype, UnOpFn)> {
-        None
+    fn real_pre_op_result(&self, _op: Op) -> Result<(Datatype, UnOpFn), String> {
+        Err(format!("Type {self} has no prefix operations"))
     }
-    fn real_post_op_result(&self, _op: Op) -> Option<(Datatype, UnOpFn)> {
-        None
+    fn real_post_op_result(&self, _op: Op) -> Result<(Datatype, UnOpFn), String> {
+        Err(format!("Type {self} has no postfix operations"))
     }
     fn real_call_result(
         &self,
         _params: Vec<Datatype>,
         _expected_output: Option<Datatype>,
-    ) -> Option<(Datatype, CallFn)> {
-        None
+    ) -> Result<(Datatype, CallFn), String> {
+        Err(format!("Type {self} can't be called"))
     }
     fn possible_call(&self) -> bool {
         false
     }
-    fn insert_generics(&self, _generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(self.dup())
+    fn insert_generics(&self, _generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(self.dup())
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
         if self.name() == other.name() {
-            Some(HashMap::new())
+            Ok(HashMap::new())
         } else {
-            None
+            Err(format!("Couldn't match type {self} with type {other}"))
         }
     }
-    fn try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
+    fn try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
         if let Some(typevar) = other.downcast::<TypeVar>() {
             typevar.real_try_match(&self.dup())
         } else {
@@ -223,8 +223,8 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn get_generics(&self) -> Vec<String> {
         vec![]
     }
-    fn specify_generics(&self, _generics: &Vec<Datatype>) -> Option<Datatype> {
-        None
+    fn specify_generics(&self, _generics: &Vec<Datatype>) -> Result<Datatype, String> {
+        Err(format!("Type {self} has no properties"))
     }
     fn is_hashable(&self) -> bool {
         false
@@ -405,8 +405,8 @@ macro_rules! op_list {
             ))
         })+
         match $match_op {
-            $(Op::$op => Some((Box::new($out), $op)),)+
-            _ => None,
+            $(Op::$op => Ok((Box::new($out), $op)),)+
+            op => Err(format!("Invalid operation {op:?}")),
         }
     }}
 }

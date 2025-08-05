@@ -56,7 +56,7 @@ fn unwrap_fn(
 }
 
 impl Type for MaybeT {
-    fn real_prop_type(&self, name: &str) -> Option<(Datatype, Option<UnOpFn>, Option<SetFn>)> {
+    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         fn get_unwrap(me: &Expr, i: &mut Interpreter) -> OpResult {
             Ok(Box::new(UNWRAP_SIG.clone().make_rust_member(
                 unwrap_fn,
@@ -67,23 +67,23 @@ impl Type for MaybeT {
             Ok(Box::new(i.try_eval_as::<Maybe>(me)?.contents.is_some()))
         }
         match name {
-            "unwrap" => Some((
-                Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).ok()?),
+            "unwrap" => Ok((
+                Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).map_err(|e|e.info())?),
                 Some(get_unwrap),
                 None,
             )),
-            "filled" => Some((Box::new(BoolT), Some(get_filled), None)),
-            _ => None,
+            "filled" => Ok((Box::new(BoolT), Some(get_filled), None)),
+            _ => Err(format!("Can't get property {name} of {self}")),
         }
     }
 
-    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Option<Datatype> {
-        Some(Box::new(Self {
+    fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
+        Ok(Box::new(Self {
             output: self.output.insert_generics(generics)?,
         }))
     }
-    fn real_try_match(&self, other: &Datatype) -> Option<HashMap<String, Datatype>> {
-        self.output.try_match(&other.downcast::<Self>()?.output)
+    fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
+        self.output.try_match(&other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?.output)
     }
     fn get_generics(&self) -> Vec<String> {
         self.output.get_generics()
