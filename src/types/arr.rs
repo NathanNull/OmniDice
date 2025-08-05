@@ -173,14 +173,6 @@ fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
-gen_fn_map!(
-    ARR_FNS,
-    ("push", PUSH_SIG, push_fn, push_prop),
-    ("pop", POP_SIG, pop_fn, pop_prop),
-    ("iter", ITER_SIG, iter_fn, iter_prop),
-    ("length", LENGTH_SIG, length_fn, length_prop),
-);
-
 impl Type for ArrT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
@@ -201,17 +193,13 @@ impl Type for ArrT {
     }
 
     fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        match name {
-            n if ARR_FNS.contains_key(n) => {
-                let f = &ARR_FNS[n];
-                Ok((
-                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e|e.info())?),
-                    Some(f.2),
-                    None,
-                ))
-            }
-            _ => Err("Unknown array property".to_string()),
-        }
+        gen_fn_map!(
+            name, self,
+            ("push", PUSH_SIG, push_fn, push_prop),
+            ("pop", POP_SIG, pop_fn, pop_prop),
+            ("iter", ITER_SIG, iter_fn, iter_prop),
+            ("length", LENGTH_SIG, length_fn, length_prop),
+        )
     }
 
     fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
@@ -247,71 +235,6 @@ impl Type for ArrT {
                 Ok(())
             }
             Ok((self.entry.clone(), get_fn, set_fn))
-        } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
-            if tup.entries.iter().all(|e| e == &IntT) {
-                fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
-                    let me = i.try_eval_as::<Arr>(me)?;
-                    let idxs = i.try_eval_as::<Tuple>(idx)?;
-                    let eles = &me.inner().elements;
-                    Ok(Box::new(Arr::new(
-                        idxs.inner()
-                            .elements
-                            .iter()
-                            .map(|idx| {
-                                if let Some(i) = idx.downcast::<i32>() {
-                                    Ok(eles
-                                        .get(i as usize)
-                                        .ok_or_else(|| {
-                                            RuntimeError::partial(&format!(
-                                                "Array has no element at index {i}"
-                                            ))
-                                        })?
-                                        .dup())
-                                } else {
-                                    invalid!("Index", &me, idx.get_type())
-                                }
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                        me.inner().entry.clone(),
-                    )))
-                }
-                fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
-                    let vals = i.try_eval_as::<Arr>(val)?;
-                    let me = i.try_eval_as::<Arr>(me)?;
-                    let idxs = i.try_eval_as::<Tuple>(idx)?;
-                    let entry = me.inner().entry.clone();
-                    if vals.inner().entry != entry {
-                        return Err(RuntimeError::partial(&format!(
-                            "Tried to set array index to different type ({}) than allowed ({})",
-                            vals.inner().entry,
-                            entry
-                        )));
-                    }
-                    idxs.inner()
-                        .elements
-                        .iter()
-                        .zip(vals.inner().elements.iter())
-                        .map(|(idx, val)| {
-                            if let Some(i) = idx.downcast::<i32>() {
-                                *me.inner_mut().elements.get_mut(i as usize).ok_or_else(
-                                    || {
-                                        RuntimeError::partial(&format!(
-                                            "Array has no element at index {i}"
-                                        ))
-                                    },
-                                )? = val.dup();
-                            } else {
-                                invalid!("Index", &me, idx.get_type())
-                            }
-                            Ok(())
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok(())
-                }
-                Ok((self.dup(), get_fn, set_fn))
-            } else {
-                Err(format!("Can't index {self} with {index}"))
-            }
         } else if index == &RangeT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let range = i.try_eval_as::<Range>(idx)?;

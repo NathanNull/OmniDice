@@ -27,32 +27,22 @@ impl Display for Iter {
 
 type_init!(IterT, Iter, "iter", output: Datatype);
 
-gen_fn_map!(
-    ITER_FNS,
-    ("next", NEXT_SIG, next_fn, next_prop),
-    ("map", MAP_SIG, map_fn, map_prop),
-    ("iter", IDENT_SIG, ident_fn, ident_prop),
-    ("filter", FILTER_SIG, filter_fn, filter_prop),
-    ("fold", FOLD_SIG, fold_fn, fold_prop),
-    ("to_map", TO_MAP_SIG, to_map_fn, to_map_prop),
-);
+
 
 impl Type for IterT {
     fn real_prop_type(
         &self,
         name: &str,
     ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        match name {
-            n if ITER_FNS.contains_key(n) => {
-                let f = &ITER_FNS[n];
-                Ok((
-                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e| e.info())?),
-                    Some(f.2),
-                    None,
-                ))
-            }
-            _ => Err(format!("Can't get prop {name} of {self}")),
-        }
+        gen_fn_map!(
+            name, self,
+            ("next", NEXT_SIG, next_fn, next_prop),
+            ("map", MAP_SIG, map_fn, map_prop),
+            ("iter", IDENT_SIG, ident_fn, ident_prop),
+            ("filter", FILTER_SIG, filter_fn, filter_prop),
+            ("fold", FOLD_SIG, fold_fn, fold_prop),
+            ("to_map", TO_MAP_SIG, to_map_fn, to_map_prop),
+        )
     }
 
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {

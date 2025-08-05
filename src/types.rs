@@ -499,34 +499,35 @@ impl PartialEq for Void {
 
 #[macro_export]
 macro_rules! gen_fn_map {
-    ($name: ident, $(($fname: literal, $fsig: ident, $ffn: ident, $fpname: ident)),*$(,)?) => {
-        static $name: ::std::sync::LazyLock<
-            ::std::collections::HashMap<
-                &'static str,
-                (
-                    FuncT,
-                    fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
-                    fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>,
-                ),
-            >,
-        > = ::std::sync::LazyLock::new(|| {
-            $(fn $fpname(me: &crate::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::error::RuntimeError> {
-                let me = i.eval_expr(me)?;
-                Ok(Box::new($fsig.clone().make_rust_member($ffn, me)?))
-            })*
-            ::std::collections::HashMap::from_iter([
-                $((
-                    $fname,
-                    (
-                        (&$fsig as &FuncT).clone(),
-                        $ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
-                        $fpname as fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>,
-                    ),
-                ),)*
-            ])
-        });
+    ($name: expr, $self: expr, $(($fname: literal, $fsig: ident, $ffn: ident, $fpname: ident)),*$(,)?) => {
+        match $name {
+            $(
+                $fname => Ok((
+                    Box::new((&$fsig as &FuncT).clone().with_owner($self.dup()).map_err(|e|e.info())?),
+                    //$ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
+                    {
+                        fn $fpname(me: &crate::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::error::RuntimeError> {
+                            let me = i.eval_expr(me)?;
+                            Ok(Box::new($fsig.clone().make_rust_member($ffn, me)?))
+                        }
+                        Some($fpname as fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>)
+                    },
+                    None,
+                )),
+            )*
+            _ => Err(format!("Unknown property {}", $name))
+        }
     };
 }
+
+//n if ARR_FNS.contains_key(n) => {
+//     let f = &ARR_FNS[n];
+//     Ok((
+//         Box::new(f.0.clone().with_owner(self.dup()).map_err(|e|e.info())?),
+//         Some(f.2),
+//         None,
+//     ))
+// }
 
 pub trait BoxIterUtils {
     fn next_as<T: Clone + 'static>(&mut self) -> Option<T>;

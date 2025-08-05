@@ -15,7 +15,7 @@ pub struct Func {
 
 impl Debug for Func {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Func {{ contents: {:?} }}", self.contents)
+        write!(f, "Func {{ {:?} }}", self.contents)
     }
 }
 
@@ -86,13 +86,17 @@ impl Display for Func {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "func ({})->{}",
+            "func ({})->{} {{ {} }}",
             self.params
                 .iter()
                 .map(|p| format!("{p}"))
                 .collect::<Vec<_>>()
                 .join(", "),
             self.output,
+            match self.contents {
+                InnerFunc::Code(..) => "[code]",
+                InnerFunc::Rust(..) => "[internal]",
+            }
         )
     }
 }

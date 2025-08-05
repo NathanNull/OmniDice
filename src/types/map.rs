@@ -203,12 +203,19 @@ fn get_fn(
     invalid!("Call", "push", params)
 }
 
-gen_fn_map!(
-    MAP_FNS,
-    ("iter", ITER_SIG, iter_fn, iter_prop),
-    ("set", SET_SIG, set_fn, set_prop),
-    ("get", GET_SIG, get_fn, get_prop),
-);
+static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(IntT),
+    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
+    owner_t: Some(Box::new(MapT { key: TV1.clone(), value: TV2.clone() })),
+});
+
+fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let arr = params[0]
+        .downcast::<Map>()
+        .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
+    Ok(Box::new(arr.inner().elements.len() as i32))
+}
 
 impl Type for MapT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
@@ -236,23 +243,13 @@ impl Type for MapT {
         &self,
         name: &str,
     ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        fn get_length(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(
-                i.try_eval_as::<Map>(me)?.inner().elements.len() as i32
-            ))
-        }
-        match name {
-            "length" => Ok((Box::new(IntT), Some(get_length), None)),
-            n if MAP_FNS.contains_key(n) => {
-                let f = &MAP_FNS[n];
-                Ok((
-                    Box::new(f.0.clone().with_owner(self.dup()).map_err(|e| e.info())?),
-                    Some(f.2),
-                    None,
-                ))
-            }
-            _ => Err(format!("Can't get prop {name} of {self}")),
-        }
+        gen_fn_map!(
+            name, self,
+            ("iter", ITER_SIG, iter_fn, iter_prop),
+            ("set", SET_SIG, set_fn, set_prop),
+            ("get", GET_SIG, get_fn, get_prop),
+            ("length", LENGTH_SIG, length_fn, length_prop),
+        )
     }
 
     fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
@@ -287,24 +284,6 @@ impl Type for MapT {
                 Ok(())
             }
             Ok((self.value.clone(), get_fn, set_fn))
-        } else if let Some(tup) = (index.dup() as Box<dyn Any>).downcast_ref::<TupT>() {
-            if tup.entries.iter().all(|e| e == &self.key) {
-                fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
-                    Err(RuntimeError::partial(
-                        "
-                    TODO: Map tuple indexing not implemented yet",
-                    ))
-                }
-                fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
-                    Err(RuntimeError::partial(
-                        "
-                    TODO: Map tuple indexing not implemented yet",
-                    ))
-                }
-                Ok((self.dup(), get_fn, set_fn))
-            } else {
-                Err(format!("Can't get index {index} of {self}"))
-            }
         } else {
             Err(format!("Can't get index {index} of {self}"))
         }

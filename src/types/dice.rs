@@ -1,5 +1,63 @@
+use std::sync::LazyLock;
+
 use super::*;
-use crate::{op_list, type_init};
+use crate::{gen_fn_map, op_list, type_init};
+
+static MEAN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(FloatT),
+    generic: vec![],
+    owner_t: Some(Box::new(DiceT)),
+});
+
+fn mean_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.mean()))
+}
+
+static STDDEV_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(FloatT),
+    generic: vec![],
+    owner_t: Some(Box::new(DiceT)),
+});
+
+fn stddev_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.stddev()))
+}
+
+static MIN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(IntT),
+    generic: vec![],
+    owner_t: Some(Box::new(DiceT)),
+});
+
+fn min_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.min()))
+}
+
+static MAX_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(IntT),
+    generic: vec![],
+    owner_t: Some(Box::new(DiceT)),
+});
+
+fn max_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.max()))
+}
 
 type_init!(DiceT, Distribution, "dice");
 impl Type for DiceT {
@@ -28,25 +86,13 @@ impl Type for DiceT {
         })
     }
     fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        fn get_mean(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(i.try_eval_as::<Distribution>(me)?.mean()))
-        }
-        fn get_stddev(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(i.try_eval_as::<Distribution>(me)?.stddev()))
-        }
-        fn get_max(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(i.try_eval_as::<Distribution>(me)?.max()))
-        }
-        fn get_min(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(i.try_eval_as::<Distribution>(me)?.min()))
-        }
-        match name {
-            "mean" => Ok((Box::new(FloatT), Some(get_mean), None)),
-            "stddev" => Ok((Box::new(FloatT), Some(get_stddev), None)),
-            "max" => Ok((Box::new(IntT), Some(get_max), None)),
-            "min" => Ok((Box::new(IntT), Some(get_min), None)),
-            _ => Err(format!("Unknown property {name} of {self}")),
-        }
+        gen_fn_map!(
+            name, self, 
+            ("mean", MEAN_SIG, mean_fn, mean_prop),
+            ("stddev", STDDEV_SIG, stddev_fn, stddev_prop),
+            ("max", MAX_SIG, max_fn, max_prop),
+            ("min", MIN_SIG, min_fn, min_prop),
+        )
     }
 }
 impl Val for Distribution {}

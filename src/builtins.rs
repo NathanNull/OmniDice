@@ -5,7 +5,6 @@ use itertools::Itertools;
 use crate::{
     distribution::Distribution,
     error::RuntimeError,
-    gen_fn_map,
     interpreter::Interpreter,
     invalid,
     types::{
@@ -14,27 +13,30 @@ use crate::{
     },
 };
 
-gen_fn_map!(
-    BUILTIN_FUNCS,
-    ("ref", REF_SIG, ref_fn, rp),
-    ("println", PRINTLN_SIG, println_fn, pp),
-    ("printf", PRINTF_SIG, printf_fn, pfp),
-    ("error", ERROR_SIG, error_fn, ep),
-    ("format", FORMAT_SIG, format_fn, fp),
-    ("filled", FILLED_SIG, filled_fn, fip),
-    ("iter", ITER_SIG, iter_fn, ip),
-    ("null", NULL_SIG, null_fn, np),
-    ("dicemap", DICEMAP_SIG, dicemap_fn, dp)
-);
+macro_rules! gen_builtins {
+    ($(($fname: literal, $fsig: ident, $ffn: ident)),*$(,)?) => {
+        pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
+            HashMap::from_iter([$(
+                (
+                    $fname.to_string(), 
+                    Box::new((&$fsig as &FuncT).clone().make_rust($ffn)) as Value,
+                )
+            ),*])
+        });
+    };
+}
 
-pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
-    HashMap::from_iter(BUILTIN_FUNCS.iter().map(|(name, (sig, func, _))| {
-        (
-            name.to_string(),
-            Box::new(sig.clone().make_rust(*func)) as Value,
-        )
-    }))
-});
+gen_builtins!(
+    ("ref", REF_SIG, ref_fn),
+    ("println", PRINTLN_SIG, println_fn),
+    ("printf", PRINTF_SIG, printf_fn),
+    ("error", ERROR_SIG, error_fn),
+    ("format", FORMAT_SIG, format_fn),
+    ("filled", FILLED_SIG, filled_fn),
+    ("iter", ITER_SIG, iter_fn),
+    ("null", NULL_SIG, null_fn),
+    ("dicemap", DICEMAP_SIG, dicemap_fn),
+);
 
 static TV1_NAME: &str = "__T";
 static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
