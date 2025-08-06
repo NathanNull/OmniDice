@@ -1,9 +1,10 @@
+use itertools::Itertools;
 use std::{env, fmt::Display, fs};
 
 use interpreter::Interpreter;
-use itertools::Itertools;
 use lexer::Lexer;
 use parser::Parser;
+use tokeniter::TokenIter;
 
 use crate::error::LineIndex;
 
@@ -13,176 +14,70 @@ mod error;
 mod interpreter;
 mod lexer;
 mod parser;
+mod tokeniter;
 mod types;
+
+const PRINT_TOKENS: bool = false;
+const PRINT_AST: bool = false;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
     let filename = args.get(1).expect("Must pass file name to run");
     let code = fs::read_to_string(filename).expect("Couldn't read code file");
-    match Lexer::new(&code).lex() {
-        Ok(tokens) => {
-            let mut tk_iter = TokenIter::new(tokens.iter().cloned());
-            let mut res = vec![];
-            while let Some(_) = tk_iter.next() {
-                res.push(tk_iter.pos);
-            }
-            println!(
-                "Tokens: [\n\t{}\n]\n",
-                tokens
-                    .iter()
-                    .zip(res)
-                    .map(|(t, pos)| format!("({}, {} @ {:?})", t.0, t.1, pos))
-                    .join("\n\t")
-            );
-            match Parser::new(tokens).parse() {
-                Ok(ast) => {
-                    println!("AST: {ast}\n");
-                    println!("Program output:");
-                    Interpreter::new(*ast).run();
-                }
-                Err(err) => {
-                    println!("\n\n{err}")
-                }
-            }
+
+    let tokens = match Lexer::new(&code).lex() {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            write_err(&err, err.location, &code);
+            return;
         }
-        Err(err) => println!("\n\n{err}"),
-    }
-}
+    };
 
-#[derive(Debug, Clone, Copy)]
-pub enum TokenWidth {
-    Wide(usize),
-    Tall(usize, usize),
-}
-
-impl Display for TokenWidth {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Wide(w) => write!(f, "{w}"),
-            Self::Tall(h, post_w) => write!(f, "{h}x{post_w}"),
+    if PRINT_TOKENS {
+        let mut tk_iter = TokenIter::new(tokens.iter().cloned());
+        let mut posns = vec![];
+        while let Some(_) = tk_iter.next() {
+            posns.push(tk_iter.pos);
         }
+        println!(
+            "Tokens: [\n\t{}\n]\n",
+            tokens
+                .iter()
+                .zip(posns)
+                .map(|(t, pos)| format!("({}, {} @ {:?})", t.0, t.1, pos))
+                .join("\n\t")
+        );
     }
-}
 
-#[derive(Clone)]
-pub struct TokenIter<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> {
-    inner: T,
-    peeked: Vec<(I, TokenWidth)>,
-    pos: LineIndex,
-    pos_memory: Vec<LineIndex>,
-}
-
-impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> Iterator for TokenIter<I, T> {
-    type Item = I;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_raw().map(|(t, _)| t)
-    }
-}
-
-impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
-    pub fn new(inner: T) -> Self {
-        Self {
-            inner,
-            peeked: vec![],
-            pos: LineIndex(1, 1),
-            pos_memory: vec![],
+    let ast = match Parser::new(tokens).parse() {
+        Ok(ast) => ast,
+        Err(err) => {
+            write_err(&err, err.location, &code);
+            return;
         }
+    };
+
+    if PRINT_AST {
+        println!("AST: {ast}\n");
     }
 
-    fn next_raw(&mut self) -> Option<(I, TokenWidth)> {
-        if let Some(peeked) = self.peeked.pop() {
-            self.step(peeked.1, true);
-            Some(peeked)
-        } else if let Some(n) = self.inner.next() {
-            self.step(n.1, true);
-            Some(n)
-        } else {
-            None
-        }
-    }
-
-    fn step(&mut self, w: TokenWidth, forward: bool) {
-        match w {
-            TokenWidth::Tall(height, post_width) => {
-                if forward {
-                    self.pos_memory.push(self.pos);
-                    self.pos.0 += height;
-                    self.pos.1 = post_width;
-                } else {
-                    self.pos = self
-                        .pos_memory
-                        .pop()
-                        .expect("Can't backtrack multiline token that wasn't already there")
-                }
-            }
-            TokenWidth::Wide(width) => {
-                if forward {
-                    self.pos.1 += width
-                } else {
-                    self.pos.1 -= width
-                }
-            }
-        }
-    }
-
-    pub fn peek(&mut self) -> Option<&I> {
-        if self.peeked.is_empty() {
-            if let Some(peeked) = self.inner.next() {
-                self.peeked.push(peeked)
-            }
-        }
-        self.peeked.last().map(|(t, _)| t)
-    }
-
-    pub fn replace(&mut self, itm: I) {
-        self.peeked.push((itm, TokenWidth::Wide(0)));
-    }
-
-    pub fn replace_sized(&mut self, itm: I, size: TokenWidth) {
-        self.peeked.push((itm, size));
-        self.step(size, false);
-    }
-
-    pub fn eat(&mut self, pattern: impl IntoIterator<Item = I>) -> Option<Vec<I>>
-    where
-        I: PartialEq,
-    {
-        let mut removed = vec![];
-        for itm in pattern {
-            if let Some((n, sz)) = self.next_raw() {
-                if n != itm {
-                    self.replace_sized(n, sz);
-                    for (r, sr) in removed.into_iter().rev() {
-                        self.replace_sized(r, sr);
-                    }
-                    return None;
-                }
-                removed.push((n, sz))
-            } else {
-                for (r, sr) in removed.into_iter().rev() {
-                    self.replace_sized(r, sr);
-                }
-                return None;
-            }
-        }
-        Some(removed.into_iter().map(|(t, _)| t).collect())
-    }
-
-    pub fn expect(&mut self, ele: I) -> Result<(), String>
-    where
-        I: PartialEq,
-    {
-        match self.next() {
-            Some(next) if next == ele => Ok(()),
-            Some(next) => Err(format!("Expected {ele:?}, found {next:?}")),
-            None => Err("Unexpected EOF".to_string()),
+    println!("Program output:");
+    match Interpreter::new(*ast).run() {
+        Ok(_) => (),
+        Err(err) => {
+            write_err(&err, err.base_pos().unwrap_or(LineIndex(0, 0)), &code);
+            return;
         }
     }
 }
 
-impl<T: Iterator<Item = (char, TokenWidth)>> TokenIter<char, T> {
-    pub fn eat_str(&mut self, str: &str) -> bool {
-        self.eat(str.chars()).is_some()
-    }
+fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) {
+    println!(
+        "\n\n{}EOL\n{}{}\n{err}",
+        code.lines()
+            .nth(pos.0 - 1) // Good old off-by-one due to indexing differences
+            .expect("Error past the last line of code"),
+        " ".repeat(pos.1),
+        "^ Error happened here",
+    )
 }

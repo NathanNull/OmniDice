@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    TokenIter, TokenWidth,
+    tokeniter::{TokenIter, TokenWidth},
     builtins::BUILTINS,
     error::{LineIndex, ParseError},
     interpreter::{Interpreter, VarScope},

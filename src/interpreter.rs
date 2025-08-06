@@ -62,7 +62,7 @@ impl Interpreter {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), RuntimeError> {
         let ast = self.ast.clone();
         match self.eval_expr(&ast) {
             Ok(ok) => assert_eq!(
@@ -70,8 +70,9 @@ impl Interpreter {
                 &(Box::new(Void) as Value),
                 "All programs should return void"
             ),
-            Err(err) => println!("{err}"),
+            Err(err) => return Err(err),
         }
+        Ok(())
     }
 
     fn eval_scope(&mut self, scope: &Scope) -> Result<Value, RuntimeError> {

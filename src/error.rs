@@ -150,4 +150,8 @@ impl RuntimeError {
     pub fn info(self) -> String {
         self.info
     }
+
+    pub fn base_pos(&self) -> Option<LineIndex> {
+        self.err_loc
+    }
 }

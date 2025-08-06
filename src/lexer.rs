@@ -4,7 +4,12 @@ use std::{
     str::Chars,
 };
 
-use crate::{TokenIter, TokenWidth, error::LexError, parser::Op, types::Value};
+use crate::{
+    error::LexError,
+    parser::Op,
+    tokeniter::{TokenIter, TokenWidth},
+    types::Value,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -24,7 +29,7 @@ impl Display for Token {
         match self {
             Self::Keyword(k) => write!(f, "{k}"),
             Self::Identifier(i) => write!(f, "{i}"),
-            Self::Literal(v) => write!(f, "{v}"),
+            Self::Literal(v) => write!(f, "{v:?}"),
             Self::OpLike(ol) => write!(f, "{ol}"),
             Self::EOL => write!(f, ";"),
             Self::EOF => write!(f, "EOF"),
