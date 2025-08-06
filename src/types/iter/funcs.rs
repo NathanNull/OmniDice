@@ -193,10 +193,10 @@ pub fn filter_fn(
     let mut it = params.iter().cloned();
     let me = it
         .next_as::<Iter>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid owner type"))?;
     let filter = it
         .next_as::<Func>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid filter parameter"))?;
     Ok(Box::new(Iter {
         output: me.output.clone(),
         next_fn: Box::new(
@@ -207,7 +207,7 @@ pub fn filter_fn(
                 )]))
                 .map_err(|e| RuntimeError::partial(&e))?
                 .downcast::<FuncT>()
-                .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+                .ok_or_else(|| RuntimeError::partial("Invalid filter parameter degenericization"))?
                 .make_rust_member(
                     filter_iter_fn,
                     Box::new(Tuple::new(vec![me.dup(), filter.dup()])),
@@ -224,14 +224,14 @@ fn filter_iter_fn(
     let mut it = params.iter().cloned();
     let tup = it
         .next_as::<Tuple>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid iter owner type"))?;
     let mut it = tup.inner().elements.clone().into_iter();
     let me = it
         .next_as::<Iter>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid iter owner type"))?;
     let filter = it
         .next_as::<Func>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid iter owner type"))?;
     let filter_expr = (Box::new(filter.clone()) as Value).into();
     let mut res = Maybe {
         output: me.output.clone(),
@@ -243,7 +243,7 @@ fn filter_iter_fn(
         .map_err(|e| RuntimeError::partial(&e))?;
     while let Some(next) = &next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+        .ok_or_else(|| RuntimeError::partial("Invalid iter return type"))?
         .contents
     {
         let filter_res = (call)(
@@ -253,7 +253,7 @@ fn filter_iter_fn(
             Some(Box::new(BoolT)),
         )?
         .downcast::<bool>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid filter return type"))?;
         if filter_res {
             res.contents = Some(next.clone());
             break;
@@ -286,13 +286,13 @@ pub fn fold_fn(
     let mut it = params.iter().cloned();
     let me = it
         .next_as::<Iter>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid owner type"))?;
     let initial = it
         .next()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid parameter count"))?;
     let folder = it
         .next_as::<Func>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid parameter type"))?;
     let folder_expr = Expr {
         contents: ExprContents::Value(Box::new(folder.clone())),
         output: folder.get_type(),
@@ -327,7 +327,7 @@ pub fn ident_fn(
 ) -> Result<Value, RuntimeError> {
     Ok(params
         .first()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+        .ok_or_else(|| RuntimeError::partial("Invalid parameter count"))?
         .clone())
 }
 
@@ -351,19 +351,19 @@ pub fn to_map_fn(
 ) -> Result<Value, RuntimeError> {
     let iter = params
         .first()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?
+        .ok_or_else(|| RuntimeError::partial("Invalid parameter count"))?
         .downcast::<Iter>()
-        .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+        .ok_or_else(|| RuntimeError::partial("Invalid parameter type"))?;
     let mut map = HashMap::new();
     let (mut kt, mut vt) = (Box::new(Void) as Datatype, Box::new(Void) as Datatype);
     loop {
         let entry = next_fn(vec![Box::new(iter.clone())], i, None)?
             .downcast::<Maybe>()
-            .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+            .ok_or_else(|| RuntimeError::partial("Invalid iter return type"))?;
         if let Some(val) = entry.contents {
             let tup = val
                 .downcast::<Tuple>()
-                .ok_or_else(|| RuntimeError::partial("Invalid call"))?;
+                .ok_or_else(|| RuntimeError::partial("Invalid iter return type"))?;
             let kvpair = &tup.inner().elements;
             let key = kvpair[0].clone();
             let value = kvpair[1].clone();
