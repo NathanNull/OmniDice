@@ -37,9 +37,6 @@ pub use ref_t::{Ref, RefT};
 mod function;
 pub use function::{Func, FuncT, InnerFunc};
 
-mod func_sum;
-pub use func_sum::{FuncSum, FuncSumT};
-
 mod iter;
 pub use iter::{Iter, IterT};
 

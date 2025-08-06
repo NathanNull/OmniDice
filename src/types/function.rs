@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{op_list, parser::Expr, type_init};
+use crate::{parser::Expr, type_init};
 
 use super::*;
 
@@ -275,20 +275,6 @@ impl Type for FuncT {
             },
             call,
         ))
-    }
-
-    fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
-        if other.downcast::<FuncSumT>().is_some() {
-            op_list!(op => {
-                Plus(l: Func, r: FuncSum) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
-            })
-        } else if other.downcast::<FuncT>().is_some() {
-            op_list!(op => {
-                Plus(l: Func, r: Func) -> (FuncSumT {f_types: vec![]}) |l,r| Ok(FuncSum::new(vec![Box::new(l), Box::new(r)]));
-            })
-        } else {
-            Err(format!("Can't operate {self} {op:?} {other}"))
-        }
     }
 
     fn possible_call(&self) -> bool {
