@@ -73,7 +73,7 @@ fn main() {
 
 fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) {
     println!(
-        "\n\n{}EOL\n{}{}\n{err}",
+        "\n\n{}\n{}{}\n{err}",
         code.lines()
             .nth(pos.0 - 1) // Good old off-by-one due to indexing differences
             .expect("Error past the last line of code"),
