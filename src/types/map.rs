@@ -6,7 +6,7 @@ use crate::{
     types::arr::{ITER_RET_SIG, iter_ret_fn},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct _InnerMap {
     key: Datatype,
     value: Datatype,
@@ -131,6 +131,7 @@ fn iter_fn(
                 output: out,
                 next_fn: Box::new(ITER_RET_SIG.clone().make_rust_member(
                     iter_ret_fn,
+                    "map_iter_ret_fn".to_string(),
                     Box::new(Tuple::new(vec![Box::new(0), Box::new(arr)])),
                 )?),
             }));
@@ -207,7 +208,10 @@ static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![],
     output: Box::new(IntT),
     generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(MapT { key: TV1.clone(), value: TV2.clone() })),
+    owner_t: Some(Box::new(MapT {
+        key: TV1.clone(),
+        value: TV2.clone(),
+    })),
 });
 
 fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
@@ -217,6 +221,7 @@ fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
+#[typetag::serde]
 impl Type for MapT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
@@ -244,7 +249,9 @@ impl Type for MapT {
         name: &str,
     ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         gen_fn_map!(
-            name, self,
+            name,
+            self,
+            "Map",
             ("iter", ITER_SIG, iter_fn, iter_prop),
             ("set", SET_SIG, set_fn, set_prop),
             ("get", GET_SIG, get_fn, get_prop),
@@ -323,4 +330,5 @@ impl Type for MapT {
     }
 }
 
+#[typetag::serde]
 impl Val for Map {}

@@ -1,12 +1,20 @@
 use itertools::Itertools;
-use std::{env, fmt::Display, fs};
+use postcard::{from_bytes, to_allocvec};
+use sha2::{Digest, Sha256};
+use std::{
+    env,
+    fmt::Display,
+    fs,
+    io::{Read, Write},
+    path::Path,
+};
 
 use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
 use tokeniter::TokenIter;
 
-use crate::error::LineIndex;
+use crate::{error::LineIndex, parser::Expr};
 
 mod builtins;
 mod distribution;
@@ -23,13 +31,65 @@ const PRINT_AST: bool = true;
 fn main() {
     let args = env::args().collect::<Vec<_>>();
     let filename = args.get(1).expect("Must pass file name to run");
-    let code = fs::read_to_string(filename).expect("Couldn't read code file");
 
-    let tokens = match Lexer::new(&code).lex() {
+    let code = fs::read_to_string(filename).expect("Couldn't read code file");
+    let mut hasher = Sha256::new();
+    hasher.update(code.as_bytes());
+    let new_hash = hasher.finalize().to_vec();
+
+    let mut filepath = Path::new(filename)
+        .canonicalize()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    filepath.push("_compiled");
+    let mut filename = Path::new(filename).file_stem().unwrap().to_os_string();
+    filename.push(".odc");
+    filepath.push(filename);
+
+    // Use the cached AST if the code's hash matches the old one
+    let ast = match fs::File::open(filepath.clone()) {
+        Ok(mut file) => {
+            let mut old_hash = [0u8; 32];
+            file.read_exact(&mut old_hash).expect("IO Error");
+            if old_hash == *new_hash {
+                println!("Using cached program");
+                let mut buf = vec![];
+                file.read_to_end(&mut buf).expect("IO Error");
+                match from_bytes(&buf) {
+                    Ok(ret) => ret,
+                    Err(err) => panic!("Failed to deserialize: {err}"),
+                }
+            } else {
+                match parse(&code, new_hash, &filepath) {
+                    Some(ret) => ret,
+                    None => return,
+                }
+            }
+        }
+        Err(_) => match parse(&code, new_hash, &filepath) {
+            Some(ret) => ret,
+            None => return,
+        },
+    };
+
+    println!("Program output:");
+    match Interpreter::new(*ast).run() {
+        Ok(_) => (),
+        Err(err) => {
+            write_err(&err, err.base_pos().expect("Positionless error"), &code);
+            return;
+        }
+    }
+}
+
+fn parse(code: &str, code_hash: Vec<u8>, cache_path: &Path) -> Option<Box<Expr>> {
+    let tokens = match Lexer::new(code).lex() {
         Ok(tokens) => tokens,
         Err(err) => {
             write_err(&err, err.location, &code);
-            return;
+            return None;
         }
     };
 
@@ -53,7 +113,7 @@ fn main() {
         Ok(ast) => ast,
         Err(err) => {
             write_err(&err, err.location, &code);
-            return;
+            return None;
         }
     };
 
@@ -61,14 +121,21 @@ fn main() {
         println!("AST: {ast}\n");
     }
 
-    println!("Program output:");
-    match Interpreter::new(*ast).run() {
-        Ok(_) => (),
-        Err(err) => {
-            write_err(&err, err.base_pos().expect("Positionless error"), &code);
-            return;
-        }
+    match cache_path.parent() {
+        Some(parent) => fs::create_dir_all(parent).expect("Directory creation shouldn't fail"),
+        None => (),
     }
+    match fs::File::create(cache_path) {
+        Ok(mut file) => {
+            file.write_all(&code_hash)
+                .expect("File writing shouldn't fail");
+            file.write_all(&to_allocvec(&ast).expect("Serialization shouldn't fail"))
+                .expect("File writing shouldn't fail");
+        }
+        Err(_) => println!("Couldn't cache AST"),
+    }
+
+    Some(ast)
 }
 
 fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) {

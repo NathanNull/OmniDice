@@ -12,6 +12,7 @@ use crate::{
     interpreter::Interpreter,
     parser::{Expr, Op},
 };
+use serde::{Serialize, Deserialize};
 
 mod num;
 pub use num::{FloatT, IntT};
@@ -76,6 +77,7 @@ pub type CallFn = fn(&Expr, &Vec<Expr>, &mut Interpreter, Option<Datatype>) -> O
 pub type SetAtFn = fn(&Expr, &Expr, &Expr, &mut Interpreter) -> VoidResult;
 
 #[allow(private_bounds)]
+#[typetag::serde]
 pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if !self.get_generics().is_empty() {
@@ -235,6 +237,7 @@ trait BaseVal {
 }
 
 #[allow(private_bounds)]
+#[typetag::serde(tag="type")]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn get_type(&self) -> Datatype {
         self.base_get_type()
@@ -315,13 +318,33 @@ macro_rules! mut_type_init {
                 self.inner()
             }
         }
+
+        impl Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                self.inner().serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                Ok(Self(Arc::new(::std::sync::RwLock::new($inner::deserialize(
+                    deserializer,
+                )?))))
+            }
+        }
     };
 }
 
 #[macro_export]
 macro_rules! _make_type {
     ($ty: ident, $repr: literal) => {
-        #[derive(Debug, Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct $ty;
         impl Display for $ty {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -330,7 +353,7 @@ macro_rules! _make_type {
         }
     };
     ($ty: ident, $repr: literal, [$($tvar: ident, $tty: ty),*]) => {
-        #[derive(Debug, Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct $ty {
             $(pub $tvar: $tty),*
         }
@@ -347,11 +370,11 @@ macro_rules! _make_type {
         }
     };
     ($ty: ident nodisplay, $repr: literal) => {
-        #[derive(Debug, Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct $ty;
     };
     ($ty: ident nodisplay, $repr: literal, [$($tvar: ident, $tty: ty),*]) => {
-        #[derive(Debug, Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct $ty {
             $(pub $tvar: $tty),*
         }
@@ -481,7 +504,9 @@ impl Downcast for Datatype {
 }
 
 type_init!(Void, Void, "()");
+#[typetag::serde]
 impl Type for Void {}
+#[typetag::serde]
 impl Val for Void {
     fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {
         Ok(())
@@ -496,7 +521,7 @@ impl PartialEq for Void {
 
 #[macro_export]
 macro_rules! gen_fn_map {
-    ($name: expr, $self: expr, $(($fname: literal, $fsig: ident, $ffn: ident, $fpname: ident)),*$(,)?) => {
+    ($name: expr, $self: expr, $ty: literal, $(($fname: literal, $fsig: ident, $ffn: ident, $fpname: ident)),*$(,)?) => {
         match $name {
             $(
                 $fname => Ok((
@@ -505,7 +530,7 @@ macro_rules! gen_fn_map {
                     {
                         fn $fpname(me: &crate::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::error::RuntimeError> {
                             let me = i.eval_expr(me)?;
-                            Ok(Box::new($fsig.clone().make_rust_member($ffn, me)?))
+                            Ok(Box::new($fsig.clone().make_rust_member($ffn, format!("{}_{}", $ty, $fname), me)?))
                         }
                         Some($fpname as fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>)
                     },

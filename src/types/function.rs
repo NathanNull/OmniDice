@@ -1,10 +1,15 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, RwLock},
+};
+
+use serde::de::{VariantAccess as _, Visitor};
 
 use crate::{parser::Expr, type_init};
 
 use super::*;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Func {
     pub params: Vec<Datatype>,
     pub owner_t: Option<Datatype>,
@@ -24,14 +29,77 @@ type RustFunc = fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Val
 #[derive(Clone)]
 pub enum InnerFunc {
     Code(Expr, Vec<String>, HashMap<String, Value>),
-    Rust(RustFunc, Option<Value>),
+    Rust(RustFunc, String, Option<Value>),
+}
+
+static RUST_FUNC_LIST: LazyLock<RwLock<HashMap<String, RustFunc>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+impl Serialize for InnerFunc {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            InnerFunc::Code(code, params, context) => {
+                serializer.serialize_newtype_variant("Code", 0, "c", &(code, params, context))
+            }
+            InnerFunc::Rust(_, name, owner) => {
+                serializer.serialize_newtype_variant("Rust", 1, "c", &(name, owner))
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for InnerFunc {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const VARIANTS: &[&str] = &["Code", "Rust"];
+
+        struct InnerFuncVisitor;
+        impl<'de> Visitor<'de> for InnerFuncVisitor {
+            type Value = InnerFunc;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an InnerFunc")
+            }
+
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::EnumAccess<'de>,
+            {
+                let (v, va) = data.variant::<String>()?;
+                match v.as_str() {
+                    "Code" => {
+                        let (code, params, context) = va.newtype_variant()?;
+                        Ok(InnerFunc::Code(code, params, context))
+                    }
+                    "Rust" => {
+                        let (name, owner) = va.newtype_variant()?;
+                        println!("Getting function {name} from the list ({:?})", RUST_FUNC_LIST.try_read());
+                        let func = *RUST_FUNC_LIST
+                            .try_read()
+                            .expect("Oh god multithreading issues")
+                            .get(&name)
+                            .expect(&format!("Unknown builtin function {name}"));
+                        Ok(InnerFunc::Rust(func, name, owner))
+                    }
+                    v => Err(serde::de::Error::unknown_variant(v, VARIANTS)),
+                }
+            }
+        }
+
+        deserializer.deserialize_enum("InnerFunc", VARIANTS, InnerFuncVisitor)
+    }
 }
 
 impl Debug for InnerFunc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             InnerFunc::Code(expr, _, _) => write!(f, "Code({expr:?})"),
-            InnerFunc::Rust(func, _) => write!(f, "Internal({func:?})"),
+            InnerFunc::Rust(func, name, _) => write!(f, "Internal({name:?}@{func:?})"),
         }
     }
 }
@@ -59,7 +127,7 @@ impl InnerFunc {
                     .map_err(|e| RuntimeError::partial(&e))?;
                 interpreter.call_function(preset_vals, &body)
             }
-            InnerFunc::Rust(func, owner) => {
+            InnerFunc::Rust(func, _, owner) => {
                 if let Some(owner) = owner.clone() {
                     params = [owner].into_iter().chain(params.into_iter()).collect()
                 }
@@ -77,7 +145,7 @@ impl InnerFunc {
                 param_names.clone(),
                 captured_scope.clone(),
             ),
-            InnerFunc::Rust(_, _) => self.clone(),
+            InnerFunc::Rust(..) => self.clone(),
         })
     }
 }
@@ -166,24 +234,29 @@ impl FuncT {
         Ok(generic_matches)
     }
 
-    pub fn make_rust(self, func: RustFunc) -> Func {
+    pub fn make_rust(self, func: RustFunc, name: String) -> Func {
         Func {
             params: self.params,
             output: self.output,
             generic: self.generic,
             owner_t: None,
-            contents: InnerFunc::Rust(func, None),
+            contents: InnerFunc::Rust(func, name, None),
         }
     }
 
-    pub fn make_rust_member(mut self, func: RustFunc, owner: Value) -> Result<Func, RuntimeError> {
+    pub fn make_rust_member(
+        mut self,
+        func: RustFunc,
+        name: String,
+        owner: Value,
+    ) -> Result<Func, RuntimeError> {
         self = self.with_owner(owner.get_type())?;
         Ok(Func {
             params: self.params,
             output: self.output,
             generic: self.generic,
             owner_t: self.owner_t,
-            contents: InnerFunc::Rust(func, Some(owner)),
+            contents: InnerFunc::Rust(func, name, Some(owner)),
         })
     }
 
@@ -237,6 +310,7 @@ impl FuncT {
     }
 }
 
+#[typetag::serde]
 impl Type for FuncT {
     fn real_call_result(
         &self,
@@ -321,7 +395,9 @@ impl Type for FuncT {
                 for (k, v) in l.try_match(r)? {
                     if let Some(val) = generics.get(&k) {
                         if *val != v {
-                            return Err(format!("Can't match {l} with {r} (mismatched generic {k} as {val} or {v})"));
+                            return Err(format!(
+                                "Can't match {l} with {r} (mismatched generic {k} as {val} or {v})"
+                            ));
                         }
                     } else {
                         generics.insert(k.clone(), v.clone());
@@ -362,6 +438,8 @@ impl Type for FuncT {
         }))
     }
 }
+
+#[typetag::serde]
 impl Val for Func {
     fn insert_generics(&self, generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
         let new_ty = self

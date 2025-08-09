@@ -4,7 +4,7 @@ use crate::{gen_fn_map, mut_type_init, type_init};
 
 use super::*;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct _InnerRange {
     pub curr: i32,
     pub last: i32,
@@ -64,11 +64,11 @@ fn range_fn(
         .ok_or_else(|| RuntimeError::partial("Range iter function owner isn't range"))?;
     Ok(Box::new(Iter {
         output: Box::new(IntT),
-        next_fn: Box::new(
-            RANGE_ITER_SIG
-                .clone()
-                .make_rust_member(range_iter_fn, Box::new(me))?,
-        ),
+        next_fn: Box::new(RANGE_ITER_SIG.clone().make_rust_member(
+            range_iter_fn,
+            "range_iter_fn".to_string(),
+            Box::new(me),
+        )?),
     }))
 }
 
@@ -94,16 +94,25 @@ fn range_iter_fn(
     }))
 }
 
-
-
+#[typetag::serde]
 impl Type for RangeT {
-    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        gen_fn_map!(name, self, ("iter", RANGE_SIG, range_fn, range_prop))
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+        gen_fn_map!(
+            name,
+            self,
+            "Range",
+            ("iter", RANGE_SIG, range_fn, range_prop)
+        )
     }
     fn is_hashable(&self) -> bool {
         true
     }
 }
+
+#[typetag::serde]
 impl Val for Range {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(self.inner().curr);

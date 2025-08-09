@@ -4,7 +4,7 @@ use crate::{invalid, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Maybe {
     pub output: Datatype,
     pub contents: Option<Value>,
@@ -55,11 +55,13 @@ fn unwrap_fn(
     }
 }
 
+#[typetag::serde]
 impl Type for MaybeT {
     fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         fn get_unwrap(me: &Expr, i: &mut Interpreter) -> OpResult {
             Ok(Box::new(UNWRAP_SIG.clone().make_rust_member(
                 unwrap_fn,
+                "maybe_unwrap_fn".to_string(),
                 Box::new(i.try_eval_as::<Maybe>(me)?),
             )?))
         }
@@ -72,6 +74,7 @@ impl Type for MaybeT {
                 Some(get_unwrap),
                 None,
             )),
+            // TODO: this should probably be a function, and I should probably be using gen_fn_map
             "filled" => Ok((Box::new(BoolT), Some(get_filled), None)),
             _ => Err(format!("Can't get property {name} of {self}")),
         }
@@ -92,6 +95,8 @@ impl Type for MaybeT {
         self.output.is_hashable()
     }
 }
+
+#[typetag::serde]
 impl Val for Maybe {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         if let Some(c) = &self.contents {

@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use crate::types::Value;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LineIndex(pub usize, pub usize);
 
 impl Display for LineIndex {
@@ -80,6 +80,7 @@ impl RuntimeErrorType {
     }
 }
 
+use serde::{Deserialize, Serialize};
 use RuntimeErrorType::*;
 
 impl Display for RuntimeError {

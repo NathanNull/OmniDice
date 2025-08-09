@@ -5,8 +5,9 @@ use std::{
 };
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Distribution {
     pub values: BTreeMap<i32, f32>,
 }

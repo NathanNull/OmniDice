@@ -4,7 +4,7 @@ use crate::{mut_type_init, type_init};
 
 use super::*;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct _InnerTuple {
     entries: Vec<Datatype>,
     pub elements: Vec<Value>,
@@ -104,6 +104,7 @@ const PROPS: [(UnOpFn, SetFn); 32] = idx_props!(
     26, 27, 28, 29, 30, 31
 );
 
+#[typetag::serde]
 impl Type for TupT {
     fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if let Some(idx) = as_idx(name) {
@@ -154,6 +155,8 @@ impl Type for TupT {
         self.entries.iter().all(|e| e.is_hashable())
     }
 }
+
+#[typetag::serde]
 impl Val for Tuple {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()

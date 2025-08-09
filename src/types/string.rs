@@ -22,6 +22,8 @@ fn length_fn(
 }
 
 type_init!(StringT, String, "string");
+
+#[typetag::serde]
 impl Type for StringT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &StringT {
@@ -36,7 +38,7 @@ impl Type for StringT {
     }
 
     fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        gen_fn_map!(name, self, ("length", LENGTH_SIG, length_fn, length_prop))
+        gen_fn_map!(name, self, "String", ("length", LENGTH_SIG, length_fn, length_prop))
     }
 
     fn is_hashable(&self) -> bool {
@@ -44,6 +46,7 @@ impl Type for StringT {
     }
 }
 
+#[typetag::serde]
 impl Val for String {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write(self.as_bytes());

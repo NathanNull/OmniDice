@@ -1,9 +1,12 @@
 use std::{
-    collections::HashMap,
     fmt::{Debug, Display},
     ops::Deref,
 };
 
+use serde::{
+    Deserialize, Serialize,
+    de::{self, VariantAccess, Visitor},
+};
 use strum::EnumIter;
 
 use crate::{
@@ -18,7 +21,7 @@ pub enum OpType {
     Postfix,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize, Deserialize)]
 pub enum Op {
     Plus,
     Minus,
@@ -66,7 +69,7 @@ impl Debug for Op {
 
 pub type Scope = Vec<Expr>;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum ExprContents {
     Value(Value),
     Binop(Binop),
@@ -91,7 +94,7 @@ pub enum ExprContents {
     Continue(Continue),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Expr {
     pub contents: ExprContents,
     pub output: Datatype,
@@ -264,420 +267,6 @@ impl Display for Expr {
     }
 }
 
-impl Expr {
-    pub fn used_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        match &self.contents {
-            ExprContents::Value(_) => Box::new([].into_iter()),
-            ExprContents::Binop(binop) => {
-                let l_created = binop.lhs.assigned_variables().collect::<Vec<_>>();
-                Box::new(
-                    binop.lhs.used_variables().chain(
-                        binop
-                            .rhs
-                            .used_variables()
-                            .filter(move |v| !l_created.contains(v)),
-                    ),
-                )
-            }
-            ExprContents::Prefix(prefix) => prefix.rhs.used_variables(),
-            ExprContents::Postfix(postfix) => postfix.lhs.used_variables(),
-            ExprContents::Assign(assign) => {
-                let l_created = accessor_assigned_vars(&assign.assignee).collect::<Vec<_>>();
-                Box::new(
-                    match &assign.a_type {
-                        AssignType::Reassign => accessor_used_vars(&assign.assignee),
-                        AssignType::Create => Box::new([].into_iter()),
-                    }
-                    .chain(
-                        assign
-                            .val
-                            .used_variables()
-                            .filter(move |v| !l_created.contains(v)),
-                    ),
-                )
-            }
-            ExprContents::Accessor(accessor) => accessor_used_vars(accessor),
-            ExprContents::Scope(exprs) => {
-                let mut used = vec![];
-                let mut assigned = vec![];
-                for line in exprs {
-                    assigned.extend(line.assigned_variables());
-                    let l_used = line
-                        .used_variables()
-                        .filter(|v| !assigned.contains(v) && !used.contains(v))
-                        .collect::<Vec<_>>();
-                    used.extend_from_slice(&l_used);
-                }
-                Box::new(used.into_iter())
-            }
-            ExprContents::Conditional(conditional) => {
-                let l_created = conditional
-                    .condition
-                    .assigned_variables()
-                    .collect::<Vec<_>>();
-                let lc_2 = l_created.clone();
-                let r_created = conditional.result.assigned_variables().collect::<Vec<_>>();
-                Box::new(
-                    conditional
-                        .condition
-                        .used_variables()
-                        .chain(
-                            conditional
-                                .result
-                                .used_variables()
-                                .filter(move |v| !l_created.clone().contains(v)),
-                        )
-                        .chain(if let Some(otw) = &conditional.otherwise {
-                            Box::new(
-                                otw.used_variables()
-                                    .filter(move |v| !lc_2.contains(v) && !r_created.contains(v)),
-                            ) as Box<dyn Iterator<Item = String>>
-                        } else {
-                            Box::new([].into_iter())
-                        }),
-                )
-            }
-            ExprContents::While(wh) => {
-                let l_created = wh.condition.assigned_variables().collect::<Vec<_>>();
-                Box::new(
-                    wh.condition.used_variables().chain(
-                        wh.result
-                            .used_variables()
-                            .filter(move |v| !l_created.contains(v)),
-                    ),
-                )
-            }
-            ExprContents::For(fo) => {
-                let l_created = fo.iter.assigned_variables().collect::<Vec<_>>();
-                Box::new(
-                    fo.iter.used_variables().chain(
-                        fo.body
-                            .used_variables()
-                            .filter(move |v| *v != fo.var && !l_created.contains(v)),
-                    ),
-                )
-            }
-            ExprContents::Array(array) => {
-                let mut used = vec![];
-                let mut assigned = vec![];
-                for line in &array.elements {
-                    assigned.extend(line.assigned_variables());
-                    let l_used = line
-                        .used_variables()
-                        .filter(|v| !assigned.contains(v) && !used.contains(v))
-                        .collect::<Vec<_>>();
-                    used.extend_from_slice(&l_used);
-                }
-                Box::new(used.into_iter())
-            }
-            ExprContents::Tuple(tuple) => {
-                let mut used = vec![];
-                let mut assigned = vec![];
-                for line in &tuple.elements {
-                    assigned.extend(line.assigned_variables());
-                    let l_used = line
-                        .used_variables()
-                        .filter(|v| !assigned.contains(v) && !used.contains(v))
-                        .collect::<Vec<_>>();
-                    used.extend_from_slice(&l_used);
-                }
-                Box::new(used.into_iter())
-            }
-            ExprContents::Function(function) => Box::new(
-                function
-                    .contents
-                    .used_variables()
-                    .filter(|v| !function.params.iter().any(|(p, _)| p == v)),
-            ),
-            ExprContents::Call(call) => {
-                let mut used = vec![];
-                let mut assigned = vec![];
-                for line in [call.base.as_ref()].into_iter().chain(call.params.iter()) {
-                    assigned.extend(line.assigned_variables());
-                    let l_used = line
-                        .used_variables()
-                        .filter(|v| !assigned.contains(v) && !used.contains(v))
-                        .collect::<Vec<_>>();
-                    used.extend_from_slice(&l_used);
-                }
-                Box::new(used.into_iter())
-            }
-            ExprContents::GenericSpecify(gspec) => gspec.base.used_variables(),
-            ExprContents::Return(ret) => ret.ret.used_variables(),
-            ExprContents::Break(_) => Box::new(vec![].into_iter()),
-            ExprContents::Continue(_) => Box::new(vec![].into_iter()),
-        }
-    }
-
-    pub fn assigned_variables<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        match &self.contents {
-            ExprContents::Value(_) => Box::new([].into_iter()),
-            ExprContents::Binop(binop) => Box::new(
-                binop
-                    .lhs
-                    .assigned_variables()
-                    .chain(binop.rhs.assigned_variables()),
-            ),
-            ExprContents::Prefix(prefix) => prefix.rhs.assigned_variables(),
-            ExprContents::Postfix(postfix) => postfix.lhs.assigned_variables(),
-            ExprContents::Assign(assign) => Box::new(
-                match &assign.a_type {
-                    AssignType::Reassign => accessor_assigned_vars(&assign.assignee),
-                    AssignType::Create => match &assign.assignee {
-                        Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
-                        _ => unreachable!("Unexpected non-variable in let statement"),
-                    },
-                }
-                .chain(assign.val.assigned_variables()),
-            ),
-            ExprContents::Accessor(accessor) => accessor_assigned_vars(accessor),
-            ExprContents::Scope(exprs) => {
-                Box::new(exprs.iter().map(|e| e.assigned_variables()).flatten())
-            }
-            ExprContents::Conditional(conditional) => {
-                Box::new(conditional.condition.assigned_variables().chain(
-                    if let Some(otw) = &conditional.otherwise {
-                        otw.assigned_variables()
-                    } else {
-                        Box::new([].into_iter())
-                    },
-                ))
-            }
-            ExprContents::While(wh) => wh.condition.assigned_variables(),
-            ExprContents::For(fo) => fo.iter.assigned_variables(),
-            ExprContents::Array(array) => Box::new(
-                array
-                    .elements
-                    .iter()
-                    .map(|e| e.assigned_variables())
-                    .flatten(),
-            ),
-            ExprContents::Tuple(tuple) => Box::new(
-                tuple
-                    .elements
-                    .iter()
-                    .map(|e| e.assigned_variables())
-                    .flatten(),
-            ),
-            ExprContents::Function(_) => Box::new([].into_iter()),
-            ExprContents::Call(call) => Box::new(
-                call.params
-                    .iter()
-                    .map(|p| p.assigned_variables())
-                    .flatten()
-                    .chain(call.base.assigned_variables()),
-            ),
-            ExprContents::GenericSpecify(gspec) => gspec.base.assigned_variables(),
-            ExprContents::Return(ret) => ret.ret.assigned_variables(),
-            ExprContents::Break(_) => Box::new(vec![].into_iter()),
-            ExprContents::Continue(_) => Box::new(vec![].into_iter()),
-        }
-    }
-
-    pub fn replace_generics(
-        &self,
-        generics: &HashMap<String, Datatype>,
-    ) -> Result<Box<Self>, String> {
-        let new_type = match self.output.insert_generics(&generics) {
-            Ok(nt) => nt,
-            Err(e) => return Err(e),
-        };
-        let new_contents = match &self.contents {
-            ExprContents::Value(val) => ExprContents::Value(val.clone()),
-            ExprContents::Binop(binop) => ExprContents::Binop(
-                Binop::new(
-                    binop.lhs.replace_generics(generics)?,
-                    binop.rhs.replace_generics(generics)?,
-                    binop.op,
-                    binop.op_loc,
-                )
-                .map_err(|e| e.info)?,
-            ),
-            ExprContents::Prefix(prefix) => ExprContents::Prefix(
-                Prefix::new(
-                    prefix.op,
-                    prefix.rhs.replace_generics(generics)?,
-                    prefix.op_loc,
-                )
-                .map_err(|e| e.info)?,
-            ),
-            ExprContents::Postfix(postfix) => ExprContents::Postfix(
-                Postfix::new(
-                    postfix.op,
-                    postfix.lhs.replace_generics(generics)?,
-                    postfix.op_loc,
-                )
-                .map_err(|e| e.info)?,
-            ),
-            ExprContents::Assign(assign) => ExprContents::Assign(Assign {
-                assignee: accessor_replace_generics(&assign.assignee, generics)?,
-                val: assign.val.replace_generics(generics)?,
-                a_type: assign.a_type.clone(),
-                a_loc: assign.a_loc,
-            }),
-            ExprContents::Accessor(accessor) => {
-                ExprContents::Accessor(accessor_replace_generics(accessor, generics)?)
-            }
-            ExprContents::Scope(exprs) => ExprContents::Scope({
-                let mut res = vec![];
-                for i in exprs.iter().map(|e| e.replace_generics(generics)) {
-                    res.push(*i?);
-                }
-                res
-            }),
-            ExprContents::Conditional(conditional) => ExprContents::Conditional(Conditional {
-                condition: conditional.condition.replace_generics(generics)?,
-                result: conditional.result.replace_generics(generics)?,
-                otherwise: match conditional.otherwise.as_ref() {
-                    Some(otw) => Some(otw.replace_generics(generics)?),
-                    None => None,
-                },
-            }),
-            ExprContents::While(wh) => ExprContents::While(While {
-                condition: wh.condition.replace_generics(generics)?,
-                result: wh.result.replace_generics(generics)?,
-            }),
-            ExprContents::For(fo) => ExprContents::For(For {
-                var: fo.var.clone(),
-                iter: fo.iter.replace_generics(generics)?,
-                body: fo.body.replace_generics(generics)?,
-                iter_loc: fo.iter_loc,
-            }),
-            ExprContents::Array(array) => ExprContents::Array(Array {
-                elements: {
-                    let mut res = vec![];
-                    for i in array.elements.iter().map(|e| e.replace_generics(generics)) {
-                        res.push(*i?);
-                    }
-                    res
-                },
-            }),
-            ExprContents::Tuple(tuple) => ExprContents::Tuple(Tuple {
-                elements: {
-                    let mut res = vec![];
-                    for i in tuple.elements.iter().map(|e| e.replace_generics(generics)) {
-                        res.push(*i?);
-                    }
-                    res
-                },
-            }),
-            ExprContents::Function(function) => ExprContents::Function(Function {
-                params: {
-                    let mut res = vec![];
-                    for (n, t) in function
-                        .params
-                        .iter()
-                        .map(|(n, t)| (n.clone(), t.insert_generics(generics)))
-                    {
-                        res.push((
-                            n,
-                            match t {
-                                Ok(t) => t,
-                                Err(e) => return Err(e),
-                            },
-                        ));
-                    }
-                    res
-                },
-                contents: function.contents.replace_generics(generics)?,
-                generic: function.generic.clone(),
-            }),
-            ExprContents::Call(call) => ExprContents::Call({
-                let base = call.base.replace_generics(generics)?;
-                let params = {
-                    let mut res = vec![];
-                    for i in call.params.iter().map(|p| p.replace_generics(generics)) {
-                        res.push(*i?);
-                    }
-                    res
-                };
-                let out = if base != call.base || params != call.params {
-                    None
-                } else {
-                    Some(call.out.clone())
-                };
-                Call::new(base, params, call.loc, out).map_err(|e| e.info)?
-            }),
-            ExprContents::GenericSpecify(gspec) => ExprContents::GenericSpecify(GenericSpecify {
-                base: gspec.base.replace_generics(generics)?,
-                types: gspec.types.clone(),
-            }),
-            ExprContents::Return(ret) => ExprContents::Return(Return {
-                ret: ret.ret.replace_generics(generics)?,
-            }),
-            ExprContents::Break(_) => ExprContents::Break(Break),
-            ExprContents::Continue(_) => ExprContents::Continue(Continue),
-        };
-        Ok(Box::new(Self {
-            contents: new_contents,
-            output: new_type,
-        }))
-    }
-}
-
-impl From<Value> for Expr {
-    fn from(value: Value) -> Self {
-        let output = value.get_type();
-        Self {
-            contents: ExprContents::Value(value),
-            output,
-        }
-    }
-}
-
-fn accessor_used_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
-    match accessor {
-        Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
-        Accessor::Property(base, ..) => base.used_variables(),
-        Accessor::Index(indexed, _, indices) => {
-            // FIXME: this doesn't filter out variables assigned in previous indices
-            let mut vars: Box<dyn Iterator<Item = String> + 'a> =
-                Box::new(indexed.used_variables());
-            for (index, ..) in indices {
-                vars = Box::new(vars.chain(index.used_variables()))
-            }
-            vars
-        }
-    }
-}
-
-fn accessor_assigned_vars<'a>(accessor: &'a Accessor) -> Box<dyn Iterator<Item = String> + 'a> {
-    match accessor {
-        Accessor::Variable(_, _) => Box::new([].into_iter()),
-        Accessor::Property(base, ..) => base.assigned_variables(),
-        Accessor::Index(indexed, _, indices) => {
-            let mut vars: Box<dyn Iterator<Item = String> + 'a> =
-                Box::new(indexed.used_variables());
-            for (index, ..) in indices {
-                vars = Box::new(vars.chain(index.used_variables()))
-            }
-            vars
-        }
-    }
-}
-
-fn accessor_replace_generics(
-    accessor: &Accessor,
-    generics: &HashMap<String, Datatype>,
-) -> Result<Accessor, String> {
-    Ok(match accessor {
-        Accessor::Variable(_, _) => accessor.clone(),
-        Accessor::Property(base, prop, i, ..) => {
-            Accessor::new_property(base.replace_generics(generics)?, prop.clone(), *i)
-                .map_err(|e| e.info)?
-        }
-        Accessor::Index(base, i, indices) => Accessor::new_index(
-            base.replace_generics(generics)?,
-            indices
-                .iter()
-                .map(|(index, ..)| index.replace_generics(generics).map(|i| *i))
-                .collect::<Result<Vec<_>, _>>()?,
-            *i,
-        )
-        .map_err(|e| e.info)?,
-    })
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Binop {
     pub lhs: Box<Expr>,
@@ -686,6 +275,26 @@ pub struct Binop {
     pub op_loc: LineIndex,
     pub res: BinOpFn,
     pub out: Datatype,
+}
+
+impl Serialize for Binop {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (&self.lhs, self.op, &self.rhs, self.op_loc).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Binop {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (lhs, rhs, op, op_loc) =
+            <(Box<Expr>, Op, Box<Expr>, LineIndex)>::deserialize(deserializer)?;
+        Ok(Self::new(lhs, op, rhs, op_loc).expect("Saved ASTs should be valid"))
+    }
 }
 
 impl Binop {
@@ -722,6 +331,25 @@ pub struct Prefix {
     pub out: Datatype,
 }
 
+impl Serialize for Prefix {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (self.op, &self.rhs, self.op_loc).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Prefix {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (op, rhs, op_loc) = <(Op, Box<Expr>, LineIndex)>::deserialize(deserializer)?;
+        Ok(Self::new(op, rhs, op_loc).expect("Saved ASTs should be valid"))
+    }
+}
+
 impl Prefix {
     pub fn new(op: Op, rhs: Box<Expr>, op_loc: LineIndex) -> Result<Self, ParseError> {
         let (out, res) = rhs
@@ -750,6 +378,25 @@ pub struct Postfix {
     pub out: Datatype,
 }
 
+impl Serialize for Postfix {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (&self.lhs, self.op, self.op_loc).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Postfix {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (lhs, op, op_loc) = <(Box<Expr>, Op, LineIndex)>::deserialize(deserializer)?;
+        Ok(Self::new(op, lhs, op_loc).expect("Saved ASTs should be valid"))
+    }
+}
+
 impl Postfix {
     pub fn new(op: Op, lhs: Box<Expr>, op_loc: LineIndex) -> Result<Self, ParseError> {
         let (out, res) = lhs
@@ -769,7 +416,7 @@ impl Postfix {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AssignType {
     Create,
     Reassign,
@@ -788,13 +435,298 @@ impl Display for AssignType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
     pub a_type: AssignType,
     pub a_loc: LineIndex,
 }
+
+#[doc(hidden)]
+#[allow(
+    non_upper_case_globals,
+    unused_attributes,
+    unused_qualifications,
+    clippy::absolute_paths
+)]
+const _: () = {
+    #[allow(unused_extern_crates, clippy::useless_attribute)]
+    extern crate serde as _serde;
+    #[automatically_derived]
+    impl<'de> _serde::Deserialize<'de> for Assign {
+        fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
+        where
+            __D: _serde::Deserializer<'de>,
+        {
+            println!("Deserializing assign");
+            #[allow(non_camel_case_types)]
+            #[doc(hidden)]
+            enum __Field {
+                __field0,
+                __field1,
+                __field2,
+                __field3,
+                __ignore,
+            }
+            #[doc(hidden)]
+            struct __FieldVisitor;
+            #[automatically_derived]
+            impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
+                type Value = __Field;
+                fn expecting(
+                    &self,
+                    __formatter: &mut _serde::__private::Formatter,
+                ) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "field identifier")
+                }
+                fn visit_u64<__E>(self, __value: u64) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        0u64 => _serde::__private::Ok(__Field::__field0),
+                        1u64 => _serde::__private::Ok(__Field::__field1),
+                        2u64 => _serde::__private::Ok(__Field::__field2),
+                        3u64 => _serde::__private::Ok(__Field::__field3),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_str<__E>(
+                    self,
+                    __value: &str,
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        "assignee" => _serde::__private::Ok(__Field::__field0),
+                        "val" => _serde::__private::Ok(__Field::__field1),
+                        "a_type" => _serde::__private::Ok(__Field::__field2),
+                        "a_loc" => _serde::__private::Ok(__Field::__field3),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_bytes<__E>(
+                    self,
+                    __value: &[u8],
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        b"assignee" => _serde::__private::Ok(__Field::__field0),
+                        b"val" => _serde::__private::Ok(__Field::__field1),
+                        b"a_type" => _serde::__private::Ok(__Field::__field2),
+                        b"a_loc" => _serde::__private::Ok(__Field::__field3),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+            }
+            #[automatically_derived]
+            impl<'de> _serde::Deserialize<'de> for __Field {
+                #[inline]
+                fn deserialize<__D>(
+                    __deserializer: __D,
+                ) -> _serde::__private::Result<Self, __D::Error>
+                where
+                    __D: _serde::Deserializer<'de>,
+                {
+                    _serde::Deserializer::deserialize_identifier(__deserializer, __FieldVisitor)
+                }
+            }
+            #[doc(hidden)]
+            struct __Visitor<'de> {
+                marker: _serde::__private::PhantomData<Assign>,
+                lifetime: _serde::__private::PhantomData<&'de ()>,
+            }
+            #[automatically_derived]
+            impl<'de> _serde::de::Visitor<'de> for __Visitor<'de> {
+                type Value = Assign;
+                fn expecting(
+                    &self,
+                    __formatter: &mut _serde::__private::Formatter,
+                ) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "struct Assign")
+                }
+                #[inline]
+                fn visit_seq<__A>(
+                    self,
+                    mut __seq: __A,
+                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::SeqAccess<'de>,
+                {
+                    let __field0 =
+                        match _serde::de::SeqAccess::next_element::<Accessor>(&mut __seq)? {
+                            _serde::__private::Some(__value) => __value,
+                            _serde::__private::None => {
+                                return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                    0usize,
+                                    &"struct Assign with 4 elements",
+                                ));
+                            }
+                        };
+                    let __field1 =
+                        match _serde::de::SeqAccess::next_element::<Box<Expr>>(&mut __seq)? {
+                            _serde::__private::Some(__value) => __value,
+                            _serde::__private::None => {
+                                return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                    1usize,
+                                    &"struct Assign with 4 elements",
+                                ));
+                            }
+                        };
+                    let __field2 =
+                        match _serde::de::SeqAccess::next_element::<AssignType>(&mut __seq)? {
+                            _serde::__private::Some(__value) => __value,
+                            _serde::__private::None => {
+                                return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                    2usize,
+                                    &"struct Assign with 4 elements",
+                                ));
+                            }
+                        };
+                    let __field3 =
+                        match _serde::de::SeqAccess::next_element::<LineIndex>(&mut __seq)? {
+                            _serde::__private::Some(__value) => __value,
+                            _serde::__private::None => {
+                                return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                    3usize,
+                                    &"struct Assign with 4 elements",
+                                ));
+                            }
+                        };
+                    _serde::__private::Ok(Assign {
+                        assignee: __field0,
+                        val: __field1,
+                        a_type: __field2,
+                        a_loc: __field3,
+                    })
+                }
+                #[inline]
+                fn visit_map<__A>(
+                    self,
+                    mut __map: __A,
+                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::MapAccess<'de>,
+                {
+                    let mut __field0: _serde::__private::Option<Accessor> = _serde::__private::None;
+                    let mut __field1: _serde::__private::Option<Box<Expr>> =
+                        _serde::__private::None;
+                    let mut __field2: _serde::__private::Option<AssignType> =
+                        _serde::__private::None;
+                    let mut __field3: _serde::__private::Option<LineIndex> =
+                        _serde::__private::None;
+                    while let _serde::__private::Some(__key) =
+                        _serde::de::MapAccess::next_key::<__Field>(&mut __map)?
+                    {
+                        println!("Deserialized another field");
+                        match __key {
+                            __Field::__field0 => {
+                                if _serde::__private::Option::is_some(&__field0) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "assignee",
+                                        ),
+                                    );
+                                }
+                                __field0 =
+                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
+                                        Accessor,
+                                    >(
+                                        &mut __map
+                                    )?);
+                            }
+                            __Field::__field1 => {
+                                if _serde::__private::Option::is_some(&__field1) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field("val"),
+                                    );
+                                }
+                                __field1 =
+                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
+                                        Box<Expr>,
+                                    >(
+                                        &mut __map
+                                    )?);
+                            }
+                            __Field::__field2 => {
+                                if _serde::__private::Option::is_some(&__field2) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "a_type",
+                                        ),
+                                    );
+                                }
+                                __field2 =
+                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
+                                        AssignType,
+                                    >(
+                                        &mut __map
+                                    )?);
+                            }
+                            __Field::__field3 => {
+                                if _serde::__private::Option::is_some(&__field3) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field("a_loc"),
+                                    );
+                                }
+                                __field3 =
+                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
+                                        LineIndex,
+                                    >(
+                                        &mut __map
+                                    )?);
+                            }
+                            _ => {
+                                let _ = _serde::de::MapAccess::next_value::<_serde::de::IgnoredAny>(
+                                    &mut __map,
+                                )?;
+                            }
+                        }
+                    }
+                    let __field0 = match __field0 {
+                        _serde::__private::Some(__field0) => __field0,
+                        _serde::__private::None => {
+                            _serde::__private::de::missing_field("assignee")?
+                        }
+                    };
+                    let __field1 = match __field1 {
+                        _serde::__private::Some(__field1) => __field1,
+                        _serde::__private::None => _serde::__private::de::missing_field("val")?,
+                    };
+                    let __field2 = match __field2 {
+                        _serde::__private::Some(__field2) => __field2,
+                        _serde::__private::None => _serde::__private::de::missing_field("a_type")?,
+                    };
+                    let __field3 = match __field3 {
+                        _serde::__private::Some(__field3) => __field3,
+                        _serde::__private::None => _serde::__private::de::missing_field("a_loc")?,
+                    };
+                    _serde::__private::Ok(Assign {
+                        assignee: __field0,
+                        val: __field1,
+                        a_type: __field2,
+                        a_loc: __field3,
+                    })
+                }
+            }
+            #[doc(hidden)]
+            const FIELDS: &'static [&'static str] = &["assignee", "val", "a_type", "a_loc"];
+            _serde::Deserializer::deserialize_struct(
+                __deserializer,
+                "Assign",
+                FIELDS,
+                __Visitor {
+                    marker: _serde::__private::PhantomData::<Assign>,
+                    lifetime: _serde::__private::PhantomData,
+                },
+            )
+        }
+    }
+};
 
 #[derive(Clone, PartialEq)]
 pub enum Accessor {
@@ -812,6 +744,76 @@ pub enum Accessor {
         LineIndex,
         Vec<(Box<Expr>, BinOpFn, SetAtFn, Datatype)>,
     ),
+}
+
+impl Serialize for Accessor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Accessor::Variable(name, pos) => {
+                serializer.serialize_newtype_variant("Variable", 0, "c", &(name, pos))
+            }
+            Accessor::Property(base, prop, pos, _, _, _) => {
+                serializer.serialize_newtype_variant("Property", 1, "c", &(base, prop, pos))
+            }
+            Accessor::Index(base, pos, indices) => serializer.serialize_newtype_variant(
+                "Index",
+                2,
+                "c",
+                &(
+                    base,
+                    pos,
+                    indices.iter().map(|(i, ..)| i).collect::<Vec<_>>(),
+                ),
+            ),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Accessor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const VARIANTS: &[&str] = &["Variable", "Property", "Index"];
+
+        struct AccessorVisitor;
+        impl<'de> Visitor<'de> for AccessorVisitor {
+            type Value = Accessor;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an Accessor")
+            }
+
+            fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::EnumAccess<'de>,
+            {
+                let (v, va) = data.variant::<String>()?;
+                match v.as_str() {
+                    "Variable" => {
+                        let (name, pos) = va.newtype_variant()?;
+                        Ok(Accessor::Variable(name, pos))
+                    }
+                    "Property" => {
+                        let (base, prop, loc) = va.newtype_variant()?;
+                        Ok(Accessor::new_property(base, prop, loc)
+                            .expect("Saved ASTs should be valid"))
+                    }
+                    "Index" => {
+                        let (indexed, loc, indices) = va.newtype_variant()?;
+                        Ok(Accessor::new_index(indexed, indices, loc)
+                            .expect("Saved ASTs should be valid"))
+                    }
+                    v => Err(de::Error::unknown_variant(v, VARIANTS)),
+                }
+            }
+        }
+
+        deserializer.deserialize_enum("Accessor", VARIANTS, AccessorVisitor)
+    }
 }
 
 impl Accessor {
@@ -854,7 +856,7 @@ impl Debug for Accessor {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Conditional {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
@@ -871,7 +873,7 @@ impl Debug for Conditional {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct While {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
@@ -883,7 +885,7 @@ impl Debug for While {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct For {
     pub var: String,
     pub iter: Box<Expr>,
@@ -901,7 +903,7 @@ impl Debug for For {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Array {
     pub elements: Vec<Expr>,
 }
@@ -920,7 +922,7 @@ impl Debug for Array {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tuple {
     pub elements: Vec<Expr>,
 }
@@ -939,7 +941,7 @@ impl Debug for Tuple {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Function {
     pub params: Vec<(String, Datatype)>,
     pub contents: Box<Expr>,
@@ -953,6 +955,27 @@ pub struct Call {
     pub loc: LineIndex,
     pub res: CallFn,
     pub out: Datatype,
+}
+
+impl Serialize for Call {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (&self.base, &self.params, self.loc, &self.out).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Call {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        println!("Deserializing Call");
+        let (base, params, loc, out) =
+            <(Box<Expr>, Vec<Expr>, LineIndex, Datatype)>::deserialize(deserializer)?;
+        Ok(Self::new(base, params, loc, Some(out)).expect("Saved ASTs should be valid"))
+    }
 }
 
 impl Call {
@@ -979,19 +1002,19 @@ impl Call {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct GenericSpecify {
     pub base: Box<Expr>,
     pub types: Vec<Datatype>,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Return {
     pub ret: Box<Expr>,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Break;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Continue;

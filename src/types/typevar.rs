@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TypeVar {
     Var(String),
     BinOp(Datatype, Datatype, Op),
@@ -62,6 +62,7 @@ impl BaseType for TypeVar {
     }
 }
 
+#[typetag::serde]
 impl Type for TypeVar {
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
         Ok(match self {

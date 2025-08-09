@@ -3,7 +3,7 @@ use std::sync::{LazyLock, RwLockReadGuard};
 use super::*;
 use crate::{gen_fn_map, invalid, mut_type_init, op_list, type_init};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct _InnerArr {
     entry: Datatype,
     pub elements: Vec<Value>,
@@ -127,6 +127,7 @@ fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Op
                 output: arr.inner().entry.clone(),
                 next_fn: Box::new(ITER_RET_SIG.clone().make_rust_member(
                     iter_ret_fn,
+                    "arr_iter_ret_fn".to_string(),
                     Box::new(Tuple::new(vec![Box::new(0), arr.dup()])),
                 )?),
             }));
@@ -173,6 +174,7 @@ fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
+#[typetag::serde]
 impl Type for ArrT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
@@ -192,9 +194,14 @@ impl Type for ArrT {
         }
     }
 
-    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         gen_fn_map!(
-            name, self,
+            name,
+            self,
+            "Arr",
             ("push", PUSH_SIG, push_fn, push_prop),
             ("pop", POP_SIG, pop_fn, pop_prop),
             ("iter", ITER_SIG, iter_fn, iter_prop),
@@ -296,7 +303,12 @@ impl Type for ArrT {
         }))
     }
     fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
-        self.entry.try_match(&other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?.entry)
+        self.entry.try_match(
+            &other
+                .downcast::<Self>()
+                .ok_or_else(|| format!("Can't match {self} with {other}"))?
+                .entry,
+        )
     }
     fn get_generics(&self) -> Vec<String> {
         self.entry.get_generics()
@@ -306,6 +318,7 @@ impl Type for ArrT {
     }
 }
 
+#[typetag::serde]
 impl Val for Arr {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()

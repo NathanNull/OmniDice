@@ -32,6 +32,8 @@ fn i2f_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
 }
 
 type_init!(FloatT, f32, "float");
+
+#[typetag::serde]
 impl Type for FloatT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &FloatT {
@@ -57,12 +59,19 @@ impl Type for FloatT {
         })
     }
     fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        gen_fn_map!(name, self, ("to_int", F2I_SIG, f2i_fn, f2i_fn_prop))
+        gen_fn_map!(
+            name,
+            self,
+            "Float",
+            ("to_int", F2I_SIG, f2i_fn, f2i_fn_prop)
+        )
     }
     fn is_hashable(&self) -> bool {
         true
     }
 }
+
+#[typetag::serde]
 impl Val for f32 {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_u32(self.to_bits());
@@ -71,6 +80,8 @@ impl Val for f32 {
 }
 
 type_init!(IntT, i32, "int");
+
+#[typetag::serde]
 impl Type for IntT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &IntT {
@@ -156,12 +167,19 @@ impl Type for IntT {
         })
     }
     fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        gen_fn_map!(name, self, ("to_float", I2F_SIG, i2f_fn, i2f_fn_prop))
+        gen_fn_map!(
+            name,
+            self,
+            "Int",
+            ("to_float", I2F_SIG, i2f_fn, i2f_fn_prop)
+        )
     }
     fn is_hashable(&self) -> bool {
         true
     }
 }
+
+#[typetag::serde]
 impl Val for i32 {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(*self);

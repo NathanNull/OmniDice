@@ -2,6 +2,8 @@ use super::*;
 use crate::{op_list, type_init};
 
 type_init!(BoolT, bool, "bool");
+
+#[typetag::serde]
 impl Type for BoolT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &BoolT {
@@ -40,6 +42,8 @@ impl Type for BoolT {
         true
     }
 }
+
+#[typetag::serde]
 impl Val for bool {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_u8(*self as u8);

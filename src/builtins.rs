@@ -19,7 +19,7 @@ macro_rules! gen_builtins {
             HashMap::from_iter([$(
                 (
                     $fname.to_string(), 
-                    Box::new((&$fsig as &FuncT).clone().make_rust($ffn)) as Value,
+                    Box::new((&$fsig as &FuncT).clone().make_rust($ffn, format!("builtin_{}", $fname))) as Value,
                 )
             ),*])
         });

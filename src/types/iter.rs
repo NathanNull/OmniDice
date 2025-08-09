@@ -4,7 +4,7 @@ use crate::{gen_fn_map, invalid, parser::ExprContents, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Iter {
     pub next_fn: Value,
     pub output: Datatype,
@@ -129,6 +129,7 @@ pub fn map_fn(
                 .ok_or_else(|| RuntimeError::partial("map func degenericization isn't a function"))?
                 .make_rust_member(
                     map_iter_fn,
+                    "iter_map_iter_fn".to_string(),
                     Box::new(Tuple::new(vec![me.dup(), mapper.dup()])),
                 )?,
         ),
@@ -232,6 +233,7 @@ pub fn filter_fn(
                 .ok_or_else(|| RuntimeError::partial("Invalid filter parameter degenericization"))?
                 .make_rust_member(
                     filter_iter_fn,
+                    "iter_filter_iter_fn".to_string(),
                     Box::new(Tuple::new(vec![me.dup(), filter.dup()])),
                 )?,
         ),
@@ -401,6 +403,7 @@ pub fn to_map_fn(
     ))
 }
 
+#[typetag::serde]
 impl Type for IterT {
     fn real_prop_type(
         &self,
@@ -409,6 +412,7 @@ impl Type for IterT {
         gen_fn_map!(
             name,
             self,
+            "Iter",
             ("next", NEXT_SIG, next_fn, next_prop),
             ("map", MAP_SIG, map_fn, map_prop),
             ("iter", IDENT_SIG, ident_fn, ident_prop),
@@ -435,4 +439,6 @@ impl Type for IterT {
         self.output.get_generics()
     }
 }
+
+#[typetag::serde]
 impl Val for Iter {}

@@ -14,6 +14,9 @@ use crate::{
 
 pub mod expr;
 pub use expr::*;
+
+pub mod vars;
+
 use strum::IntoEnumIterator;
 
 pub struct Parser {
