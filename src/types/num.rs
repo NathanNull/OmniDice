@@ -1,5 +1,35 @@
+use std::sync::LazyLock;
+
 use super::*;
-use crate::{op_list, type_init};
+use crate::{gen_fn_map, op_list, type_init};
+
+static F2I_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(IntT),
+    generic: vec![],
+    owner_t: Some(Box::new(FloatT)),
+});
+
+fn f2i_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let float = params[0]
+        .downcast::<f32>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(float as i32))
+}
+
+static I2F_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: Box::new(FloatT),
+    generic: vec![],
+    owner_t: Some(Box::new(IntT)),
+});
+
+fn i2f_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let float = params[0]
+        .downcast::<i32>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(float as f32))
+}
 
 type_init!(FloatT, f32, "float");
 impl Type for FloatT {
@@ -17,13 +47,6 @@ impl Type for FloatT {
                 Geq(l: f32, r: f32) -> (BoolT) |l,r| Ok(l >= r);
                 Leq(l: f32, r: f32) -> (BoolT) |l,r| Ok(l <= r);
             })
-        } else if other == &IntT {
-            op_list!(op => {
-                Plus(l: f32, r: i32) -> (FloatT) |l,r|Ok(l + r as f32);
-                Minus(l: f32, r: i32) -> (FloatT) |l,r|Ok(l - r as f32);
-                Times(l: f32, r: i32) -> (FloatT) |l,r|Ok(l * r as f32);
-                Divided(l: f32, r: i32) -> (FloatT) |l,r|Ok(l / r as f32);
-            })
         } else {
             Err(format!("Can't operate {self} {op:?} {other}"))
         }
@@ -32,6 +55,9 @@ impl Type for FloatT {
         op_list!(op => {
             Minus(v: f32) -> (FloatT) |v: f32|Ok(-v);
         })
+    }
+    fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+        gen_fn_map!(name, self, ("to_int", F2I_SIG, f2i_fn, f2i_fn_prop))
     }
     fn is_hashable(&self) -> bool {
         true
@@ -65,13 +91,6 @@ impl Type for IntT {
                 D(l: i32, r: i32) -> (DiceT) |l:i32 ,r: i32|Ok(Distribution::n_die_m(l as usize, r as usize));
                 Range(l: i32, r: i32) -> (RangeT) |l:i32 ,r: i32|Ok(Range::new(l, r - 1));
                 RangeEq(l: i32, r: i32) -> (RangeT) |l:i32 ,r: i32|Ok(Range::new(l, r));
-            })
-        } else if other == &FloatT {
-            op_list!(op => {
-                Plus(l: i32, r: f32) -> (FloatT) |l,r|Ok(l as f32 + r);
-                Minus(l: i32, r: f32) -> (FloatT) |l,r|Ok(l as f32 - r);
-                Times(l: i32, r: f32) -> (FloatT) |l,r|Ok(l as f32 * r);
-                Divided(l: i32, r: f32) -> (FloatT) |l,r|Ok(l as f32 / r);
             })
         } else if other
             == &(ArrT {
@@ -135,6 +154,9 @@ impl Type for IntT {
         op_list!(op => {
             Minus(v: i32) -> (IntT) |v: i32|Ok(-v);
         })
+    }
+    fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+        gen_fn_map!(name, self, ("to_float", I2F_SIG, i2f_fn, i2f_fn_prop))
     }
     fn is_hashable(&self) -> bool {
         true

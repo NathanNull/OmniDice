@@ -102,6 +102,7 @@ for i in 0..100 {
     }
 }*/
 
-printf("{}", (3d6+3).mean());
+/* TODO: this code doesn't compile because my type inference code is bad and sucks
+let a: maybe<int> = iter(func() -> maybe<int> {filled(2)}).next(); */
 
 //printf("{}", (0..=10).iter().filter(func(i: int) -> bool {i % 2 == 0}).fold("", func(acc: string, i: int)->string{format("{}, {}", (acc, i))}));

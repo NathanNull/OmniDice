@@ -18,7 +18,7 @@ mod tokeniter;
 mod types;
 
 const PRINT_TOKENS: bool = false;
-const PRINT_AST: bool = false;
+const PRINT_AST: bool = true;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -65,7 +65,7 @@ fn main() {
     match Interpreter::new(*ast).run() {
         Ok(_) => (),
         Err(err) => {
-            write_err(&err, err.base_pos().unwrap_or(LineIndex(0, 0)), &code);
+            write_err(&err, err.base_pos().expect("Positionless error"), &code);
             return;
         }
     }
@@ -77,7 +77,7 @@ fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) {
         code.lines()
             .nth(pos.0 - 1) // Good old off-by-one due to indexing differences
             .expect("Error past the last line of code"),
-        " ".repeat(pos.1),
+        " ".repeat(pos.1 - 1),
         "^ Error happened here",
     )
 }

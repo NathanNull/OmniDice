@@ -780,6 +780,8 @@ impl Parser {
                                 // TODO: allow for other expression types to be assignable
                                 // eg. somefunction().returned_param = 17;
                                 // Actually I think this is legal in basically all cases, though its usefulness is questionable.
+                                // I feel like there's some way this breaks if it's _ => true,
+                                // but I can't see what it is right now so I'm going to leave it.
                                 _ => false,
                             } && match &assignee {
                                 Accessor::Property(_, _, _, _, setter, _) => setter.is_some(),
