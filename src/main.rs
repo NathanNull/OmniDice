@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use postcard::{from_bytes, to_allocvec};
+use serde_cbor::{from_slice, to_vec};
 use sha2::{Digest, Sha256};
 use std::{
     env,
@@ -52,14 +52,16 @@ fn main() {
     let ast = match fs::File::open(filepath.clone()) {
         Ok(mut file) => {
             let mut old_hash = [0u8; 32];
-            file.read_exact(&mut old_hash).expect("IO Error");
+            file.read_exact(&mut old_hash)
+                .expect("Couldn't read cached code hash");
             if old_hash == *new_hash {
                 println!("Using cached program");
                 let mut buf = vec![];
-                file.read_to_end(&mut buf).expect("IO Error");
-                match from_bytes(&buf) {
+                file.read_to_end(&mut buf)
+                    .expect("Couldn't read cached AST");
+                match from_slice(&buf) {
                     Ok(ret) => ret,
-                    Err(err) => panic!("Failed to deserialize: {err}"),
+                    Err(err) => panic!("Failed to deserialize: {err:#?}"),
                 }
             } else {
                 match parse(&code, new_hash, &filepath) {
@@ -129,8 +131,12 @@ fn parse(code: &str, code_hash: Vec<u8>, cache_path: &Path) -> Option<Box<Expr>>
         Ok(mut file) => {
             file.write_all(&code_hash)
                 .expect("File writing shouldn't fail");
-            file.write_all(&to_allocvec(&ast).expect("Serialization shouldn't fail"))
-                .expect("File writing shouldn't fail");
+            file.write_all(
+                &to_vec(&ast)
+                    .map_err(|e| e.to_string())
+                    .expect("Serialization shouldn't fail"),
+            )
+            .expect("File writing shouldn't fail");
         }
         Err(_) => println!("Couldn't cache AST"),
     }

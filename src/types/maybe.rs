@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::{invalid, type_init};
+use crate::{gen_fn_map, invalid, type_init};
 
 use super::*;
 
@@ -55,29 +55,37 @@ fn unwrap_fn(
     }
 }
 
+static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
+    params: vec![],
+    output: TV1.clone(),
+    generic: vec![TV1_NAME.to_string()],
+    owner_t: Some(Box::new(MaybeT {
+        output: TV1.clone(),
+    })),
+});
+
+fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+     let mut it = params.iter().cloned();
+    if let Some(me) = it.next_as::<Maybe>() {
+        Ok(Box::new(me.contents.is_some()))
+    } else {
+        invalid!("Call", "unwrap", params);
+    }
+}
+
 #[typetag::serde]
 impl Type for MaybeT {
-    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
-        fn get_unwrap(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(UNWRAP_SIG.clone().make_rust_member(
-                unwrap_fn,
-                "maybe_unwrap_fn".to_string(),
-                Box::new(i.try_eval_as::<Maybe>(me)?),
-            )?))
-        }
-        fn get_filled(me: &Expr, i: &mut Interpreter) -> OpResult {
-            Ok(Box::new(i.try_eval_as::<Maybe>(me)?.contents.is_some()))
-        }
-        match name {
-            "unwrap" => Ok((
-                Box::new(UNWRAP_SIG.clone().with_owner(self.dup()).map_err(|e|e.info())?),
-                Some(get_unwrap),
-                None,
-            )),
-            // TODO: this should probably be a function, and I should probably be using gen_fn_map
-            "filled" => Ok((Box::new(BoolT), Some(get_filled), None)),
-            _ => Err(format!("Can't get property {name} of {self}")),
-        }
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+        gen_fn_map!(
+            name,
+            self,
+            "Maybe",
+            ("unwrap", UNWRAP_SIG, unwrap_fn, unwrap_prop),
+            ("filled", FILLED_SIG, filled_fn, filled_prop),
+        )
     }
 
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
@@ -86,7 +94,12 @@ impl Type for MaybeT {
         }))
     }
     fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
-        self.output.try_match(&other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?.output)
+        self.output.try_match(
+            &other
+                .downcast::<Self>()
+                .ok_or_else(|| format!("Can't match {self} with {other}"))?
+                .output,
+        )
     }
     fn get_generics(&self) -> Vec<String> {
         self.output.get_generics()

@@ -525,13 +525,14 @@ macro_rules! gen_fn_map {
         match $name {
             $(
                 $fname => Ok((
-                    Box::new((&$fsig as &FuncT).clone().with_owner($self.dup()).map_err(|e|e.info())?),
+                    Box::new((&$fsig as &FuncT).clone().with_owner($self.dup()).map_err(|e|e.info())?) as Datatype,
                     //$ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
                     {
                         fn $fpname(me: &crate::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::error::RuntimeError> {
                             let me = i.eval_expr(me)?;
                             Ok(Box::new($fsig.clone().make_rust_member($ffn, format!("{}_{}", $ty, $fname), me)?))
                         }
+                        inventory::submit!(crate::types::function::RustFuncEntry($ty, $fname, $ffn));
                         Some($fpname as fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>)
                     },
                     None,

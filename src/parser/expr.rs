@@ -94,11 +94,224 @@ pub enum ExprContents {
     Continue(Continue),
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct Expr {
     pub contents: ExprContents,
     pub output: Datatype,
 }
+
+#[doc(hidden)]
+#[allow(
+    non_upper_case_globals,
+    unused_attributes,
+    unused_qualifications,
+    clippy::absolute_paths
+)]
+const _: () = {
+    #[allow(unused_extern_crates, clippy::useless_attribute)]
+    extern crate serde as _serde;
+    #[automatically_derived]
+    impl<'de> _serde::Deserialize<'de> for Expr {
+        fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
+        where
+            __D: _serde::Deserializer<'de>,
+        {
+            #[allow(non_camel_case_types)]
+            #[doc(hidden)]
+            enum __Field {
+                __field0,
+                __field1,
+                __ignore,
+            }
+            #[doc(hidden)]
+            struct __FieldVisitor;
+            #[automatically_derived]
+            impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
+                type Value = __Field;
+                fn expecting(
+                    &self,
+                    __formatter: &mut _serde::__private::Formatter,
+                ) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "field identifier")
+                }
+                fn visit_u64<__E>(self, __value: u64) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        0u64 => _serde::__private::Ok(__Field::__field0),
+                        1u64 => _serde::__private::Ok(__Field::__field1),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_str<__E>(
+                    self,
+                    __value: &str,
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        "contents" => _serde::__private::Ok(__Field::__field0),
+                        "output" => _serde::__private::Ok(__Field::__field1),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_bytes<__E>(
+                    self,
+                    __value: &[u8],
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        b"contents" => _serde::__private::Ok(__Field::__field0),
+                        b"output" => _serde::__private::Ok(__Field::__field1),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+            }
+            #[automatically_derived]
+            impl<'de> _serde::Deserialize<'de> for __Field {
+                #[inline]
+                fn deserialize<__D>(
+                    __deserializer: __D,
+                ) -> _serde::__private::Result<Self, __D::Error>
+                where
+                    __D: _serde::Deserializer<'de>,
+                {
+                    _serde::Deserializer::deserialize_identifier(__deserializer, __FieldVisitor)
+                }
+            }
+            #[doc(hidden)]
+            struct __Visitor<'de> {
+                marker: _serde::__private::PhantomData<Expr>,
+                lifetime: _serde::__private::PhantomData<&'de ()>,
+            }
+            #[automatically_derived]
+            impl<'de> _serde::de::Visitor<'de> for __Visitor<'de> {
+                type Value = Expr;
+                fn expecting(
+                    &self,
+                    __formatter: &mut _serde::__private::Formatter,
+                ) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(__formatter, "struct Expr")
+                }
+                #[inline]
+                fn visit_seq<__A>(
+                    self,
+                    mut __seq: __A,
+                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::SeqAccess<'de>,
+                {
+                    let __field0 =
+                        match _serde::de::SeqAccess::next_element::<ExprContents>(&mut __seq)? {
+                            _serde::__private::Some(__value) => __value,
+                            _serde::__private::None => {
+                                return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                    0usize,
+                                    &"struct Expr with 2 elements",
+                                ));
+                            }
+                        };
+                    let __field1 =
+                        match _serde::de::SeqAccess::next_element::<Datatype>(&mut __seq)? {
+                            _serde::__private::Some(__value) => __value,
+                            _serde::__private::None => {
+                                return _serde::__private::Err(_serde::de::Error::invalid_length(
+                                    1usize,
+                                    &"struct Expr with 2 elements",
+                                ));
+                            }
+                        };
+                    _serde::__private::Ok(Expr {
+                        contents: __field0,
+                        output: __field1,
+                    })
+                }
+                #[inline]
+                fn visit_map<__A>(
+                    self,
+                    mut __map: __A,
+                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::MapAccess<'de>,
+                {
+                    let mut __field0: _serde::__private::Option<ExprContents> =
+                        _serde::__private::None;
+                    let mut __field1: _serde::__private::Option<Datatype> = _serde::__private::None;
+                    while let _serde::__private::Some(__key) =
+                        _serde::de::MapAccess::next_key::<__Field>(&mut __map)?
+                    {
+                        match __key {
+                            __Field::__field0 => {
+                                if _serde::__private::Option::is_some(&__field0) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "contents",
+                                        ),
+                                    );
+                                }
+                                __field0 =
+                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
+                                        ExprContents,
+                                    >(
+                                        &mut __map
+                                    )?);
+                            }
+                            __Field::__field1 => {
+                                if _serde::__private::Option::is_some(&__field1) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "output",
+                                        ),
+                                    );
+                                }
+                                __field1 =
+                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
+                                        Datatype,
+                                    >(
+                                        &mut __map
+                                    )?);
+                            }
+                            _ => {
+                                let _ = _serde::de::MapAccess::next_value::<_serde::de::IgnoredAny>(
+                                    &mut __map,
+                                )?;
+                            }
+                        }
+                    }
+                    let __field0 = match __field0 {
+                        _serde::__private::Some(__field0) => __field0,
+                        _serde::__private::None => {
+                            _serde::__private::de::missing_field("contents")?
+                        }
+                    };
+                    let __field1 = match __field1 {
+                        _serde::__private::Some(__field1) => __field1,
+                        _serde::__private::None => _serde::__private::de::missing_field("output")?,
+                    };
+                    _serde::__private::Ok(Expr {
+                        contents: __field0,
+                        output: __field1,
+                    })
+                }
+            }
+            #[doc(hidden)]
+            const FIELDS: &'static [&'static str] = &["contents", "output"];
+            _serde::Deserializer::deserialize_struct(
+                __deserializer,
+                "Expr",
+                FIELDS,
+                __Visitor {
+                    marker: _serde::__private::PhantomData::<Expr>,
+                    lifetime: _serde::__private::PhantomData,
+                },
+            )
+        }
+    }
+};
 
 impl Debug for ExprContents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -435,298 +648,13 @@ impl Display for AssignType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
     pub a_type: AssignType,
     pub a_loc: LineIndex,
 }
-
-#[doc(hidden)]
-#[allow(
-    non_upper_case_globals,
-    unused_attributes,
-    unused_qualifications,
-    clippy::absolute_paths
-)]
-const _: () = {
-    #[allow(unused_extern_crates, clippy::useless_attribute)]
-    extern crate serde as _serde;
-    #[automatically_derived]
-    impl<'de> _serde::Deserialize<'de> for Assign {
-        fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
-        where
-            __D: _serde::Deserializer<'de>,
-        {
-            println!("Deserializing assign");
-            #[allow(non_camel_case_types)]
-            #[doc(hidden)]
-            enum __Field {
-                __field0,
-                __field1,
-                __field2,
-                __field3,
-                __ignore,
-            }
-            #[doc(hidden)]
-            struct __FieldVisitor;
-            #[automatically_derived]
-            impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
-                type Value = __Field;
-                fn expecting(
-                    &self,
-                    __formatter: &mut _serde::__private::Formatter,
-                ) -> _serde::__private::fmt::Result {
-                    _serde::__private::Formatter::write_str(__formatter, "field identifier")
-                }
-                fn visit_u64<__E>(self, __value: u64) -> _serde::__private::Result<Self::Value, __E>
-                where
-                    __E: _serde::de::Error,
-                {
-                    match __value {
-                        0u64 => _serde::__private::Ok(__Field::__field0),
-                        1u64 => _serde::__private::Ok(__Field::__field1),
-                        2u64 => _serde::__private::Ok(__Field::__field2),
-                        3u64 => _serde::__private::Ok(__Field::__field3),
-                        _ => _serde::__private::Ok(__Field::__ignore),
-                    }
-                }
-                fn visit_str<__E>(
-                    self,
-                    __value: &str,
-                ) -> _serde::__private::Result<Self::Value, __E>
-                where
-                    __E: _serde::de::Error,
-                {
-                    match __value {
-                        "assignee" => _serde::__private::Ok(__Field::__field0),
-                        "val" => _serde::__private::Ok(__Field::__field1),
-                        "a_type" => _serde::__private::Ok(__Field::__field2),
-                        "a_loc" => _serde::__private::Ok(__Field::__field3),
-                        _ => _serde::__private::Ok(__Field::__ignore),
-                    }
-                }
-                fn visit_bytes<__E>(
-                    self,
-                    __value: &[u8],
-                ) -> _serde::__private::Result<Self::Value, __E>
-                where
-                    __E: _serde::de::Error,
-                {
-                    match __value {
-                        b"assignee" => _serde::__private::Ok(__Field::__field0),
-                        b"val" => _serde::__private::Ok(__Field::__field1),
-                        b"a_type" => _serde::__private::Ok(__Field::__field2),
-                        b"a_loc" => _serde::__private::Ok(__Field::__field3),
-                        _ => _serde::__private::Ok(__Field::__ignore),
-                    }
-                }
-            }
-            #[automatically_derived]
-            impl<'de> _serde::Deserialize<'de> for __Field {
-                #[inline]
-                fn deserialize<__D>(
-                    __deserializer: __D,
-                ) -> _serde::__private::Result<Self, __D::Error>
-                where
-                    __D: _serde::Deserializer<'de>,
-                {
-                    _serde::Deserializer::deserialize_identifier(__deserializer, __FieldVisitor)
-                }
-            }
-            #[doc(hidden)]
-            struct __Visitor<'de> {
-                marker: _serde::__private::PhantomData<Assign>,
-                lifetime: _serde::__private::PhantomData<&'de ()>,
-            }
-            #[automatically_derived]
-            impl<'de> _serde::de::Visitor<'de> for __Visitor<'de> {
-                type Value = Assign;
-                fn expecting(
-                    &self,
-                    __formatter: &mut _serde::__private::Formatter,
-                ) -> _serde::__private::fmt::Result {
-                    _serde::__private::Formatter::write_str(__formatter, "struct Assign")
-                }
-                #[inline]
-                fn visit_seq<__A>(
-                    self,
-                    mut __seq: __A,
-                ) -> _serde::__private::Result<Self::Value, __A::Error>
-                where
-                    __A: _serde::de::SeqAccess<'de>,
-                {
-                    let __field0 =
-                        match _serde::de::SeqAccess::next_element::<Accessor>(&mut __seq)? {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    0usize,
-                                    &"struct Assign with 4 elements",
-                                ));
-                            }
-                        };
-                    let __field1 =
-                        match _serde::de::SeqAccess::next_element::<Box<Expr>>(&mut __seq)? {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    1usize,
-                                    &"struct Assign with 4 elements",
-                                ));
-                            }
-                        };
-                    let __field2 =
-                        match _serde::de::SeqAccess::next_element::<AssignType>(&mut __seq)? {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    2usize,
-                                    &"struct Assign with 4 elements",
-                                ));
-                            }
-                        };
-                    let __field3 =
-                        match _serde::de::SeqAccess::next_element::<LineIndex>(&mut __seq)? {
-                            _serde::__private::Some(__value) => __value,
-                            _serde::__private::None => {
-                                return _serde::__private::Err(_serde::de::Error::invalid_length(
-                                    3usize,
-                                    &"struct Assign with 4 elements",
-                                ));
-                            }
-                        };
-                    _serde::__private::Ok(Assign {
-                        assignee: __field0,
-                        val: __field1,
-                        a_type: __field2,
-                        a_loc: __field3,
-                    })
-                }
-                #[inline]
-                fn visit_map<__A>(
-                    self,
-                    mut __map: __A,
-                ) -> _serde::__private::Result<Self::Value, __A::Error>
-                where
-                    __A: _serde::de::MapAccess<'de>,
-                {
-                    let mut __field0: _serde::__private::Option<Accessor> = _serde::__private::None;
-                    let mut __field1: _serde::__private::Option<Box<Expr>> =
-                        _serde::__private::None;
-                    let mut __field2: _serde::__private::Option<AssignType> =
-                        _serde::__private::None;
-                    let mut __field3: _serde::__private::Option<LineIndex> =
-                        _serde::__private::None;
-                    while let _serde::__private::Some(__key) =
-                        _serde::de::MapAccess::next_key::<__Field>(&mut __map)?
-                    {
-                        println!("Deserialized another field");
-                        match __key {
-                            __Field::__field0 => {
-                                if _serde::__private::Option::is_some(&__field0) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field(
-                                            "assignee",
-                                        ),
-                                    );
-                                }
-                                __field0 =
-                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
-                                        Accessor,
-                                    >(
-                                        &mut __map
-                                    )?);
-                            }
-                            __Field::__field1 => {
-                                if _serde::__private::Option::is_some(&__field1) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field("val"),
-                                    );
-                                }
-                                __field1 =
-                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
-                                        Box<Expr>,
-                                    >(
-                                        &mut __map
-                                    )?);
-                            }
-                            __Field::__field2 => {
-                                if _serde::__private::Option::is_some(&__field2) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field(
-                                            "a_type",
-                                        ),
-                                    );
-                                }
-                                __field2 =
-                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
-                                        AssignType,
-                                    >(
-                                        &mut __map
-                                    )?);
-                            }
-                            __Field::__field3 => {
-                                if _serde::__private::Option::is_some(&__field3) {
-                                    return _serde::__private::Err(
-                                        <__A::Error as _serde::de::Error>::duplicate_field("a_loc"),
-                                    );
-                                }
-                                __field3 =
-                                    _serde::__private::Some(_serde::de::MapAccess::next_value::<
-                                        LineIndex,
-                                    >(
-                                        &mut __map
-                                    )?);
-                            }
-                            _ => {
-                                let _ = _serde::de::MapAccess::next_value::<_serde::de::IgnoredAny>(
-                                    &mut __map,
-                                )?;
-                            }
-                        }
-                    }
-                    let __field0 = match __field0 {
-                        _serde::__private::Some(__field0) => __field0,
-                        _serde::__private::None => {
-                            _serde::__private::de::missing_field("assignee")?
-                        }
-                    };
-                    let __field1 = match __field1 {
-                        _serde::__private::Some(__field1) => __field1,
-                        _serde::__private::None => _serde::__private::de::missing_field("val")?,
-                    };
-                    let __field2 = match __field2 {
-                        _serde::__private::Some(__field2) => __field2,
-                        _serde::__private::None => _serde::__private::de::missing_field("a_type")?,
-                    };
-                    let __field3 = match __field3 {
-                        _serde::__private::Some(__field3) => __field3,
-                        _serde::__private::None => _serde::__private::de::missing_field("a_loc")?,
-                    };
-                    _serde::__private::Ok(Assign {
-                        assignee: __field0,
-                        val: __field1,
-                        a_type: __field2,
-                        a_loc: __field3,
-                    })
-                }
-            }
-            #[doc(hidden)]
-            const FIELDS: &'static [&'static str] = &["assignee", "val", "a_type", "a_loc"];
-            _serde::Deserializer::deserialize_struct(
-                __deserializer,
-                "Assign",
-                FIELDS,
-                __Visitor {
-                    marker: _serde::__private::PhantomData::<Assign>,
-                    lifetime: _serde::__private::PhantomData,
-                },
-            )
-        }
-    }
-};
 
 #[derive(Clone, PartialEq)]
 pub enum Accessor {
@@ -753,15 +681,15 @@ impl Serialize for Accessor {
     {
         match self {
             Accessor::Variable(name, pos) => {
-                serializer.serialize_newtype_variant("Variable", 0, "c", &(name, pos))
+                serializer.serialize_newtype_variant("Accessor", 0, "Variable", &(name.clone(), *pos))
             }
             Accessor::Property(base, prop, pos, _, _, _) => {
-                serializer.serialize_newtype_variant("Property", 1, "c", &(base, prop, pos))
+                serializer.serialize_newtype_variant("Accessor", 1, "Property", &(base, prop, pos))
             }
             Accessor::Index(base, pos, indices) => serializer.serialize_newtype_variant(
-                "Index",
+                "Accessor",
                 2,
-                "c",
+                "Index",
                 &(
                     base,
                     pos,
@@ -971,7 +899,6 @@ impl<'de> Deserialize<'de> for Call {
     where
         D: serde::Deserializer<'de>,
     {
-        println!("Deserializing Call");
         let (base, params, loc, out) =
             <(Box<Expr>, Vec<Expr>, LineIndex, Datatype)>::deserialize(deserializer)?;
         Ok(Self::new(base, params, loc, Some(out)).expect("Saved ASTs should be valid"))

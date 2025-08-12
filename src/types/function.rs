@@ -32,8 +32,15 @@ pub enum InnerFunc {
     Rust(RustFunc, String, Option<Value>),
 }
 
-static RUST_FUNC_LIST: LazyLock<RwLock<HashMap<String, RustFunc>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+pub static RUST_FUNC_LIST: LazyLock<RwLock<HashMap<String, RustFunc>>> = LazyLock::new(|| {
+    RwLock::new(HashMap::from_iter(
+        inventory::iter::<RustFuncEntry>
+            .into_iter()
+            .map(|e| (e.0.to_string()+"_"+e.1, e.2.clone())),
+    ))
+});
+pub struct RustFuncEntry(pub &'static str, pub &'static str, pub RustFunc);
+inventory::collect!(RustFuncEntry);
 
 impl Serialize for InnerFunc {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -41,11 +48,14 @@ impl Serialize for InnerFunc {
         S: serde::Serializer,
     {
         match self {
-            InnerFunc::Code(code, params, context) => {
-                serializer.serialize_newtype_variant("Code", 0, "c", &(code, params, context))
-            }
+            InnerFunc::Code(code, params, context) => serializer.serialize_newtype_variant(
+                "InnerFunc",
+                0,
+                "Code",
+                &(code, params, context),
+            ),
             InnerFunc::Rust(_, name, owner) => {
-                serializer.serialize_newtype_variant("Rust", 1, "c", &(name, owner))
+                serializer.serialize_newtype_variant("InnerFunc", 1, "Rust", &(name, owner))
             }
         }
     }
@@ -78,7 +88,6 @@ impl<'de> Deserialize<'de> for InnerFunc {
                     }
                     "Rust" => {
                         let (name, owner) = va.newtype_variant()?;
-                        println!("Getting function {name} from the list ({:?})", RUST_FUNC_LIST.try_read());
                         let func = *RUST_FUNC_LIST
                             .try_read()
                             .expect("Oh god multithreading issues")
