@@ -12,7 +12,7 @@ use crate::{
     interpreter::Interpreter,
     parser::{Expr, Op},
 };
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 mod num;
 pub use num::{FloatT, IntT};
@@ -112,7 +112,11 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                     "Can't operate on generic types directly",
                 ))
             }
-            Ok((Box::new(TypeVar::Index(self.dup(), index.clone())), get_err, set_err))
+            Ok((
+                Box::new(TypeVar::Index(self.dup(), index.clone())),
+                get_err,
+                set_err,
+            ))
         } else {
             self.real_index_type(index)
         }
@@ -164,18 +168,28 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                     "Can't operate on generic types directly",
                 ))
             }
-            Ok((Box::new(TypeVar::Call(self.dup(), params, expected_output)), err))
+            Ok((
+                Box::new(TypeVar::Call(self.dup(), params, expected_output)),
+                err,
+            ))
         } else {
             self.real_call_result(params, expected_output)
         }
     }
-    fn real_prop_type(&self, _name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+    fn real_prop_type(
+        &self,
+        _name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         Err(format!("Type {self} has no properties"))
     }
     fn real_index_type(&self, _index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
         Err(format!("Type {self} can't be indexed"))
     }
-    fn real_bin_op_result(&self, _other: &Datatype, _op: Op) -> Result<(Datatype, BinOpFn), String> {
+    fn real_bin_op_result(
+        &self,
+        _other: &Datatype,
+        _op: Op,
+    ) -> Result<(Datatype, BinOpFn), String> {
         Err(format!("Type {self} has no binary operations"))
     }
     fn real_pre_op_result(&self, _op: Op) -> Result<(Datatype, UnOpFn), String> {
@@ -237,7 +251,7 @@ trait BaseVal {
 }
 
 #[allow(private_bounds)]
-#[typetag::serde(tag="type")]
+#[typetag::serde(tag = "type")]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn get_type(&self) -> Datatype {
         self.base_get_type()
@@ -333,9 +347,9 @@ macro_rules! mut_type_init {
             where
                 D: serde::Deserializer<'de>,
             {
-                Ok(Self(Arc::new(::std::sync::RwLock::new($inner::deserialize(
-                    deserializer,
-                )?))))
+                Ok(Self(Arc::new(::std::sync::RwLock::new(
+                    $inner::deserialize(deserializer)?,
+                ))))
             }
         }
     };

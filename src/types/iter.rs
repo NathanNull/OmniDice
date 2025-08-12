@@ -322,10 +322,10 @@ pub fn fold_fn(
         output: folder.get_type(),
     };
     let mut curr = initial;
-    let it_t = curr.get_type();
+    let res_t = curr.get_type();
     let (_, call) = folder
         .get_type()
-        .call_result(vec![it_t.clone(), it_t.clone()], None)
+        .call_result(vec![res_t.clone(), me.output.clone()], None)
         .map_err(|e| RuntimeError::partial(&e))?;
     while let Some(next) = next_fn(vec![me.dup()], i, None)?
         .downcast::<Maybe>()

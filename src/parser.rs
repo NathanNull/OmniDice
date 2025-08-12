@@ -537,6 +537,12 @@ impl Parser {
                     continue;
                 }
                 Token::OpLike(OpLike::LTurbofish) => {
+                    let (bp, _) = POSTFIX_BINDING_POWER
+                        .get(&OpLike::LTurbofish)
+                        .unwrap();
+                    if *bp < min_bp {
+                        break;
+                    }
                     self.tokens.next();
                     let mut types = vec![];
                     loop {
@@ -1213,11 +1219,12 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             OpType::Postfix,
             false,
         ),
-        (vec![OpLike::Access], OpType::Infix, false),
         (vec![OpLike::Op(Op::D)], OpType::Infix, false),
         (vec![OpLike::Op(Op::D)], OpType::Prefix, false),
         (vec![OpLike::Op(Op::Not)], OpType::Prefix, false),
         (vec![OpLike::Op(Op::Minus)], OpType::Prefix, false),
+        (vec![OpLike::LTurbofish], OpType::Postfix, false),
+        (vec![OpLike::Access], OpType::Infix, false),
     ]
 });
 
