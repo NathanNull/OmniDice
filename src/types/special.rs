@@ -1,3 +1,5 @@
+use crate::type_init;
+
 use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -211,5 +213,38 @@ impl TypeVar {
         } else {
             v.into_iter().chain(vec![new.clone()]).collect()
         }
+    }
+}
+
+type_init!(Void, Void, "()");
+#[typetag::serde]
+impl Type for Void {}
+#[typetag::serde]
+impl Val for Void {
+    fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+}
+
+impl PartialEq for Void {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+type_init!(Never, Never, "!");
+#[typetag::serde]
+impl Type for Never {
+    fn assert_same(&self, other: &Datatype) -> Datatype {
+        // Never coerces to whatever you need it to be
+        other.clone()
+    }
+}
+#[typetag::serde]
+impl Val for Never {}
+
+impl PartialEq for Never {
+    fn eq(&self, _other: &Self) -> bool {
+        true
     }
 }

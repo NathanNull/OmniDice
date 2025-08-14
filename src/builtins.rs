@@ -8,8 +8,7 @@ use crate::{
     interpreter::Interpreter,
     invalid,
     types::{
-        Arr, ArrT, BoxIterUtils, Datatype, DiceT, Downcast, Func, FuncT, IntT, Iter, IterT, Maybe,
-        MaybeT, Ref, RefT, StringT, Tuple, TypeVar, Val, Value, Void,
+        Arr, ArrT, BoxIterUtils, Datatype, DiceT, Downcast, Func, FuncT, IntT, Iter, IterT, Maybe, MaybeT, Never, Ref, RefT, StringT, Tuple, TypeVar, Val, Value, Void
     },
 };
 
@@ -101,7 +100,7 @@ fn printf_fn(
 
 static ERROR_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
     params: vec![TV1.clone()],
-    output: Box::new(Void),
+    output: Box::new(Never),
     generic: vec![TV1_NAME.to_string()],
     owner_t: None,
 });

@@ -47,8 +47,8 @@ pub use maybe::{Maybe, MaybeT};
 mod range;
 pub use range::{Range, RangeT};
 
-mod typevar;
-pub use typevar::TypeVar;
+mod special;
+pub use special::{Never, TypeVar, Void};
 
 mod map;
 pub use map::{Map, MapT};
@@ -96,11 +96,26 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 Some(get_err),
                 Some(set_err),
             ))
+        } else if self.dup() == Never {
+            fn get_never(_: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            fn set_never(_: &Expr, _: &Expr, _: &mut Interpreter) -> VoidResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            Ok((Box::new(Never), Some(get_never), Some(set_never)))
         } else {
             self.real_prop_type(name)
         }
     }
-    fn index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
+    fn index_type(
+        &self,
+        index: &Datatype,
+    ) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if !self.get_generics().is_empty() {
             fn get_err(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
@@ -117,6 +132,18 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 Some(get_err),
                 Some(set_err),
             ))
+        } else if self.dup() == Never || index == &Never {
+            fn get_never(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            fn set_never(_: &Expr, _: &Expr, _: &Expr, _: &mut Interpreter) -> VoidResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            Ok((Box::new(Never), Some(get_never), Some(set_never)))
         } else {
             self.real_index_type(index)
         }
@@ -129,6 +156,13 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 ))
             }
             Ok((Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)), err))
+        } else if self.dup() == Never || other == &Never {
+            fn never(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            Ok((Box::new(Never), never))
         } else {
             self.real_bin_op_result(other, op)
         }
@@ -141,6 +175,13 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 ))
             }
             Ok((Box::new(TypeVar::UnaryOp(self.dup(), op, true)), err))
+        } else if self.dup() == Never {
+            fn never(_: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            Ok((Box::new(Never), never))
         } else {
             self.real_pre_op_result(op)
         }
@@ -153,6 +194,13 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 ))
             }
             Ok((Box::new(TypeVar::UnaryOp(self.dup(), op, false)), err))
+        } else if self.dup() == Never {
+            fn never(_: &Expr, _: &mut Interpreter) -> OpResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            Ok((Box::new(Never), never))
         } else {
             self.real_post_op_result(op)
         }
@@ -172,6 +220,13 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 Box::new(TypeVar::Call(self.dup(), params, expected_output)),
                 err,
             ))
+        } else if self.dup() == Never || params.iter().any(|p|p == &Never) {
+            fn never(_: &Expr, _: &Vec<Expr>, _: &mut Interpreter, _: Option<Datatype>) -> OpResult {
+                Err(RuntimeError::partial(
+                    "The Never type shouldn't exist at runtime",
+                ))
+            }
+            Ok((Box::new(Never), never))
         } else {
             self.real_call_result(params, expected_output)
         }
@@ -182,7 +237,10 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         Err(format!("Type {self} has no properties"))
     }
-    fn real_index_type(&self, _index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
+    fn real_index_type(
+        &self,
+        _index: &Datatype,
+    ) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         Err(format!("Type {self} can't be indexed"))
     }
     fn real_bin_op_result(
@@ -221,6 +279,8 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
         if let Some(typevar) = other.downcast::<TypeVar>() {
             typevar.real_try_match(&self.dup())
+        } else if other == &Never {
+            Never.real_try_match(&self.dup())
         } else {
             self.real_try_match(other)
         }
@@ -229,6 +289,8 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
         let dt = self.dup();
         if let Some(o) = other.downcast::<TypeVar>() {
             return o.assert_same(&dt);
+        } else if other == &Never {
+            return Never.assert_same(&dt);
         }
         assert_eq!(&dt, other, "Expected type {self} but saw {other}");
         dt
@@ -448,6 +510,7 @@ macro_rules! op_list {
 pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
 
+// TODO: this may cause some niche errors, consider removing the first two and switching them in-place for .assert_same or similar
 impl PartialEq<dyn Type> for Datatype {
     fn eq(&self, other: &dyn Type) -> bool {
         self.name() == other.name()
@@ -514,22 +577,6 @@ impl Downcast for Datatype {
     }
     fn downcast_mut<T: Clone + 'static>(&mut self) -> Option<&mut T> {
         (self.as_mut() as &mut dyn Any).downcast_mut::<T>()
-    }
-}
-
-type_init!(Void, Void, "()");
-#[typetag::serde]
-impl Type for Void {}
-#[typetag::serde]
-impl Val for Void {
-    fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {
-        Ok(())
-    }
-}
-
-impl PartialEq for Void {
-    fn eq(&self, _other: &Self) -> bool {
-        true
     }
 }
 

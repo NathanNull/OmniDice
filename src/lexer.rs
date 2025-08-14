@@ -22,6 +22,7 @@ pub enum Token {
     Comma,
     Colon,
     Arrow,
+    DoubleArrow,
 }
 
 impl Display for Token {
@@ -36,6 +37,7 @@ impl Display for Token {
             Self::Comma => write!(f, ","),
             Self::Colon => write!(f, ":"),
             Self::Arrow => write!(f, "->"),
+            Self::DoubleArrow => write!(f, "=>"),
         }
     }
 }
@@ -376,6 +378,7 @@ impl<'a> Lexer<'a> {
     fn lex_special(&mut self) -> Option<Token> {
         for (pattern, res) in [
             ("->", Token::Arrow),
+            ("=>", Token::DoubleArrow),
             ("::<", Token::OpLike(OpLike::LTurbofish)),
             ("+", Token::OpLike(OpLike::Op(Op::Plus))),
             ("-", Token::OpLike(OpLike::Op(Op::Minus))),

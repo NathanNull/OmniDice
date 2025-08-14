@@ -109,5 +109,4 @@ printf("{}",
     )
 ); */
 
-// TODO: this code doesn't compile because my type inference code is bad and sucks
-let a: maybe<int> = iter(func() -> maybe<int> {filled(2)}).next(); 
+let f = func() -> int => 7;

@@ -1,15 +1,9 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
 use crate::{
-    tokeniter::{TokenIter, TokenWidth},
-    builtins::BUILTINS,
-    error::{LineIndex, ParseError},
-    interpreter::{Interpreter, VarScope},
-    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
-    types::{
-        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, RefT, StringT,
-        TupT, TypeVar, Void,
-    },
+    builtins::BUILTINS, error::{LineIndex, ParseError}, interpreter::{Interpreter, VarScope}, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, tokeniter::{TokenIter, TokenWidth}, types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, Never, RefT, StringT, TupT, TypeVar, Void
+    }
 };
 
 pub mod expr;
@@ -17,6 +11,7 @@ pub use expr::*;
 
 pub mod vars;
 
+use itertools::Itertools;
 use strum::IntoEnumIterator;
 
 pub struct Parser {
@@ -26,16 +21,6 @@ pub struct Parser {
     break_t_stack: Vec<bool>,
     return_t_stack: Vec<Datatype>,
 }
-
-static VOID: LazyLock<Expr> = LazyLock::new(|| Expr {
-    contents: ExprContents::Value(Box::new(Void)),
-    output: Box::new(Void),
-});
-
-static BOOL: LazyLock<Expr> = LazyLock::new(|| Expr {
-    contents: ExprContents::Value(Box::new(false)),
-    output: Box::new(BoolT),
-});
 
 impl Parser {
     pub fn new(tokens: TokenString) -> Self {
@@ -176,30 +161,34 @@ impl Parser {
             ExprContents::Scope(scope) => scope
                 .last()
                 .map(|expr| expr.output.clone())
-                .unwrap_or(VOID.output.clone()),
+                .unwrap_or(Box::new(Void)),
             ExprContents::Conditional(cond) => cond.result.output.clone(),
-            ExprContents::While(_) | ExprContents::For(_) => VOID.output.clone(),
-            ExprContents::Array(arr) => Box::new(ArrT {
-                entry: match arr
-                    .elements
-                    .first()
-                    .map(|e| e.output.clone())
-                    .or(expected_type
-                        .as_ref()
-                        .and_then(|t| t.downcast::<ArrT>())
-                        .map(|arr| arr.entry))
-                {
-                    None => {
-                        return self.make_error(
-                            "Unknown type for empty array, please annotate".to_string(),
-                        );
-                    }
-                    Some(at) => at,
-                },
-            }),
-            ExprContents::Tuple(tup) => Box::new(TupT {
-                entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
-            }),
+            ExprContents::While(_) | ExprContents::For(_) => Box::new(Void),
+            ExprContents::Array(arr) => match arr
+                .elements
+                .first()
+                .map(|e| e.output.clone())
+                .or(expected_type
+                    .as_ref()
+                    .and_then(|t| t.downcast::<ArrT>())
+                    .map(|arr| arr.entry))
+            {
+                None => {
+                    return self.make_error(
+                        "Unknown type for empty array, please annotate".to_string(),
+                    );
+                }
+                Some(never) if never == Never => Box::new(Never) as Datatype,
+                Some(entry) => Box::new(ArrT {entry}),
+            },
+            
+            ExprContents::Tuple(tup) => if tup.elements.iter().any(|e|e.output == Never) {
+                Box::new(Never) as Datatype
+            } else {
+                Box::new(TupT {
+                    entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
+                })
+            },
             ExprContents::Function(func) => Box::new(FuncT {
                 params: func.params.iter().map(|(_, t)| t.clone()).collect(),
                 output: func.contents.output.clone(),
@@ -228,9 +217,7 @@ impl Parser {
                     }
                 }
             }
-            ExprContents::Return(ret) => ret.ret.output.clone(),
-            ExprContents::Break(_) => VOID.output.clone(),
-            ExprContents::Continue(_) => VOID.output.clone(),
+            ExprContents::Return(_) | ExprContents::Break(_) | ExprContents::Continue(_) => Box::new(Never),
         };
         Ok(if let Some(ty) = expected_type {
             ty.assert_same(&res)
@@ -240,8 +227,8 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<Box<Expr>, ParseError> {
-        let scope = ExprContents::Scope(self.parse_scope(false, Some(VOID.output.clone()))?);
-        self.new_expr(scope, Some(VOID.output.clone()))
+        let scope = ExprContents::Scope(self.parse_scope(false, Some(Box::new(Void)))?);
+        self.new_expr(scope, Some(Box::new(Void)))
     }
 
     fn parse_scope(
@@ -275,8 +262,9 @@ impl Parser {
         {
             let contents = self.parse_expr(0, &expected_end, true, None)?;
             let is_last = self.tokens.peek().unwrap() == expected_end.last().unwrap();
+            let new_line =  *self.new_expr(contents, if is_last { expected_type.clone() } else { None })?;
             exprs.push(
-                *self.new_expr(contents, if is_last { expected_type.clone() } else { None })?,
+               new_line,
             );
             just_parsed = true;
             if !expected_end.contains(self.tokens.peek().unwrap()) {
@@ -285,9 +273,17 @@ impl Parser {
             }
         }
         if !just_parsed {
-            exprs.push(VOID.clone());
+            exprs.push(*self.new_expr(ExprContents::Value(Box::new(Void)), None)?);
         }
         self.var_types.pop();
+        if exprs.iter().any(|e|e.output == Never) {
+            let (idx,_) = exprs.iter()
+                .find_position(|e|e.output == Never)
+                .expect("Just confirmed that one such expression exists");
+            while exprs.len() > idx + 1 {
+                exprs.pop();
+            }
+        }
         Ok(exprs)
     }
 
@@ -313,7 +309,7 @@ impl Parser {
                 {
                     // ()
                     self.tokens.next();
-                    VOID.contents.clone()
+                    ExprContents::Value(Box::new(Void))
                 } else {
                     let mut elements = vec![];
                     loop {
@@ -349,7 +345,7 @@ impl Parser {
                 if let Some(((), r_bp)) = PREFIX_BINDING_POWER.get(&op) {
                     let op_loc = self.tokens.pos;
                     let rhs = self.parse_expr(*r_bp, expected_end, false, None)?;
-                    self.make_expr(VOID.contents.clone(), rhs, op, OpType::Prefix, op_loc)?
+                    self.make_expr(ExprContents::Value(Box::new(Void)), rhs, op, OpType::Prefix, op_loc)?
                 } else {
                     return self.make_error(format!("Invalid prefix operator {op:?}"));
                 }
@@ -401,7 +397,7 @@ impl Parser {
             }
             Token::Keyword(Keyword::Func) => {
                 imply_eol = allow_imply_eol;
-                self.parse_func()?
+                self.parse_func(expected_end)?
             }
             Token::Keyword(Keyword::Typedef) => {
                 let name = match self.tokens.next() {
@@ -416,7 +412,7 @@ impl Parser {
                     None => return self.make_error("No typedef scope active".to_string()),
                     Some(v) => v.vars.insert(name, ty),
                 };
-                VOID.contents.clone()
+                ExprContents::Value(Box::new(Void))
             }
             Token::Keyword(Keyword::Return) => {
                 if let Some(ret_type) = self.return_t_stack.last().cloned() {
@@ -585,7 +581,7 @@ impl Parser {
                 }
                 self.tokens.next();
                 let op_loc = self.tokens.pos;
-                lhs = self.make_expr(lhs, VOID.contents.clone(), op, OpType::Postfix, op_loc)?;
+                lhs = self.make_expr(lhs, ExprContents::Value(Box::new(Void)), op, OpType::Postfix, op_loc)?;
                 continue;
             }
             let (l_bp, r_bp) = match INFIX_BINDING_POWER.get(&op) {
@@ -627,7 +623,7 @@ impl Parser {
                     },
                 )
             } else {
-                if base_expr.output != VOID.output {
+                if base_expr.output != Void {
                     return self.make_error(
                         "Conditional statement without an else clause must return Void".to_string(),
                     );
@@ -650,7 +646,7 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> Result<ExprContents, ParseError> {
-        let (clause, result) = self.parse_conditional_clause(Some(VOID.output.clone()), true)?;
+        let (clause, result) = self.parse_conditional_clause(Some(Box::new(Void)), true)?;
         Ok(ExprContents::While(While {
             condition: clause,
             result: result,
@@ -701,10 +697,10 @@ impl Parser {
         });
         self.set_var_type(var.clone(), i_type, false, true)?;
         self.break_t_stack.push(true);
-        let sc = ExprContents::Scope(self.parse_scope(true, Some(VOID.output.clone()))?);
+        let sc = ExprContents::Scope(self.parse_scope(true, Some(Box::new(Void)))?);
         self.break_t_stack.pop();
         self.var_types.pop();
-        let body = self.new_expr(sc, Some(VOID.output.clone()))?;
+        let body = self.new_expr(sc, Some(Box::new(Void)))?;
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
@@ -727,7 +723,7 @@ impl Parser {
             false,
             Some(Box::new(BoolT)),
         )?;
-        let clause = self.new_expr(expr, Some(BOOL.output.clone()))?;
+        let clause = self.new_expr(expr, Some(Box::new(BoolT)))?;
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)))
             .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
@@ -863,7 +859,7 @@ impl Parser {
         Ok(ExprContents::Array(Array { elements }))
     }
 
-    fn parse_func(&mut self) -> Result<ExprContents, ParseError> {
+    fn parse_func(&mut self, expected_end: &Vec<Token>) -> Result<ExprContents, ParseError> {
         let generic = if self
             .tokens
             .eat([Token::OpLike(OpLike::Op(Op::Less))])
@@ -925,11 +921,9 @@ impl Parser {
         let output = if self.tokens.eat([Token::Arrow]).is_some() {
             self.parse_type()?
         } else {
-            VOID.output.clone()
+            Box::new(Void)
         };
-        self.tokens
-            .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)))
-            .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+        
         self.var_types.push(VarScope {
             vars: HashMap::from_iter(
                 params
@@ -941,11 +935,22 @@ impl Parser {
         });
         self.return_t_stack.push(output.clone());
         self.break_t_stack.push(false);
-        let sc = ExprContents::Scope(self.parse_scope(true, Some(output.clone()))?);
-        let contents = self.new_expr(sc, Some(output.clone()))?;
-        self.tokens
-            .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
-            .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+
+        let contents = if self.tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly))).is_ok() {
+            let sc = ExprContents::Scope(self.parse_scope(true, Some(output.clone()))?);
+            let contents = self.new_expr(sc, Some(output.clone()))?;
+            self.tokens
+                .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
+                .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+            contents
+        } else {
+            self.tokens
+                .expect(Token::DoubleArrow)
+                .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
+            let expr = self.parse_expr(0, expected_end, false, Some(output.clone()))?;
+            self.new_expr(expr, Some(output.clone()))?
+        };
         // Generics defined in this function go out of scope, as does the expectation of a return/break.
         self.typedefs.pop();
         self.return_t_stack.pop();
