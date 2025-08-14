@@ -97,12 +97,15 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 Some(set_err),
             ))
         } else if self.dup() == Never {
-            fn get_never(_: &Expr, _: &mut Interpreter) -> OpResult {
+            fn get_never(a: &Expr, i: &mut Interpreter) -> OpResult {
+                i.eval_expr(a)?;
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
             }
-            fn set_never(_: &Expr, _: &Expr, _: &mut Interpreter) -> VoidResult {
+            fn set_never(a: &Expr, b: &Expr, i: &mut Interpreter) -> VoidResult {
+                i.eval_expr(a)?;
+                i.eval_expr(b)?;
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
@@ -133,12 +136,17 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 Some(set_err),
             ))
         } else if self.dup() == Never || index == &Never {
-            fn get_never(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
+            fn get_never(a: &Expr, b: &Expr, i: &mut Interpreter) -> OpResult {
+                i.eval_expr(a)?;
+                i.eval_expr(b)?;
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
             }
-            fn set_never(_: &Expr, _: &Expr, _: &Expr, _: &mut Interpreter) -> VoidResult {
+            fn set_never(a: &Expr, b: &Expr, c: &Expr, i: &mut Interpreter) -> VoidResult {
+                i.eval_expr(a)?;
+                i.eval_expr(b)?;
+                i.eval_expr(c)?; // In theory this one should never be necessary, but just in case...
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
@@ -157,7 +165,9 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             }
             Ok((Box::new(TypeVar::BinOp(self.dup(), other.dup(), op)), err))
         } else if self.dup() == Never || other == &Never {
-            fn never(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
+            fn never(a: &Expr, b: &Expr, i: &mut Interpreter) -> OpResult {
+                i.eval_expr(a)?;
+                i.eval_expr(b)?;
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
@@ -176,7 +186,8 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             }
             Ok((Box::new(TypeVar::UnaryOp(self.dup(), op, true)), err))
         } else if self.dup() == Never {
-            fn never(_: &Expr, _: &mut Interpreter) -> OpResult {
+            fn never(a: &Expr, i: &mut Interpreter) -> OpResult {
+                i.eval_expr(a)?;
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
@@ -195,7 +206,8 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             }
             Ok((Box::new(TypeVar::UnaryOp(self.dup(), op, false)), err))
         } else if self.dup() == Never {
-            fn never(_: &Expr, _: &mut Interpreter) -> OpResult {
+            fn never(a: &Expr, i: &mut Interpreter) -> OpResult {
+                i.eval_expr(a)?;
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
@@ -221,7 +233,11 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 err,
             ))
         } else if self.dup() == Never || params.iter().any(|p|p == &Never) {
-            fn never(_: &Expr, _: &Vec<Expr>, _: &mut Interpreter, _: Option<Datatype>) -> OpResult {
+            fn never(a: &Expr, params: &Vec<Expr>, i: &mut Interpreter, _: Option<Datatype>) -> OpResult {
+                i.eval_expr(a)?;
+                for p in params {
+                    i.eval_expr(p)?;
+                }
                 Err(RuntimeError::partial(
                     "The Never type shouldn't exist at runtime",
                 ))
