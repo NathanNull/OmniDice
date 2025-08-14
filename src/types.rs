@@ -100,7 +100,7 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             self.real_prop_type(name)
         }
     }
-    fn index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
+    fn index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if !self.get_generics().is_empty() {
             fn get_err(_: &Expr, _: &Expr, _: &mut Interpreter) -> OpResult {
                 Err(RuntimeError::partial(
@@ -114,8 +114,8 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             }
             Ok((
                 Box::new(TypeVar::Index(self.dup(), index.clone())),
-                get_err,
-                set_err,
+                Some(get_err),
+                Some(set_err),
             ))
         } else {
             self.real_index_type(index)
@@ -182,7 +182,7 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         Err(format!("Type {self} has no properties"))
     }
-    fn real_index_type(&self, _index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
+    fn real_index_type(&self, _index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         Err(format!("Type {self} can't be indexed"))
     }
     fn real_bin_op_result(

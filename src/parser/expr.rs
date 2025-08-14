@@ -670,7 +670,7 @@ pub enum Accessor {
     Index(
         Box<Expr>,
         LineIndex,
-        Vec<(Box<Expr>, BinOpFn, SetAtFn, Datatype)>,
+        Vec<(Box<Expr>, Option<BinOpFn>, Option<SetAtFn>, Datatype)>,
     ),
 }
 
@@ -680,9 +680,12 @@ impl Serialize for Accessor {
         S: serde::Serializer,
     {
         match self {
-            Accessor::Variable(name, pos) => {
-                serializer.serialize_newtype_variant("Accessor", 0, "Variable", &(name.clone(), *pos))
-            }
+            Accessor::Variable(name, pos) => serializer.serialize_newtype_variant(
+                "Accessor",
+                0,
+                "Variable",
+                &(name.clone(), *pos),
+            ),
             Accessor::Property(base, prop, pos, _, _, _) => {
                 serializer.serialize_newtype_variant("Accessor", 1, "Property", &(base, prop, pos))
             }
@@ -779,7 +782,11 @@ impl Debug for Accessor {
         match self {
             Self::Variable(name, _) => write!(f, "{name}"),
             Self::Property(accessor, name, ..) => write!(f, "{accessor:?}.{name}"),
-            Self::Index(indexed, index, ..) => write!(f, "{indexed:?}[{index:?}]"),
+            Self::Index(indexed, _, indices) => write!(
+                f,
+                "{indexed:?}{:?}",
+                indices.iter().map(|i| i.0.clone()).collect::<Vec<_>>()
+            ),
         }
     }
 }

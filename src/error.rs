@@ -148,8 +148,8 @@ impl RuntimeError {
         &self.err_type
     }
 
-    pub fn info(self) -> String {
-        self.info
+    pub fn info(&self) -> String {
+        self.info.clone()
     }
 
     pub fn base_pos(&self) -> Option<LineIndex> {

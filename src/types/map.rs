@@ -259,7 +259,7 @@ impl Type for MapT {
         )
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if index == &self.key {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let index = i.eval_expr(idx)?;
@@ -290,7 +290,7 @@ impl Type for MapT {
                 })? = val;
                 Ok(())
             }
-            Ok((self.value.clone(), get_fn, set_fn))
+            Ok((self.value.clone(), Some(get_fn), Some(set_fn)))
         } else {
             Err(format!("Can't get index {index} of {self}"))
         }

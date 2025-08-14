@@ -741,6 +741,27 @@ impl Parser {
         Ok((clause, result))
     }
 
+    fn is_assignable(&mut self, assignee: &Accessor) -> bool {
+        match &assignee {
+            Accessor::Variable(v, _) => self.var_is_mutable(v),
+            Accessor::Property(base, ..) | Accessor::Index(base, ..) => {
+                (match &base.contents {
+                    ExprContents::Accessor(accessor) => self.is_assignable(accessor),
+                    // TODO: allow for other expression types to be assignable
+                    // eg. somefunction().returned_param = 17;
+                    // Actually I think this is legal in basically all cases, though its usefulness is questionable.
+                    // I feel like there's some way this breaks if it's _ => true,
+                    // but I can't see what it is right now so I'm going to leave it.
+                    _ => false,
+                } && match &assignee {
+                    Accessor::Property(.., setter, _) => setter.is_some(),
+                    Accessor::Index(.., indices) => indices.len() == 1 && indices[0].2.is_some(),
+                    Accessor::Variable(..) => unreachable!("How did you even get here")
+                })
+            }
+        }
+    }
+
     fn parse_assign(
         &mut self,
         assign_type: AssignType,
@@ -779,28 +800,8 @@ impl Parser {
                         val.output
                     ));
                 }
-
-                fn is_assignable(me: &mut Parser, assignee: &Accessor) -> bool {
-                    match &assignee {
-                        Accessor::Variable(v, _) => me.var_is_mutable(v),
-                        Accessor::Property(base, ..) | Accessor::Index(base, ..) => {
-                            (match &base.contents {
-                                ExprContents::Accessor(accessor) => is_assignable(me, accessor),
-                                // TODO: allow for other expression types to be assignable
-                                // eg. somefunction().returned_param = 17;
-                                // Actually I think this is legal in basically all cases, though its usefulness is questionable.
-                                // I feel like there's some way this breaks if it's _ => true,
-                                // but I can't see what it is right now so I'm going to leave it.
-                                _ => false,
-                            } && match &assignee {
-                                Accessor::Property(_, _, _, _, setter, _) => setter.is_some(),
-                                Accessor::Index(..) => true,
-                                Accessor::Variable(..) => unreachable!("How did you even get here")
-                            })
-                        }
-                    }
-                }
-                if !is_assignable(self, &assignee) {
+                
+                if !self.is_assignable(&assignee) {
                     return self.make_error(format!("{assignee:?} is not reassignable"));
                 }
             }

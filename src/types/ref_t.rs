@@ -81,7 +81,7 @@ impl Type for RefT {
         self.ty.call_result(params, expected_output)
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         self.ty.index_type(index)
     }
 

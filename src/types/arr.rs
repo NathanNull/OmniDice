@@ -209,7 +209,7 @@ impl Type for ArrT {
         )
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, BinOpFn, SetAtFn), String> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if index == &IntT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let idx = i.try_eval_as::<i32>(idx)?;
@@ -241,7 +241,7 @@ impl Type for ArrT {
                     })? = val;
                 Ok(())
             }
-            Ok((self.entry.clone(), get_fn, set_fn))
+            Ok((self.entry.clone(), Some(get_fn), Some(set_fn)))
         } else if index == &RangeT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let range = i.try_eval_as::<Range>(idx)?;
@@ -291,7 +291,7 @@ impl Type for ArrT {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(())
             }
-            Ok((self.dup(), get_fn, set_fn))
+            Ok((self.dup(), Some(get_fn), Some(set_fn)))
         } else {
             Err(format!("Can't index {self} with {index}"))
         }

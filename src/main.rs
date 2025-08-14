@@ -80,7 +80,12 @@ fn main() {
     match Interpreter::new(*ast).run() {
         Ok(_) => (),
         Err(err) => {
-            write_err(&err, err.base_pos().expect("Positionless error"), &code);
+            write_err(
+                &err,
+                err.base_pos()
+                    .expect(&format!("Positionless error: {:?}", err.info())),
+                &code,
+            );
             return;
         }
     }

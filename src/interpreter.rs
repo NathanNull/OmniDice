@@ -145,14 +145,19 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::single("Can't get this property", *loc))?)(
                 &base, self,
             ),
-            Accessor::Index(indexed, _, indices) => {
+            Accessor::Index(indexed, loc, indices) => {
                 let res = indices
                     .iter()
-                    .map(|(index, get, _, _)| (get)(&indexed, &index, self))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .map(|(index, get, _, _)| {
+                        (get.ok_or_else(|| {
+                            RuntimeError::single("Can't read from this index", *loc)
+                        })?)(&indexed, &index, self)
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.stack_loc(*loc))?;
                 match res.len() {
                     1 => Ok(res[0].clone()),
-                    _ => Ok(Box::new(Tuple::new(res)))
+                    _ => Ok(Box::new(Tuple::new(res))),
                 }
             }
         }
@@ -246,8 +251,16 @@ impl Interpreter {
                 )
                 .map_err(|e| e.stack_loc(assign.a_loc))?;
             }
-            Accessor::Index(indexed, _, indices) => {
-                (indices[0].2)(indexed, &indices[0].0, &assign.val, self).map_err(|e| e.stack_loc(assign.a_loc))?;
+            Accessor::Index(indexed, loc, indices) => {
+                (indices[0]
+                    .2
+                    .ok_or_else(|| RuntimeError::single("Can't write to this index", *loc))?)(
+                    indexed,
+                    &indices[0].0,
+                    &assign.val,
+                    self,
+                )
+                .map_err(|e| e.stack_loc(assign.a_loc))?;
             }
         }
         Ok(val)
