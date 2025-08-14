@@ -303,7 +303,7 @@ while i < 10000 {
 For a description of functions, see their entry under types, as they are first-class types and can be used in the same way as any other.
 
 ## Other Notes
-### The Turbofish
+### Turbofish
 #### Overview
 In some cases, functions that are generic can't find the types for their generic variables anywhere in the surroundings. This is where the turbofish operator `::<T,U,V,(...)>` is useful, as it allows the caller to specify the generic variables explicitly. The `null` function is a common use case of this, as it accepts no parameters and so can only find a value for its generic type through the return.
 #### Example

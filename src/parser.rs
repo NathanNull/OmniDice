@@ -533,7 +533,11 @@ impl Parser {
                         params
                     };
                     let base = self.new_expr(lhs, None)?;
-                    lhs = ExprContents::Call(Call::new(base, params, loc, expected_type.clone())?);
+                    // Slightly hacky solution but just makes sure that this call is what the typehint is actually referring to
+                    // I don't think there's a case where there would be a typehint that applies where it shouldn't using this,
+                    // but there's probably some edge case where a typehint should apply but doesn't.
+                    let is_eol = self.tokens.peek().is_none_or(|t|expected_end.contains(t));
+                    lhs = ExprContents::Call(Call::new(base, params, loc, if is_eol {expected_type.clone()} else {None})?);
                     continue;
                 }
                 Token::OpLike(OpLike::LTurbofish) => {

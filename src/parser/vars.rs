@@ -369,13 +369,20 @@ impl Accessor {
             Accessor::Variable(v, _) => Box::new([v.clone()].into_iter()),
             Accessor::Property(base, ..) => base.used_variables(),
             Accessor::Index(indexed, _, indices) => {
-                // FIXME: this doesn't filter out variables assigned in previous indices
-                let mut vars: Box<dyn Iterator<Item = String> + 'a> =
-                    Box::new(indexed.used_variables());
+                let mut vars = indexed.used_variables().collect::<Vec<_>>();
+                let mut assigned_vars = indexed.assigned_variables().collect::<Vec<_>>();
                 for (index, ..) in indices {
-                    vars = Box::new(vars.chain(index.used_variables()))
+                    vars = vars
+                        .into_iter()
+                        .chain(
+                            index
+                                .used_variables()
+                                .filter(|v| !assigned_vars.contains(v)),
+                        )
+                        .collect();
+                    assigned_vars = assigned_vars.into_iter().chain(index.assigned_variables()).collect();
                 }
-                vars
+                Box::new(vars.into_iter())
             }
         }
     }
@@ -395,10 +402,7 @@ impl Accessor {
         }
     }
 
-    fn replace_generics(
-        &self,
-        generics: &HashMap<String, Datatype>,
-    ) -> Result<Accessor, String> {
+    fn replace_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Accessor, String> {
         Ok(match self {
             Accessor::Variable(_, _) => self.clone(),
             Accessor::Property(base, prop, i, ..) => {

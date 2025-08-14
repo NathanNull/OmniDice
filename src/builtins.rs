@@ -291,7 +291,7 @@ fn dicemap_fn(
                             die.values
                                 .iter()
                                 .map(|(k, v)| (*k, *v))
-                                // TODO: is there a way to do this without collecting like this? Probably not but maybe worth considering.
+                                // TODO: is there a way to do this without collecting? Probably not but maybe worth considering.
                                 .collect::<Vec<_>>()
                                 .into_iter(),
                         )

@@ -110,9 +110,4 @@ printf("{}",
 ); */
 
 // TODO: this code doesn't compile because my type inference code is bad and sucks
-// let a: maybe<int> = iter(func() -> maybe<int> {filled(2)}).next();
-
-// printf("{}", [3.0, 4.0 + {println("side effect"); 1.0}][0].to_int());
-let a = "01234";
-let b = a[2,3,4];
-printf("{}", b);
+let a: maybe<int> = iter(func() -> maybe<int> {filled(2)}).next(); 
