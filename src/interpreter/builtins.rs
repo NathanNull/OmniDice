@@ -2,22 +2,24 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use itertools::Itertools;
 
-use crate::{
+use super::{
     distribution::Distribution,
     error::RuntimeError,
     interpreter::Interpreter,
-    invalid,
     types::{
-        Arr, ArrT, BoxIterUtils, Datatype, DiceT, Downcast, Func, FuncT, IntT, Iter, IterT, Maybe, MaybeT, Never, Ref, RefT, StringT, Tuple, TypeVar, Val, Value, Void
+        Arr, ArrT, BoxIterUtils, Datatype, DiceT, Downcast, Func, FuncT, IntT, Iter, IterT, Maybe,
+        MaybeT, Never, Ref, RefT, StringT, Tuple, TypeVar, Val, Value, Void,
     },
 };
+
+use crate::invalid;
 
 macro_rules! gen_builtins {
     ($(($fname: literal, $fsig: ident, $ffn: ident)),*$(,)?) => {
         pub static BUILTINS: LazyLock<HashMap<String, Value>> = LazyLock::new(|| {
             HashMap::from_iter([$(
                 (
-                    $fname.to_string(), 
+                    $fname.to_string(),
                     Box::new((&$fsig as &FuncT).clone().make_rust($ffn, format!("builtin_{}", $fname))) as Value,
                 )
             ),*])

@@ -4,7 +4,7 @@ use std::{
     str::Chars,
 };
 
-use crate::{
+use super::{
     error::LexError,
     parser::Op,
     tokeniter::{TokenIter, TokenWidth},

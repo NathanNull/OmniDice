@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::types::Value;
+use super::types::Value;
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LineIndex(pub usize, pub usize);

@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::{gen_fn_map, invalid, parser::ExprContents, type_init};
+use crate::{gen_fn_map, invalid, interpreter::parser::ExprContents, type_init};
 
 use super::*;
 

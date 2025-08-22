@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
-use crate::{
+use super::{
     builtins::BUILTINS, error::{LineIndex, ParseError}, interpreter::{Interpreter, VarScope}, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, tokeniter::{TokenIter, TokenWidth}, types::{
         ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, Never, RefT, StringT, TupT, TypeVar, Void
     }

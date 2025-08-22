@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
+use super::{
     distribution::Distribution,
     error::RuntimeError,
     interpreter::Interpreter,
@@ -605,12 +605,12 @@ macro_rules! gen_fn_map {
                     Box::new((&$fsig as &FuncT).clone().with_owner($self.dup()).map_err(|e|e.info())?) as Datatype,
                     //$ffn as fn(Vec<Value>, &mut Interpreter, Option<Datatype>) -> Result<Value, crate::error::RuntimeError>,
                     {
-                        fn $fpname(me: &crate::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::error::RuntimeError> {
+                        fn $fpname(me: &crate::interpreter::parser::expr::Expr, i: &mut Interpreter) -> Result<Value, crate::interpreter::error::RuntimeError> {
                             let me = i.eval_expr(me)?;
                             Ok(Box::new($fsig.clone().make_rust_member($ffn, format!("{}_{}", $ty, $fname), me)?))
                         }
-                        inventory::submit!(crate::types::function::RustFuncEntry($ty, $fname, $ffn));
-                        Some($fpname as fn(&crate::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::error::RuntimeError>)
+                        inventory::submit!(crate::interpreter::types::function::RustFuncEntry($ty, $fname, $ffn));
+                        Some($fpname as fn(&crate::interpreter::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::interpreter::error::RuntimeError>)
                     },
                     None,
                 )),

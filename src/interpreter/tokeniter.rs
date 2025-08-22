@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::error::LineIndex;
+use super::error::LineIndex;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TokenWidth {

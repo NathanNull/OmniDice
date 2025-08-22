@@ -109,12 +109,12 @@ printf("{}",
     )
 ); */
 
-// let f = func() -> int => 7;
+let f = func() -> int => 7;
 
 // Here's an interesting thing you can do:
 //let a = () + error("how are we adding anything to void");
 // Or for that matter:
 //let a = println(1,2,3,4,5,6,8,9,3,4,error("if never is involved, anything is possible"));
 // Or even:
-let a = 1[error("because I can't be bothered to make functioning type inference worth anything")]
+//let a = 1[error("because I can't be bothered to make functioning type inference worth anything")]
 // hell, leave the semicolon off, it's never, who cares

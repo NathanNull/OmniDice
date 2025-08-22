@@ -5,7 +5,7 @@ use std::{
 
 use serde::de::{VariantAccess as _, Visitor};
 
-use crate::{parser::Expr, type_init};
+use crate::{interpreter::parser::Expr, type_init};
 
 use super::*;
 

@@ -9,7 +9,7 @@ use serde::{
 };
 use strum::EnumIter;
 
-use crate::{
+use crate::interpreter::{
     error::{LineIndex, ParseError},
     types::{BinOpFn, CallFn, Datatype, SetAtFn, SetFn, UnOpFn, Value},
 };

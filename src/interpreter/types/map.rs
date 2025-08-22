@@ -3,7 +3,7 @@ use std::sync::{LazyLock, RwLockReadGuard};
 use super::*;
 use crate::{
     gen_fn_map, invalid, mut_type_init, op_list, type_init,
-    types::arr::{ITER_RET_SIG, iter_ret_fn},
+    interpreter::types::arr::{ITER_RET_SIG, iter_ret_fn},
 };
 
 #[derive(Clone, Serialize, Deserialize)]
