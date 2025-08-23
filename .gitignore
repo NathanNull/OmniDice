@@ -1,5 +1,5 @@
 /target
 /todo.txt
 */_compiled
-Cargo.toml
 /dist
+/Cargo.lock

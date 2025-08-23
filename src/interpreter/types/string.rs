@@ -23,6 +23,7 @@ fn length_fn(
 
 type_init!(StringT, String, "string");
 
+
 #[typetag::serde]
 impl Type for StringT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
