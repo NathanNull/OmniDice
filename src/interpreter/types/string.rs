@@ -70,13 +70,13 @@ impl Type for StringT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let range = i.try_eval_as::<Range>(idx)?;
                 let me = i.try_eval_as::<String>(me)?;
-                Ok(Box::new(
-                    me.get((range.inner().curr + 1) as usize..=range.inner().last as usize)
-                        .ok_or_else(|| {
-                            RuntimeError::partial(&format!("String can't be indexed over {range}"))
-                        })?
-                        .to_string(),
-                ))
+                let substring = me
+                    .get((range.inner().curr + 1) as usize..=range.inner().last as usize)
+                    .ok_or_else(|| {
+                        RuntimeError::partial(&format!("String can't be indexed over {range}"))
+                    })?
+                    .to_string();
+                Ok(Box::new(substring))
             }
             Ok((self.dup(), Some(get_fn), None))
         } else {
