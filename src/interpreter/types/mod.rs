@@ -77,7 +77,7 @@ pub type CallFn = fn(&Expr, &Vec<Expr>, &mut Interpreter, Option<Datatype>) -> O
 pub type SetAtFn = fn(&Expr, &Expr, &Expr, &mut Interpreter) -> VoidResult;
 
 #[allow(private_bounds)]
-#[typetag::serde]
+#[cfg_attr(feature = "serde", typetag::serde)]
 pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
     fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if !self.get_generics().is_empty() {
@@ -232,8 +232,13 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
                 Box::new(TypeVar::Call(self.dup(), params, expected_output)),
                 err,
             ))
-        } else if self.dup() == Never || params.iter().any(|p|p == &Never) {
-            fn never(a: &Expr, params: &Vec<Expr>, i: &mut Interpreter, _: Option<Datatype>) -> OpResult {
+        } else if self.dup() == Never || params.iter().any(|p| p == &Never) {
+            fn never(
+                a: &Expr,
+                params: &Vec<Expr>,
+                i: &mut Interpreter,
+                _: Option<Datatype>,
+            ) -> OpResult {
                 i.eval_expr(a)?;
                 for p in params {
                     i.eval_expr(p)?;
@@ -329,7 +334,7 @@ trait BaseVal {
 }
 
 #[allow(private_bounds)]
-#[typetag::serde(tag = "type")]
+#[cfg_attr(feature = "serde", typetag::serde(tag = "type"))]
 pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     fn get_type(&self) -> Datatype {
         self.base_get_type()
@@ -411,6 +416,7 @@ macro_rules! mut_type_init {
             }
         }
 
+        #[cfg(feature = "serde")]
         impl Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
@@ -420,6 +426,7 @@ macro_rules! mut_type_init {
             }
         }
 
+        #[cfg(feature = "serde")]
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
@@ -445,7 +452,8 @@ macro_rules! _make_type {
         }
     };
     ($ty: ident, $repr: literal, [$($tvar: ident, $tty: ty),*]) => {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone)]
+        #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
         pub struct $ty {
             $(pub $tvar: $tty),*
         }
@@ -462,11 +470,13 @@ macro_rules! _make_type {
         }
     };
     ($ty: ident nodisplay, $repr: literal) => {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone)]
+        #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
         pub struct $ty;
     };
     ($ty: ident nodisplay, $repr: literal, [$($tvar: ident, $tty: ty),*]) => {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone)]
+        #[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
         pub struct $ty {
             $(pub $tvar: $tty),*
         }

@@ -24,7 +24,7 @@ fn length_fn(
 type_init!(StringT, String, "string");
 
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for StringT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &StringT {
@@ -90,7 +90,7 @@ impl Type for StringT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for String {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write(self.as_bytes());

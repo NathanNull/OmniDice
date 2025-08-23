@@ -6,7 +6,8 @@ use crate::{
     interpreter::types::arr::{ITER_RET_SIG, iter_ret_fn},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
+#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
 pub struct _InnerMap {
     key: Datatype,
     value: Datatype,
@@ -221,7 +222,7 @@ fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for MapT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
@@ -330,5 +331,5 @@ impl Type for MapT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for Map {}

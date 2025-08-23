@@ -1,15 +1,16 @@
-use std::{
-    collections::HashMap,
-    sync::{LazyLock, RwLock},
-};
+use std::collections::HashMap;
+#[cfg(feature = "serde")]
+use std::sync::{LazyLock, RwLock};
 
+#[cfg(feature = "serde")]
 use serde::de::{VariantAccess as _, Visitor};
 
 use crate::{interpreter::parser::Expr, type_init};
 
 use super::*;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Func {
     pub params: Vec<Datatype>,
     pub owner_t: Option<Datatype>,
@@ -32,16 +33,20 @@ pub enum InnerFunc {
     Rust(RustFunc, String, Option<Value>),
 }
 
+#[cfg(feature = "serde")]
 pub static RUST_FUNC_LIST: LazyLock<RwLock<HashMap<String, RustFunc>>> = LazyLock::new(|| {
     RwLock::new(HashMap::from_iter(
         inventory::iter::<RustFuncEntry>
             .into_iter()
-            .map(|e| (e.0.to_string()+"_"+e.1, e.2.clone())),
+            .map(|e| (e.0.to_string() + "_" + e.1, e.2.clone())),
     ))
 });
+
+#[allow(unused)]
 pub struct RustFuncEntry(pub &'static str, pub &'static str, pub RustFunc);
 inventory::collect!(RustFuncEntry);
 
+#[cfg(feature = "serde")]
 impl Serialize for InnerFunc {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -61,6 +66,7 @@ impl Serialize for InnerFunc {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for InnerFunc {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -319,7 +325,7 @@ impl FuncT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for FuncT {
     fn real_call_result(
         &self,
@@ -448,7 +454,7 @@ impl Type for FuncT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Func {
     fn insert_generics(&self, generics: &Vec<Datatype>) -> Result<Value, RuntimeError> {
         let new_ty = self

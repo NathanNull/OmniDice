@@ -1,11 +1,12 @@
-use std::{fs, io::{Read, Write}, path::Path};
-
-use serde_cbor::{from_slice, to_vec};
-use sha2::{Digest, Sha256};
-
 use crate::interpreter::parser::Expr;
+use std::path::Path;
 
+#[cfg(feature = "serde")]
 pub fn try_load_cache(code: &str, path: &Path) -> Option<Box<Expr>> {
+    use serde_cbor::from_slice;
+    use sha2::{Digest, Sha256};
+    use std::{fs, io::Read};
+
     let mut hasher = Sha256::new();
     hasher.update(code.as_bytes());
     let code_hash = hasher.finalize().to_vec();
@@ -38,7 +39,12 @@ pub fn try_load_cache(code: &str, path: &Path) -> Option<Box<Expr>> {
     }
 }
 
+#[cfg(feature = "serde")]
 pub fn write_cache(code: &str, path: &Path, ast: Box<Expr>) {
+    use serde_cbor::to_vec;
+    use sha2::{Digest, Sha256};
+    use std::{fs, io::Write};
+
     let mut hasher = Sha256::new();
     hasher.update(code.as_bytes());
     let code_hash = hasher.finalize().to_vec();
@@ -67,3 +73,11 @@ pub fn write_cache(code: &str, path: &Path, ast: Box<Expr>) {
         Err(_) => println!("Couldn't cache AST"),
     }
 }
+
+#[cfg(not(feature = "serde"))]
+pub fn try_load_cache(_code: &str, _path: &Path) -> Option<Box<Expr>> {
+    None
+}
+
+#[cfg(not(feature = "serde"))]
+pub fn write_cache(_code: &str, _path: &Path, _ast: Box<Expr>) {}

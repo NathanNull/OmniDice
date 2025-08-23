@@ -4,7 +4,8 @@ use crate::{gen_fn_map, invalid, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
 pub struct Maybe {
     pub output: Datatype,
     pub contents: Option<Value>,
@@ -73,7 +74,7 @@ fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for MaybeT {
     fn real_prop_type(
         &self,
@@ -109,7 +110,7 @@ impl Type for MaybeT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for Maybe {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         if let Some(c) = &self.contents {

@@ -3,6 +3,7 @@ use std::{
     ops::Deref,
 };
 
+#[cfg(feature="serde")]
 use serde::{
     Deserialize, Serialize,
     de::{self, VariantAccess, Visitor},
@@ -21,7 +22,8 @@ pub enum OpType {
     Postfix,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Op {
     Plus,
     Minus,
@@ -69,7 +71,8 @@ impl Debug for Op {
 
 pub type Scope = Vec<Expr>;
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ExprContents {
     Value(Value),
     Binop(Binop),
@@ -94,7 +97,8 @@ pub enum ExprContents {
     Continue(Continue),
 }
 
-#[derive(Clone, PartialEq, Serialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct Expr {
     pub contents: ExprContents,
     pub output: Datatype,
@@ -107,6 +111,7 @@ pub struct Expr {
     unused_qualifications,
     clippy::absolute_paths
 )]
+#[cfg(feature="serde")]
 const _: () = {
     #[allow(unused_extern_crates, clippy::useless_attribute)]
     extern crate serde as _serde;
@@ -500,6 +505,7 @@ impl PartialEq for Binop {
     }
 }
 
+#[cfg(feature="serde")]
 impl Serialize for Binop {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -509,6 +515,7 @@ impl Serialize for Binop {
     }
 }
 
+#[cfg(feature="serde")]
 impl<'de> Deserialize<'de> for Binop {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -563,6 +570,7 @@ impl PartialEq for Prefix {
     }
 }
 
+#[cfg(feature="serde")]
 impl Serialize for Prefix {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -572,6 +580,7 @@ impl Serialize for Prefix {
     }
 }
 
+#[cfg(feature="serde")]
 impl<'de> Deserialize<'de> for Prefix {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -619,6 +628,7 @@ impl PartialEq for Postfix {
     }
 }
 
+#[cfg(feature="serde")]
 impl Serialize for Postfix {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -628,6 +638,7 @@ impl Serialize for Postfix {
     }
 }
 
+#[cfg(feature="serde")]
 impl<'de> Deserialize<'de> for Postfix {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -657,7 +668,8 @@ impl Postfix {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AssignType {
     Create,
     Reassign,
@@ -676,7 +688,8 @@ impl Display for AssignType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Assign {
     pub assignee: Accessor,
     pub val: Box<Expr>,
@@ -715,6 +728,7 @@ impl PartialEq for Accessor {
     }
 }
 
+#[cfg(feature="serde")]
 impl Serialize for Accessor {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -744,6 +758,7 @@ impl Serialize for Accessor {
     }
 }
 
+#[cfg(feature="serde")]
 impl<'de> Deserialize<'de> for Accessor {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -832,7 +847,8 @@ impl Debug for Accessor {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Conditional {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
@@ -849,7 +865,8 @@ impl Debug for Conditional {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct While {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
@@ -861,7 +878,8 @@ impl Debug for While {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct For {
     pub var: String,
     pub iter: Box<Expr>,
@@ -879,7 +897,8 @@ impl Debug for For {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Array {
     pub elements: Vec<Expr>,
 }
@@ -898,7 +917,8 @@ impl Debug for Array {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Tuple {
     pub elements: Vec<Expr>,
 }
@@ -917,7 +937,8 @@ impl Debug for Tuple {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Function {
     pub params: Vec<(String, Datatype)>,
     pub contents: Box<Expr>,
@@ -942,6 +963,7 @@ impl PartialEq for Call {
     }
 }
 
+#[cfg(feature="serde")]
 impl Serialize for Call {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -951,6 +973,7 @@ impl Serialize for Call {
     }
 }
 
+#[cfg(feature="serde")]
 impl<'de> Deserialize<'de> for Call {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -986,19 +1009,23 @@ impl Call {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GenericSpecify {
     pub base: Box<Expr>,
     pub types: Vec<Datatype>,
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Return {
     pub ret: Box<Expr>,
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Break;
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Continue;

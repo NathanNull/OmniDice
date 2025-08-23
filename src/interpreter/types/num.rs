@@ -33,7 +33,7 @@ fn i2f_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
 
 type_init!(FloatT, f32, "float");
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for FloatT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &FloatT {
@@ -71,7 +71,7 @@ impl Type for FloatT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for f32 {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_u32(self.to_bits());
@@ -81,7 +81,7 @@ impl Val for f32 {
 
 type_init!(IntT, i32, "int");
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for IntT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &IntT {
@@ -179,7 +179,7 @@ impl Type for IntT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for i32 {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(*self);

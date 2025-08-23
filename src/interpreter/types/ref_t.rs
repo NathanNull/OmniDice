@@ -4,7 +4,8 @@ use crate::{mut_type_init, type_init};
 
 use super::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
 pub struct _InnerRef {
     ty: Datatype,
     val: Value,
@@ -41,7 +42,7 @@ impl Ref {
 
 type_init!(RefT, Ref, "ref", (RwLockReadGuard<_InnerRef>), ty: Datatype);
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for RefT {
     fn real_prop_type(
         &self,
@@ -110,7 +111,7 @@ impl Type for RefT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for Ref {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner().val.as_ref().hash(h)

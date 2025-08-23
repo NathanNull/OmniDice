@@ -61,7 +61,7 @@ fn max_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
 
 type_init!(DiceT, Distribution, "dice");
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for DiceT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &IntT {
@@ -98,5 +98,5 @@ impl Type for DiceT {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for Distribution {}

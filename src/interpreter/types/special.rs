@@ -2,7 +2,8 @@ use crate::type_init;
 
 use super::*;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
 pub enum TypeVar {
     Var(String),
     BinOp(Datatype, Datatype, Op),
@@ -64,7 +65,7 @@ impl BaseType for TypeVar {
     }
 }
 
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for TypeVar {
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
         Ok(match self {
@@ -217,9 +218,9 @@ impl TypeVar {
 }
 
 type_init!(Void, Void, "()");
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for Void {}
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for Void {
     fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {
         Ok(())
@@ -233,14 +234,14 @@ impl PartialEq for Void {
 }
 
 type_init!(Never, Never, "!");
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Type for Never {
     fn assert_same(&self, other: &Datatype) -> Datatype {
         // Never coerces to whatever you need it to be
         other.clone()
     }
 }
-#[typetag::serde]
+#[cfg_attr(feature="serde", typetag::serde)]
 impl Val for Never {}
 
 impl PartialEq for Never {
