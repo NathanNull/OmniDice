@@ -168,13 +168,10 @@ static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
 });
 
 fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
-    let len = params[0]
+    let arr = params[0]
         .downcast::<Arr>()
-        .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?
-        .inner()
-        .elements
-        .len();
-    Ok(Box::new(len as i32))
+        .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
+    Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
 #[typetag::serde]
@@ -212,10 +209,7 @@ impl Type for ArrT {
         )
     }
 
-    fn real_index_type(
-        &self,
-        index: &Datatype,
-    ) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if index == &IntT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let idx = i.try_eval_as::<i32>(idx)?;
@@ -253,20 +247,21 @@ impl Type for ArrT {
                 let range = i.try_eval_as::<Range>(idx)?;
                 let me = i.try_eval_as::<Arr>(me)?;
                 let eles = &me.inner().elements;
-                let range_eles = (range.inner().curr + 1..=range.inner().last)
-                    .map(|idx| {
-                        Ok(eles
-                            .get(idx as usize)
-                            .ok_or_else(|| {
-                                RuntimeError::partial(&format!(
-                                    "Array has no element at index {idx}"
-                                ))
-                            })?
-                            .dup())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let entry_ty = me.inner().entry.clone();
-                Ok(Box::new(Arr::new(range_eles, entry_ty)))
+                Ok(Box::new(Arr::new(
+                    (range.inner().curr + 1..=range.inner().last)
+                        .map(|idx| {
+                            Ok(eles
+                                .get(idx as usize)
+                                .ok_or_else(|| {
+                                    RuntimeError::partial(&format!(
+                                        "Array has no element at index {idx}"
+                                    ))
+                                })?
+                                .dup())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    me.inner().entry.clone(),
+                )))
             }
             fn set_fn(me: &Expr, idx: &Expr, val: &Expr, i: &mut Interpreter) -> VoidResult {
                 let vals = i.try_eval_as::<Arr>(val)?;

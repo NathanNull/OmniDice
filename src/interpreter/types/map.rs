@@ -2,9 +2,8 @@ use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
 use crate::{
-    gen_fn_map,
-    interpreter::types::arr::{iter_ret_fn, ITER_RET_SIG},
-    invalid, mut_type_init, op_list, type_init,
+    gen_fn_map, invalid, mut_type_init, op_list, type_init,
+    interpreter::types::arr::{ITER_RET_SIG, iter_ret_fn},
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -216,13 +215,10 @@ static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
 });
 
 fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
-    let len = params[0]
+    let arr = params[0]
         .downcast::<Map>()
-        .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?
-        .inner()
-        .elements
-        .len();
-    Ok(Box::new(len as i32))
+        .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
+    Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
 #[typetag::serde]
@@ -263,10 +259,7 @@ impl Type for MapT {
         )
     }
 
-    fn real_index_type(
-        &self,
-        index: &Datatype,
-    ) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
+    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if index == &self.key {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let index = i.eval_expr(idx)?;
