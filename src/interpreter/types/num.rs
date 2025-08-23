@@ -33,7 +33,7 @@ fn i2f_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
 
 type_init!(FloatT, f32, "float");
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for FloatT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &FloatT {
@@ -58,7 +58,10 @@ impl Type for FloatT {
             Minus(v: f32) -> (FloatT) |v: f32|Ok(-v);
         })
     }
-    fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         gen_fn_map!(
             name,
             self,
@@ -71,7 +74,7 @@ impl Type for FloatT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for f32 {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_u32(self.to_bits());
@@ -81,7 +84,7 @@ impl Val for f32 {
 
 type_init!(IntT, i32, "int");
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for IntT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &IntT {
@@ -166,7 +169,10 @@ impl Type for IntT {
             Minus(v: i32) -> (IntT) |v: i32|Ok(-v);
         })
     }
-    fn prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         gen_fn_map!(
             name,
             self,
@@ -179,7 +185,7 @@ impl Type for IntT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for i32 {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(*self);

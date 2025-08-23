@@ -619,6 +619,7 @@ macro_rules! gen_fn_map {
                             let me = i.eval_expr(me)?;
                             Ok(Box::new($fsig.clone().make_rust_member($ffn, format!("{}_{}", $ty, $fname), me)?))
                         }
+                        #[cfg(feature="serde")]
                         inventory::submit!(crate::interpreter::types::function::RustFuncEntry($ty, $fname, $ffn));
                         Some($fpname as fn(&crate::interpreter::parser::expr::Expr, &mut Interpreter) -> Result<Value, crate::interpreter::error::RuntimeError>)
                     },
