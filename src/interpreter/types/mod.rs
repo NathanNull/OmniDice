@@ -397,16 +397,16 @@ macro_rules! mut_type_init {
         }
 
         impl $name {
-            pub fn inner(&self) -> ::std::sync::RwLockReadGuard<$inner> {
+            pub fn inner(&self) -> ::std::sync::RwLockReadGuard<'_, $inner> {
                 self.0.try_read().unwrap()
             }
-            pub fn inner_mut(&self) -> ::std::sync::RwLockWriteGuard<$inner> {
+            pub fn inner_mut(&self) -> ::std::sync::RwLockWriteGuard<'_, $inner> {
                 self.0.try_write().unwrap()
             }
         }
 
         impl<'a> GetRef<'a, ::std::sync::RwLockReadGuard<'a, $inner>> for $name {
-            fn get_ref(&self) -> ::std::sync::RwLockReadGuard<$inner> {
+            fn get_ref(&self) -> ::std::sync::RwLockReadGuard<'_, $inner> {
                 self.inner()
             }
         }

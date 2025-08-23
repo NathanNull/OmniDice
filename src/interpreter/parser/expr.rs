@@ -480,7 +480,7 @@ impl Display for Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Binop {
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
@@ -488,6 +488,16 @@ pub struct Binop {
     pub op_loc: LineIndex,
     pub res: BinOpFn,
     pub out: Datatype,
+}
+
+impl PartialEq for Binop {
+    fn eq(&self, other: &Self) -> bool {
+        self.lhs == other.lhs
+            && self.rhs == other.rhs
+            && self.op == other.op
+            && self.op_loc == other.op_loc
+            && self.out == other.out
+    }
 }
 
 impl Serialize for Binop {
@@ -535,13 +545,22 @@ impl Binop {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Prefix {
     pub op: Op,
     pub rhs: Box<Expr>,
     pub op_loc: LineIndex,
     pub res: UnOpFn,
     pub out: Datatype,
+}
+
+impl PartialEq for Prefix {
+    fn eq(&self, other: &Self) -> bool {
+        self.op == other.op
+            && self.rhs == other.rhs
+            && self.op_loc == other.op_loc
+            && self.out == other.out
+    }
 }
 
 impl Serialize for Prefix {
@@ -582,13 +601,22 @@ impl Prefix {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Postfix {
     pub op: Op,
     pub lhs: Box<Expr>,
     pub op_loc: LineIndex,
     pub res: UnOpFn,
     pub out: Datatype,
+}
+
+impl PartialEq for Postfix {
+    fn eq(&self, other: &Self) -> bool {
+        self.op == other.op
+            && self.lhs == other.lhs
+            && self.op_loc == other.op_loc
+            && self.out == other.out
+    }
 }
 
 impl Serialize for Postfix {
@@ -656,7 +684,7 @@ pub struct Assign {
     pub a_loc: LineIndex,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum Accessor {
     Variable(String, LineIndex),
     Property(
@@ -672,6 +700,19 @@ pub enum Accessor {
         LineIndex,
         Vec<(Box<Expr>, Option<BinOpFn>, Option<SetAtFn>, Datatype)>,
     ),
+}
+
+impl PartialEq for Accessor {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Variable(l0, l1), Self::Variable(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::Property(l0, l1, l2, _, _, l5), Self::Property(r0, r1, r2, _, _, r5)) => {
+                l0 == r0 && l1 == r1 && l2 == r2 && l5 == r5
+            }
+            (Self::Index(l0, l1, l2), Self::Index(r0, r1, r2)) => l0 == r0 && l1 == r1 && l2 == r2,
+            _ => false,
+        }
+    }
 }
 
 impl Serialize for Accessor {
@@ -883,13 +924,22 @@ pub struct Function {
     pub generic: Vec<String>,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Call {
     pub base: Box<Expr>,
     pub params: Vec<Expr>,
     pub loc: LineIndex,
     pub res: CallFn,
     pub out: Datatype,
+}
+
+impl PartialEq for Call {
+    fn eq(&self, other: &Self) -> bool {
+        self.base == other.base
+            && self.params == other.params
+            && self.loc == other.loc
+            && self.out == other.out
+    }
 }
 
 impl Serialize for Call {
