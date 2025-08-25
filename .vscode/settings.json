@@ -1,5 +1,16 @@
 {
     "rust-analyzer.cargo.features": [
         //"serde"
+    ],
+    "rust-analyzer.procMacro.ignored": {
+        "leptos_macro": [
+            "component",
+            "server",
+        ]
+    },
+    "rust-analyzer.rustfmt.overrideCommand": [
+        "leptosfmt",
+        "--stdin",
+        "--rustfmt"
     ]
 }

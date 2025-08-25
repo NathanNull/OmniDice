@@ -5,9 +5,11 @@ edition = "2024"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
+console_log = "1.0.0"
 inventory = "0.3.20"
 itertools = "0.14.0"
 leptos = { version = "0.8.6", features = ["csr"] }
+log = "0.4.27"
 ordered-float = "5.0.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_cbor = "0.11.2"

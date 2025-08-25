@@ -131,7 +131,7 @@ impl Display for Distribution {
             .collect::<Vec<_>>();
         for (val, prob) in outs {
             let filled_amt = (prob / squished_max_prob * OUT_WIDTH as f32).round() as usize;
-            let bar = str::repeat("▮", filled_amt);
+            let bar = str::repeat("█", filled_amt);
             write!(f, "{val: <5}: {bar}\n")?;
         }
         Ok(())

@@ -29,7 +29,7 @@ pub enum InterpreterError {
 }
 
 impl InterpreterError {
-    pub fn write(&self, code: &str) {
+    pub fn write(&self, code: &str) -> String {
         match self {
             InterpreterError::Lex(lex_error) => write_err(lex_error, lex_error.location, code),
             InterpreterError::Parse(parse_error) => {
@@ -47,18 +47,18 @@ impl InterpreterError {
     }
 }
 
-fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) {
-    println!(
+fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) -> String {
+    format!(
         "\n\n{}\n{}{}\n{err}",
         code.lines()
             .nth(pos.0 - 1) // Good old off-by-one due to indexing differences
-            .expect("Error past the last line of code"),
+            .expect(&format!("Error past the last line of code: {pos:?} ({err})")),
         " ".repeat(pos.1 - 1),
         "^ Error happened here",
     )
 }
 
-pub fn run_code(code: &str, cache: Option<Box<Expr>>) -> Result<Box<Expr>, InterpreterError> {
+pub fn run_code(code: &str, cache: Option<Box<Expr>>, output: Box<dyn Fn(&str)>) -> Result<Box<Expr>, InterpreterError> {
     // Use the cached AST if the code's hash matches the old one
     let ast = match cache {
         Some(ast) => ast,
@@ -69,7 +69,7 @@ pub fn run_code(code: &str, cache: Option<Box<Expr>>) -> Result<Box<Expr>, Inter
     };
 
     println!("Program output:");
-    match Interpreter::new(*ast.clone()).run() {
+    match Interpreter::new(*ast.clone(), output).run() {
         Ok(_) => Ok(ast),
         Err(err) => Err(InterpreterError::Runtime(err)),
     }

@@ -162,7 +162,7 @@ impl Parser {
                 .last()
                 .map(|expr| expr.output.clone())
                 .unwrap_or(Box::new(Void)),
-            ExprContents::Conditional(cond) => cond.result.output.clone(),
+            ExprContents::Conditional(cond) => if cond.otherwise.is_none() {Box::new(Void)} else {cond.result.output.clone()},
             ExprContents::While(_) | ExprContents::For(_) => Box::new(Void),
             ExprContents::Array(arr) => match arr
                 .elements
@@ -220,7 +220,7 @@ impl Parser {
             ExprContents::Return(_) | ExprContents::Break(_) | ExprContents::Continue(_) => Box::new(Never),
         };
         Ok(if let Some(ty) = expected_type {
-            ty.assert_same(&res)
+            ty.assert_same(&res).map_err(|e|self.make_error::<()>(e).unwrap_err())?
         } else {
             res
         })
@@ -623,7 +623,7 @@ impl Parser {
                     },
                 )
             } else {
-                if base_expr.output != Void {
+                if base_expr.output.assert_same(&(Box::new(Void) as Datatype)).is_err() {
                     return self.make_error(
                         "Conditional statement without an else clause must return Void".to_string(),
                     );

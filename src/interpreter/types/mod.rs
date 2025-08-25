@@ -306,15 +306,17 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
             self.real_try_match(other)
         }
     }
-    fn assert_same(&self, other: &Datatype) -> Datatype {
+    fn assert_same(&self, other: &Datatype) -> Result<Datatype, String> {
         let dt = self.dup();
         if let Some(o) = other.downcast::<TypeVar>() {
             return o.assert_same(&dt);
         } else if other == &Never {
             return Never.assert_same(&dt);
         }
-        assert_eq!(&dt, other, "Expected type {self} but saw {other}");
-        dt
+        if &dt != other {
+            return Err(format!("Expected type {self} but saw {other}"));
+        }
+        Ok(dt)
     }
     fn get_generics(&self) -> Vec<String> {
         vec![]

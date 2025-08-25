@@ -3,9 +3,11 @@ use std::{env, fs, path::Path};
 
 mod cache;
 mod interpreter;
+mod app;
 
 fn main() {
-    mount_to_body(|| view! { <p>"'Sup"</p> });
+    mount_to_body(app::App);
+    _ = console_log::init_with_level(log::Level::Debug);
     console_error_panic_hook::set_once();
 }
 
@@ -19,8 +21,8 @@ fn basic_code_run() {
     if cache.is_some() {
         println!("Using cached AST")
     }
-    match interpreter::run_code(&code, cache) {
+    match interpreter::run_code(&code, cache, Box::new(|s|print!("{s}"))) {
         Ok(ast) => cache::write_cache(&code, Path::new(filename), ast),
-        Err(err) => err.write(&code),
+        Err(err) => println!("{}", err.write(&code)),
     }
 }

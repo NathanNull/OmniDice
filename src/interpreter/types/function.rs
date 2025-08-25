@@ -359,7 +359,7 @@ impl Type for FuncT {
         }
         Ok((
             if let Some(o) = expected_output {
-                o.assert_same(&res)
+                o.assert_same(&res)?
             } else {
                 res
             },

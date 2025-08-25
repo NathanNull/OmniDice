@@ -3,7 +3,7 @@ use crate::type_init;
 use super::*;
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum TypeVar {
     Var(String),
     BinOp(Datatype, Datatype, Op),
@@ -65,7 +65,7 @@ impl BaseType for TypeVar {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for TypeVar {
     fn insert_generics(&self, generics: &HashMap<String, Datatype>) -> Result<Datatype, String> {
         Ok(match self {
@@ -115,7 +115,7 @@ impl Type for TypeVar {
                     .ok_or_else::<String, _>(|| unreachable!("This should never be empty"))?
                     .insert_generics(generics)?;
                 for t in t_iter {
-                    res = res.assert_same(&t.insert_generics(generics)?);
+                    res = res.assert_same(&t.insert_generics(generics)?)?;
                 }
                 res
             }
@@ -163,14 +163,14 @@ impl Type for TypeVar {
         })
     }
 
-    fn assert_same(&self, other: &Datatype) -> Datatype {
-        if &self.dup() == other {
+    fn assert_same(&self, other: &Datatype) -> Result<Datatype, String> {
+        Ok(if &self.dup() == other {
             self.dup()
         } else if let Self::MustBeSame(v) = self {
             Box::new(Self::MustBeSame(Self::same(v.clone(), other)))
         } else {
             Box::new(Self::MustBeSame(Self::same(vec![self.dup()], other)))
-        }
+        })
     }
 
     fn get_generics(&self) -> Vec<String> {
@@ -218,9 +218,9 @@ impl TypeVar {
 }
 
 type_init!(Void, Void, "()");
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for Void {}
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Void {
     fn hash(&self, _: &mut dyn Hasher) -> Result<(), RuntimeError> {
         Ok(())
@@ -234,14 +234,14 @@ impl PartialEq for Void {
 }
 
 type_init!(Never, Never, "!");
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for Never {
-    fn assert_same(&self, other: &Datatype) -> Datatype {
+    fn assert_same(&self, other: &Datatype) -> Result<Datatype, String> {
         // Never coerces to whatever you need it to be
-        other.clone()
+        Ok(other.clone())
     }
 }
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Never {}
 
 impl PartialEq for Never {

@@ -70,14 +70,14 @@ static PRINTLN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
 
 fn println_fn(
     params: Vec<Value>,
-    _i: &mut Interpreter,
+    i: &mut Interpreter,
     _o: Option<Datatype>,
 ) -> Result<Value, RuntimeError> {
     let res = params
         .first()
         .and_then(|v| v.downcast::<String>())
         .ok_or_else(|| RuntimeError::partial("Println first parameter must be a string"))?;
-    println!("{res}");
+    i.print(&(res+"\n"));
     Ok(Box::new(Void))
 }
 
@@ -96,7 +96,7 @@ fn printf_fn(
     let res = format_fn(params, i, o)?
         .downcast::<String>()
         .ok_or_else(|| RuntimeError::partial("Printf first parameter must be a string"))?;
-    println!("{res}");
+    i.print(&(res+"\n"));
     Ok(Box::new(Void))
 }
 

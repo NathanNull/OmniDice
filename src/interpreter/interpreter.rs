@@ -36,10 +36,11 @@ pub struct Interpreter {
     ast: Expr,
     variables: Vec<VarScope<Value>>,
     is_const: bool,
+    output: Box<dyn FnMut(&str)>,
 }
 
 impl Interpreter {
-    pub fn new(ast: Expr) -> Self {
+    pub fn new(ast: Expr, output: Box<dyn FnMut(&str)>) -> Self {
         Self {
             ast,
             variables: vec![VarScope {
@@ -48,6 +49,7 @@ impl Interpreter {
                 name: "builtins",
             }],
             is_const: false,
+            output,
         }
     }
 
@@ -59,6 +61,7 @@ impl Interpreter {
             },
             variables: vec![],
             is_const: true,
+            output: Box::new(|_|{})
         }
     }
 
@@ -126,7 +129,7 @@ impl Interpreter {
                 return Err(RuntimeError::partial("Can't evaluate this at compile time"));
             }
         }?;
-        if res.get_type() != expr.output {
+        if res.get_type().assert_same(&expr.output).is_err() {
             return Err(RuntimeError::partial(&format!(
                 "Expression {expr:?} evaluated to a different type ({}) than expected ({}). This is notable.",
                 res.get_type(),
@@ -474,5 +477,9 @@ impl Interpreter {
         self.eval_expr(expr)?
             .downcast::<T>()
             .ok_or_else(|| RuntimeError::partial("Expression evaluated to the wrong type"))
+    }
+
+    pub fn print(&mut self, text: &str) {
+        (self.output)(text)
     }
 }
