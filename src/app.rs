@@ -45,11 +45,11 @@ pub fn App() -> impl IntoView {
             log::debug!("{:?}", output.get());
             log::debug!("Finished running code");
         }>"Run Code"</button>
-        <div>
+        <pre>
             <For each=move || output.get() key=move |i| i.0 let((_, line))>
                 {line}
                 <br />
             </For>
-        </div>
+        </pre>
     }
 }
