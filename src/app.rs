@@ -5,51 +5,51 @@ use crate::interpreter::run_code;
 #[component]
 pub fn App() -> impl IntoView {
     let (code, set_code) = signal("".to_string());
-    let (output, set_output) = signal(vec![(0, "".to_string())]);
+    let (output, set_output) = signal("".to_string());
 
     view! {
-        <textarea
-            class:code-input
-            on:input:target=move |ev| {
-                set_code.set(ev.target().value());
-            }
-            prop:value=code
-        />
-        <br />
-        <button on:click=move |_| {
-            log::debug!("Running code now");
-            set_output.set(vec![]);
-            let res = run_code(
-                &code.get(),
-                None,
-                Box::new(move |out| {
-                    let mut set_out_tmp = set_output.write();
-                    for line in out.split("\n") {
-                        log::debug!("new line {}", line);
-                        let len = set_out_tmp.len() + 1;
-                        set_out_tmp.push((len, line.to_string()));
-                    }
-                }),
-            );
-            match res {
-                Ok(_) => {}
-                Err(err) => {
-                    let mut set_out_tmp = set_output.write();
-                    for line in err.write(&code.get()).split("\n") {
-                        log::debug!("new line {}", line);
-                        let len = set_out_tmp.len() + 1;
-                        set_out_tmp.push((len, line.to_string()));
+        <div
+            style:width="100vw"
+            style:height="100vh"
+            style:display="flex"
+            style:position="absolute"
+            style:top="0"
+            style:left="0"
+            style:flex-direction="column"
+            style:padding="5vw"
+        >
+            <textarea
+                class:code-input
+                on:input:target=move |ev| {
+                    set_code.set(ev.target().value());
+                }
+                prop:value=code
+                style:height="70%"
+                style:width="100%"
+                style:resize="none"
+                prop:spellcheck=false
+            />
+            <br />
+            <button
+                on:click=move |_| {
+                    set_output.set(String::new());
+                    let res = run_code(
+                        &code.get(),
+                        None,
+                        Box::new(move |out| *set_output.write() += out),
+                    );
+                    match res {
+                        Ok(_) => {}
+                        Err(err) => {
+                            *set_output.write() += &err.write(&code.get());
+                        }
                     }
                 }
-            }
-            log::debug!("{:?}", output.get());
-            log::debug!("Finished running code");
-        }>"Run Code"</button>
-        <pre>
-            <For each=move || output.get() key=move |i| i.0 let((_, line))>
-                {line}
-                <br />
-            </For>
-        </pre>
+                style:width="100%"
+            >
+                "Run Code"
+            </button>
+            <pre style:height="20%" style:width="100%" style:max-height="20%" style:overflow="scroll">{output}</pre>
+        </div>
     }
 }
