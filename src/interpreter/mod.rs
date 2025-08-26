@@ -68,7 +68,7 @@ pub fn run_code(code: &str, cache: Option<Box<Expr>>, output: Box<dyn Fn(&str)>)
         },
     };
 
-    println!("Program output:");
+    (output)("Program output:\n");
     match Interpreter::new(*ast.clone(), output).run() {
         Ok(_) => Ok(ast),
         Err(err) => Err(InterpreterError::Runtime(err)),

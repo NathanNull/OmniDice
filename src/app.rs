@@ -13,61 +13,56 @@ pub fn App() -> impl IntoView {
     let (output, set_output) = signal("".to_string());
 
     // Write code to local storage 500ms after last key pressed
-    let debounce = use_debounce_fn(move || {
-        write_stored.set(code.get());
-    }, 500.0);
+    let debounce = use_debounce_fn(
+        move || {
+            write_stored.set(code.get());
+        },
+        500.0,
+    );
+
+    let run_code = move |_| {
+        set_output.set(String::new());
+        let res = run_code(
+            &code.get(),
+            None,
+            Box::new(move |out| *set_output.write() += out),
+        );
+        match res {
+            Ok(_) => {}
+            Err(err) => {
+                *set_output.write() += &err.write(&code.get());
+            }
+        }
+    };
 
     view! {
-        <div
-            style:display="flex"
-            style:flex-direction="column"
-            style:width="100vw"
-            style:height="100vh"
-            style:position="absolute"
-            style:top="0"
-            style:left="0"
-            style:padding="5vw"
-        >
-            <textarea
-                class:code-input
-                on:input:target=move |ev| {
-                    set_code.set(ev.target().value());
-                    debounce();
-                }
-                prop:value=code
-                style:height="70%"
-                style:width="100%"
-                style:resize="none"
-                prop:spellcheck=false
-            />
-            <br />
-            <button
-                on:click=move |_| {
-                    set_output.set(String::new());
-                    let res = run_code(
-                        &code.get(),
-                        None,
-                        Box::new(move |out| *set_output.write() += out),
-                    );
-                    match res {
-                        Ok(_) => {}
-                        Err(err) => {
-                            *set_output.write() += &err.write(&code.get());
-                        }
+        <div class:container>
+            <div class:sidebar>
+                <div style:background-color="darkgrey" style:aspect-ratio="1" style:width="100%">
+                    "Logo"
+                </div>
+                <h1>"OmniDice"</h1>
+                <h5>"Dice Calculator That Definitely Isn't Just a Programming Language"</h5>
+                <button on:click=|_|log::error!("
+                TODO: add documentation") class:docs-button>"Documentation"</button>
+                <h6 class:attribution>"Made by Nathan Strong, "<a prop:href="https://github.com/NathanNull">"or NathanNull on GitHub"</a></h6>
+            </div>
+            <div class:code-region>
+                <textarea
+                    class:code-input
+                    on:input:target=move |ev| {
+                        set_code.set(ev.target().value());
+                        debounce();
                     }
-                }
-                style:width="100%"
-            >
-                "Run Code"
-            </button>
-            <pre
-                style:height="20%"
-                style:width="100%"
-                style:max-height="20%"
-                style:overflow="scroll"
-            >
-                {output}
-            </pre>
+                    prop:value=code
+                    prop:spellcheck=false
+                />
+                <br />
+                <button on:click=run_code class:run-button>
+                    "Run Code"
+                </button>
+                <pre class:code-output>{output}</pre>
+            </div>
         </div>
     }
 }

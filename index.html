@@ -13,6 +13,111 @@
         body {
             max-width: 100%;
             overflow-x: hidden;
+            font-family: Arial, Helvetica, sans-serif;
+            --text-field-col: #262626;
+            --code-region-col: #1f1f1f;
+            --sidebar-col: #363636;
+            --dark-button-col: #303030;
+            --dark-button-hover-col: #404040;
+            --light-button-col: #101010;
+            --light-button-hover-col: #212121;
+            --light-text-col: #ccc;
+            --standard-border: 1px solid #444;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            margin: 0;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            width: 100vw;
+            height: 100vh;
+            max-width: 100vw;
+            max-height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .sidebar {
+            width: 200px;
+            min-width: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            background-color: var(--sidebar-col);
+            color: var(--light-text-col);
+            border: var(--standard-border);
+            padding: 10px;
+        }
+
+        .docs-button {
+            margin-top: 10px;
+            background-color: var(--light-button-col);
+            border: var(--standard-border);
+            width: 100%;
+            color: inherit;
+        }
+
+        .docs-button:hover {
+            background-color: var(--light-button-hover-col);
+        }
+
+        .attribution {
+            margin-top: auto;
+        }
+
+        .attribution a {
+            color: inherit;
+        }
+
+        .code-region {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background-color: var(--code-region-col);
+            scrollbar-color: #555 #333;
+        }
+
+        .code-input {
+            flex: 1;
+            resize: none;
+            background-color: var(--text-field-col);
+            color: var(--light-text-col);
+            margin: 10px 10px 0;
+            border: var(--standard-border);
+        }
+
+        .code-output {
+            height: 20%;
+            max-height: 20%;
+            overflow-y: scroll;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            background-color: var(--text-field-col);
+            color: var(--light-text-col);
+            margin: 10px;
+            border: var(--standard-border);
+        }
+
+        .run-button {
+            margin: 0 10px;
+            border: var(--standard-border);
+            background-color: var(--dark-button-col);
+            color: var(--light-text-col);
+        }
+
+        .run-button:hover {
+            background-color: var(--dark-button-hover-col);
         }
     </style>
 </head>
