@@ -1,7 +1,13 @@
-use leptos::{prelude::*, server::codee::string::FromToStringCodec};
+use leptos::{
+    ev::MouseEvent, portal::Portal, prelude::*, server::codee::string::FromToStringCodec,
+};
 use leptos_use::{storage::use_local_storage, use_debounce_fn};
 
 use crate::interpreter::run_code;
+
+mod docs;
+
+use docs::DOCS;
 
 #[component]
 #[allow(non_snake_case)]
@@ -11,6 +17,7 @@ pub fn App() -> impl IntoView {
 
     let (code, set_code) = signal(read_stored.get_untracked());
     let (output, set_output) = signal("".to_string());
+    let (show_docs, set_show_docs) = signal(false);
 
     // Write code to local storage 500ms after last key pressed
     let debounce = use_debounce_fn(
@@ -20,7 +27,7 @@ pub fn App() -> impl IntoView {
         500.0,
     );
 
-    let run_code = move |_| {
+    let run_code = move |_: MouseEvent| {
         set_output.set(String::new());
         let res = run_code(
             &code.get(),
@@ -38,14 +45,16 @@ pub fn App() -> impl IntoView {
     view! {
         <div class:container>
             <div class:sidebar>
-                <div style:background-color="darkgrey" style:aspect-ratio="1" style:width="100%">
-                    "Logo"
-                </div>
+                <span class="logo">"Logo"</span>
                 <h1>"OmniDice"</h1>
                 <h5>"Dice Calculator That Definitely Isn't Just a Programming Language"</h5>
-                <button on:click=|_|log::error!("
-                TODO: add documentation") class:docs-button>"Documentation"</button>
-                <h6 class:attribution>"Made by Nathan Strong, "<a prop:href="https://github.com/NathanNull">"or NathanNull on GitHub"</a></h6>
+                <button on:click=move |_| set_show_docs.set(true) class:docs-button>
+                    "Documentation"
+                </button>
+                <h6 class:attribution>
+                    "Made by Nathan Strong, "
+                    <a prop:href="https://github.com/NathanNull">"or NathanNull on GitHub"</a>
+                </h6>
             </div>
             <div class:code-region>
                 <textarea
@@ -64,5 +73,18 @@ pub fn App() -> impl IntoView {
                 <pre class:code-output>{output}</pre>
             </div>
         </div>
+        <Show when=move || show_docs.get() fallback=|| view! {}>
+            <Portal>
+                <div class:modal-backdrop on:click=move |_| set_show_docs.set(false)>
+                    <div class:modal on:click=|ev| ev.stop_propagation()>
+                        <div class:docs inner_html=DOCS.as_str() />
+                        <button class:docs-button on:click=move |ev| {
+                            set_show_docs.set(false);
+                            ev.stop_propagation();
+                        }>"Close"</button>
+                    </div>
+                </div>
+            </Portal>
+        </Show>
     }
 }

@@ -1,4 +1,5 @@
-# OmniDice: Dice Probability Calculator, Supercharged
+# OmniDice
+## Dice Probability Calculator, Supercharged
 
 OmniDice is a scripting language conceptually based on [AnyDice](https://anydice.com), with expanded syntax based on a simplified version of Rust. It was created as a tool for performing more complex computations than AnyDice is capable of handling, in a way that is more legible to those who can understand other commonly used programming languages.
 
@@ -18,7 +19,6 @@ written as-is, eg. `345` or `-12`.
 printf("{}", 1 + 2 - 3 * 4 / (5 / -2)); // prints 9
 printf("{}", 1 >= 2); // prints false
 ```
-
 
 ### Float
 #### Overview
@@ -303,7 +303,7 @@ while i < 10000 {
 For a description of functions, see their entry under types, as they are first-class types and can be used in the same way as any other.
 
 ## Other Notes
-### Turbofish
+### Turbofish and Typehints
 #### Overview
 In some cases, functions that are generic can't find the types for their generic variables anywhere in the surroundings. This is where the turbofish operator `::<T,U,V,(...)>` is useful, as it allows the caller to specify the generic variables explicitly. The `null` function is a common use case of this, as it accepts no parameters and so can only find a value for its generic type through the return.
 #### Example

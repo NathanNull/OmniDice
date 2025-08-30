@@ -10,8 +10,10 @@ inventory = "0.3.20"
 itertools = "0.14.0"
 leptos = { version = "0.8.6", features = ["csr"] }
 leptos-use = "0.16.2"
+leptos_meta = "0.8.5"
 log = "0.4.27"
 ordered-float = "5.0.0"
+pulldown-cmark = "0.13.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_cbor = "0.11.2"
 sha2 = "0.10.9"

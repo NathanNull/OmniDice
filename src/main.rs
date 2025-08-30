@@ -1,12 +1,21 @@
 use leptos::prelude::*;
+use leptos_meta::{provide_meta_context, Style};
 use std::{env, fs, path::Path};
 
 mod cache;
 mod interpreter;
 mod app;
 
+use app::App;
+
 fn main() {
-    mount_to_body(app::App);
+    provide_meta_context();
+
+    mount_to_body(|| view! {
+        <Style id="leptos">{include_str!("../index.css")}</Style>
+        <App />
+    });
+
     _ = console_log::init_with_level(log::Level::Debug);
     console_error_panic_hook::set_once();
 }
