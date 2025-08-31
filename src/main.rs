@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, Style};
 use std::{env, fs, path::Path};
 
 mod cache;
@@ -9,10 +8,7 @@ mod app;
 use app::App;
 
 fn main() {
-    provide_meta_context();
-
     mount_to_body(|| view! {
-        <Style id="leptos">{include_str!("../index.css")}</Style>
         <App />
     });
 

@@ -6,7 +6,6 @@ use leptos_use::{storage::use_local_storage, use_debounce_fn};
 use crate::interpreter::run_code;
 
 mod docs;
-
 use docs::DOCS;
 
 #[component]
@@ -17,7 +16,6 @@ pub fn App() -> impl IntoView {
 
     let (code, set_code) = signal(read_stored.get_untracked());
     let (output, set_output) = signal("".to_string());
-    let (show_docs, set_show_docs) = signal(false);
 
     // Write code to local storage 500ms after last key pressed
     let debounce = use_debounce_fn(
@@ -45,16 +43,7 @@ pub fn App() -> impl IntoView {
     view! {
         <div class:container>
             <div class:sidebar>
-                <span class="logo">"Logo"</span>
-                <h1>"OmniDice"</h1>
-                <h5>"Dice Calculator That Definitely Isn't Just a Programming Language"</h5>
-                <button on:click=move |_| set_show_docs.set(true) class:docs-button>
-                    "Documentation"
-                </button>
-                <h6 class:attribution>
-                    "Made by Nathan Strong, "
-                    <a prop:href="https://github.com/NathanNull">"or NathanNull on GitHub"</a>
-                </h6>
+                <SidebarContents />
             </div>
             <div class:code-region>
                 <textarea
@@ -73,15 +62,40 @@ pub fn App() -> impl IntoView {
                 <pre class:code-output>{output}</pre>
             </div>
         </div>
+    }
+}
+
+#[component]
+#[allow(non_snake_case)]
+fn SidebarContents() -> impl IntoView {
+    let (show_docs, set_show_docs) = signal(false);
+
+    view! {
+        <img class:logo src="/public/omnidice-logo.png" />
+        <h1>"OmniDice"</h1>
+        <h5>"Dice Calculator That Definitely Isn't Just a Programming Language"</h5>
+        <button on:click=move |_| set_show_docs.set(true) class:docs-button>
+            "Documentation"
+        </button>
+        <h6 class:attribution>
+            "Made by Nathan Strong, "
+            <a prop:href="https://github.com/NathanNull">"or NathanNull on GitHub"</a>
+        </h6>
+
         <Show when=move || show_docs.get() fallback=|| view! {}>
             <Portal>
                 <div class:modal-backdrop on:click=move |_| set_show_docs.set(false)>
                     <div class:modal on:click=|ev| ev.stop_propagation()>
                         <div class:docs inner_html=DOCS.as_str() />
-                        <button class:docs-button on:click=move |ev| {
-                            set_show_docs.set(false);
-                            ev.stop_propagation();
-                        }>"Close"</button>
+                        <button
+                            class:docs-button
+                            on:click=move |ev| {
+                                set_show_docs.set(false);
+                                ev.stop_propagation();
+                            }
+                        >
+                            "Close"
+                        </button>
                     </div>
                 </div>
             </Portal>
