@@ -5,7 +5,7 @@ use crate::{mut_type_init, type_init};
 use super::*;
 
 #[derive(Clone, PartialEq)]
-#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct _InnerTuple {
     entries: Vec<Datatype>,
     pub elements: Vec<Value>,
@@ -105,14 +105,20 @@ const PROPS: [(UnOpFn, SetFn); 32] = idx_props!(
     26, 27, 28, 29, 30, 31
 );
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for TupT {
-    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         if let Some(idx) = as_idx(name) {
-            self.entries.get(idx).and_then(|e| {
-                let (get, set) = PROPS.get(idx)?;
-                Some((e.clone(), Some(*get), Some(*set)))
-            }).ok_or_else(||format!("Can't get prop {name} of {self}"))
+            self.entries
+                .get(idx)
+                .and_then(|e| {
+                    let (get, set) = PROPS.get(idx)?;
+                    Some((e.clone(), Some(*get), Some(*set)))
+                })
+                .ok_or_else(|| format!("Can't get prop {name} of {self}"))
         } else {
             Err(format!("Can't get prop {name} of {self}"))
         }
@@ -125,7 +131,9 @@ impl Type for TupT {
         Ok(Box::new(Self { entries }))
     }
     fn real_try_match(&self, other: &Datatype) -> Result<HashMap<String, Datatype>, String> {
-        let other = other.downcast::<Self>().ok_or_else(||format!("Can't match {self} with {other}"))?;
+        let other = other
+            .downcast::<Self>()
+            .ok_or_else(|| format!("Can't match {self} with {other}"))?;
         let mut vars = HashMap::new();
         if self.entries.len() != other.entries.len() {
             return Err(format!("Can't match {self} with {other}"));
@@ -157,7 +165,7 @@ impl Type for TupT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Tuple {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()

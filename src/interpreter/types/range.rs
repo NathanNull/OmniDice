@@ -94,7 +94,7 @@ fn range_iter_fn(
     }))
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for RangeT {
     fn real_prop_type(
         &self,
@@ -112,7 +112,7 @@ impl Type for RangeT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Range {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         h.write_i32(self.inner().curr);

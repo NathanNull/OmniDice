@@ -61,7 +61,7 @@ fn max_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
 
 type_init!(DiceT, Distribution, "dice");
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for DiceT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == &IntT {
@@ -87,9 +87,14 @@ impl Type for DiceT {
             Minus(v: Distribution) -> (DiceT) |v|Ok(v * (-1).into());
         })
     }
-    fn real_prop_type(&self, name: &str) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
+    fn real_prop_type(
+        &self,
+        name: &str,
+    ) -> Result<(Datatype, Option<UnOpFn>, Option<SetFn>), String> {
         gen_fn_map!(
-            name, self, "Dice", 
+            name,
+            self,
+            "Dice",
             ("mean", MEAN_SIG, mean_fn, mean_prop),
             ("stddev", STDDEV_SIG, stddev_fn, stddev_prop),
             ("max", MAX_SIG, max_fn, max_prop),
@@ -98,5 +103,5 @@ impl Type for DiceT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Distribution {}

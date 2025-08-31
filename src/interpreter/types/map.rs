@@ -2,12 +2,13 @@ use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
 use crate::{
-    gen_fn_map, invalid, mut_type_init, op_list, type_init,
+    gen_fn_map,
     interpreter::types::arr::{ITER_RET_SIG, iter_ret_fn},
+    invalid, mut_type_init, op_list, type_init,
 };
 
 #[derive(Clone)]
-#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct _InnerMap {
     key: Datatype,
     value: Datatype,
@@ -222,7 +223,7 @@ fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for MapT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
@@ -260,7 +261,10 @@ impl Type for MapT {
         )
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
+    fn real_index_type(
+        &self,
+        index: &Datatype,
+    ) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if index == &self.key {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let index = i.eval_expr(idx)?;
@@ -331,5 +335,5 @@ impl Type for MapT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Map {}

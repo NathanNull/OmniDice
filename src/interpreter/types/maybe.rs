@@ -5,7 +5,7 @@ use crate::{gen_fn_map, invalid, type_init};
 use super::*;
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Maybe {
     pub output: Datatype,
     pub contents: Option<Value>,
@@ -66,7 +66,7 @@ static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
 });
 
 fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
-     let mut it = params.iter().cloned();
+    let mut it = params.iter().cloned();
     if let Some(me) = it.next_as::<Maybe>() {
         Ok(Box::new(me.contents.is_some()))
     } else {
@@ -74,7 +74,7 @@ fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for MaybeT {
     fn real_prop_type(
         &self,
@@ -110,7 +110,7 @@ impl Type for MaybeT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Maybe {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         if let Some(c) = &self.contents {

@@ -10,6 +10,8 @@ pub mod types;
 use itertools::Itertools;
 use std::{fmt::Display, usize};
 
+use crate::interpreter::error::Warning;
+
 use {
     error::{LexError, LineIndex, ParseError, RuntimeError},
     interpreter::Interpreter,
@@ -52,18 +54,30 @@ fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) -> String {
         "\n\n{}\n{}{}\n{err}",
         code.lines()
             .nth(pos.0 - 1) // Good old off-by-one due to indexing differences
-            .expect(&format!("Error past the last line of code: {pos:?} ({err})")),
+            .expect(&format!(
+                "Error past the last line of code: {pos:?} ({err})"
+            )),
         " ".repeat(pos.1 - 1),
         "^ Error happened here",
     )
 }
 
-pub fn run_code(code: &str, cache: Option<Box<Expr>>, output: Box<dyn Fn(&str)>) -> Result<Box<Expr>, InterpreterError> {
+pub fn run_code(
+    code: &str,
+    cache: Option<Box<Expr>>,
+    output: Box<dyn Fn(&str)>,
+) -> Result<Box<Expr>, InterpreterError> {
     // Use the cached AST if the code's hash matches the old one
     let ast = match cache {
         Some(ast) => ast,
         None => match parse(&code) {
-            Ok(ret) => ret,
+            Ok((ret, warns)) => {
+                for warn in warns {
+                    (output)(&write_err(&warn, warn.0, code));
+                    (output)("\n");
+                }
+                ret
+            },
             Err(e) => return Err(e),
         },
     };
@@ -75,7 +89,7 @@ pub fn run_code(code: &str, cache: Option<Box<Expr>>, output: Box<dyn Fn(&str)>)
     }
 }
 
-fn parse(code: &str) -> Result<Box<Expr>, InterpreterError> {
+fn parse(code: &str) -> Result<(Box<Expr>, Vec<Warning>), InterpreterError> {
     let tokens = match Lexer::new(code).lex() {
         Ok(tokens) => tokens,
         Err(e) => return Err(InterpreterError::Lex(e)),
@@ -97,7 +111,9 @@ fn parse(code: &str) -> Result<Box<Expr>, InterpreterError> {
         );
     }
 
-    let ast = match Parser::new(tokens).parse() {
+    let mut parser = Parser::new(tokens);
+
+    let ast = match parser.parse() {
         Ok(ast) => ast,
         Err(e) => return Err(InterpreterError::Parse(e)),
     };
@@ -106,5 +122,5 @@ fn parse(code: &str) -> Result<Box<Expr>, InterpreterError> {
         println!("AST: {ast}\n");
     }
 
-    Ok(ast)
+    Ok((ast, parser.warnings))
 }

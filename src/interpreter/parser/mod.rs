@@ -1,9 +1,17 @@
 use std::{collections::HashMap, sync::LazyLock, vec::IntoIter};
 
+use crate::interpreter::error::Warning;
+
 use super::{
-    builtins::BUILTINS, error::{LineIndex, ParseError}, interpreter::{Interpreter, VarScope}, lexer::{Bracket, Keyword, OpLike, Token, TokenString}, tokeniter::{TokenIter, TokenWidth}, types::{
-        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, Never, RefT, StringT, TupT, TypeVar, Void
-    }
+    builtins::BUILTINS,
+    error::{LineIndex, ParseError},
+    interpreter::{Interpreter, VarScope},
+    lexer::{Bracket, Keyword, OpLike, Token, TokenString},
+    tokeniter::{TokenIter, TokenWidth},
+    types::{
+        ArrT, BoolT, Datatype, DiceT, Downcast, FloatT, FuncT, IntT, IterT, MaybeT, Never, RefT,
+        StringT, TupT, TypeVar, Void,
+    },
 };
 
 pub mod expr;
@@ -16,10 +24,11 @@ use strum::IntoEnumIterator;
 
 pub struct Parser {
     tokens: TokenIter<Token, IntoIter<(Token, TokenWidth)>>,
-    var_types: Vec<VarScope<(Datatype, bool)>>,
+    var_types: Vec<VarScope<(Datatype, bool, bool, LineIndex)>>,
     typedefs: Vec<VarScope<Datatype>>,
     break_t_stack: Vec<bool>,
     return_t_stack: Vec<Datatype>,
+    pub warnings: Vec<Warning>,
 }
 
 impl Parser {
@@ -27,11 +36,9 @@ impl Parser {
         Self {
             tokens: TokenIter::new(tokens.into_iter()),
             var_types: vec![VarScope {
-                vars: HashMap::from_iter(
-                    BUILTINS
-                        .iter()
-                        .map(|(name, var)| (name.clone(), (var.get_type(), false))),
-                ),
+                vars: HashMap::from_iter(BUILTINS.iter().map(|(name, var)| {
+                    (name.clone(), (var.get_type(), false, true, LineIndex(0, 0)))
+                })),
                 blocking: true,
                 name: "builtins",
             }],
@@ -42,6 +49,7 @@ impl Parser {
             }],
             break_t_stack: vec![],
             return_t_stack: vec![],
+            warnings: vec![],
         }
     }
 
@@ -77,6 +85,7 @@ impl Parser {
         dtype: Datatype,
         mutable: bool,
         initialize: bool,
+        pos: LineIndex,
     ) -> Result<(), ParseError> {
         if !initialize {
             if let Ok(old) = self.get_var_type(&name) {
@@ -91,7 +100,7 @@ impl Parser {
             }
         } else {
             match self.var_types.last_mut() {
-                Some(sc) => sc.vars.insert(name, (dtype, mutable)),
+                Some(sc) => sc.vars.insert(name, (dtype, mutable, false, pos)),
                 None => {
                     return self
                         .make_error("Tried to set variable while no scope alive".to_string());
@@ -103,7 +112,7 @@ impl Parser {
 
     fn get_var_type(&self, name: &str) -> Result<Datatype, ParseError> {
         for scope in self.var_types.iter().rev() {
-            if let Some((dtype, _)) = scope.vars.get(name) {
+            if let Some((dtype, ..)) = scope.vars.get(name) {
                 return Ok(dtype.clone());
             }
             if scope.blocking {
@@ -113,6 +122,41 @@ impl Parser {
         self.make_error(format!(
             "Unknown variable {name}, consider adding 'let' before this assignment"
         ))
+    }
+
+    fn use_var_type(&mut self, name: &str) -> Result<Datatype, ParseError> {
+        for scope in self.var_types.iter_mut().rev() {
+            if let Some((dtype, _, used, _)) = scope.vars.get_mut(name) {
+                *used = true;
+                return Ok(dtype.clone());
+            }
+            if scope.blocking {
+                break;
+            }
+        }
+        self.make_error(format!(
+            "Unknown variable {name}, consider adding 'let' before this assignment"
+        ))
+    }
+
+    fn pop_scope(&mut self, pop_break: bool, pop_func_details: bool) -> Result<(), ParseError> {
+        if pop_break {
+            self.break_t_stack.pop();
+        }
+        if pop_func_details {
+            self.typedefs.pop();
+            self.return_t_stack.pop();
+        }
+        let last_scope = self.var_types.pop().ok_or_else(|| {
+            self.make_error::<()>("Tried to pop from empty stack".to_string())
+                .unwrap_err()
+        })?;
+        for (name, (..,used,pos)) in last_scope.vars {
+            if !used {
+                self.warnings.push(Warning(pos, format!("Unused variable {name}")));
+            }
+        }
+        Ok(())
     }
 
     fn get_typedef(&self, name: &str) -> Option<Datatype> {
@@ -129,7 +173,7 @@ impl Parser {
 
     fn var_is_mutable(&self, name: &str) -> bool {
         for scope in self.var_types.iter().rev() {
-            if let Some((_, mutable)) = scope.vars.get(name) {
+            if let Some((_, mutable, ..)) = scope.vars.get(name) {
                 return *mutable;
             }
             if scope.blocking {
@@ -140,7 +184,7 @@ impl Parser {
     }
 
     fn decide_type(
-        &self,
+        &mut self,
         contents: &ExprContents,
         expected_type: Option<Datatype>,
     ) -> Result<Datatype, ParseError> {
@@ -150,7 +194,9 @@ impl Parser {
                 Accessor::Property(.., out) => out.clone(),
                 Accessor::Index(.., indices) => match indices.len() {
                     1 => indices[0].3.clone(),
-                    _ => Box::new(TupT { entries: indices.iter().map(|(..,out)|out.clone()).collect() })
+                    _ => Box::new(TupT {
+                        entries: indices.iter().map(|(.., out)| out.clone()).collect(),
+                    }),
                 },
             },
             ExprContents::Value(literal) => literal.get_type(),
@@ -162,33 +208,51 @@ impl Parser {
                 .last()
                 .map(|expr| expr.output.clone())
                 .unwrap_or(Box::new(Void)),
-            ExprContents::Conditional(cond) => if cond.otherwise.is_none() {Box::new(Void)} else {cond.result.output.clone()},
-            ExprContents::While(_) | ExprContents::For(_) => Box::new(Void),
-            ExprContents::Array(arr) => match arr
-                .elements
-                .first()
-                .map(|e| e.output.clone())
-                .or(expected_type
-                    .as_ref()
-                    .and_then(|t| t.downcast::<ArrT>())
-                    .map(|arr| arr.entry))
-            {
-                None => {
-                    return self.make_error(
-                        "Unknown type for empty array, please annotate".to_string(),
-                    );
+            ExprContents::Conditional(cond) => {
+                if cond.otherwise.is_none() {
+                    Box::new(Void)
+                } else {
+                    cond.result.output.clone()
                 }
-                Some(never) if never == Never => Box::new(Never) as Datatype,
-                Some(entry) => Box::new(ArrT {entry}),
-            },
-            
-            ExprContents::Tuple(tup) => if tup.elements.iter().any(|e|e.output == Never) {
-                Box::new(Never) as Datatype
-            } else {
-                Box::new(TupT {
-                    entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
-                })
-            },
+            }
+            ExprContents::While(wh) => {
+                if wh.condition.contents == ExprContents::Value(Box::new(true)) && !wh.result.could_contain_break() {
+                    self.warnings.push(Warning(wh.loc, "Potential infinite loop".to_string()));
+                    Box::new(Never) as Datatype
+                } else {
+                    Box::new(Void)
+                }
+            }
+            ExprContents::For(_) => Box::new(Void),
+            ExprContents::Array(arr) => {
+                match arr
+                    .elements
+                    .first()
+                    .map(|e| e.output.clone())
+                    .or(expected_type
+                        .as_ref()
+                        .and_then(|t| t.downcast::<ArrT>())
+                        .map(|arr| arr.entry))
+                {
+                    None => {
+                        return self.make_error(
+                            "Unknown type for empty array, please annotate".to_string(),
+                        );
+                    }
+                    Some(never) if never == Never => Box::new(Never) as Datatype,
+                    Some(entry) => Box::new(ArrT { entry }),
+                }
+            }
+
+            ExprContents::Tuple(tup) => {
+                if tup.elements.iter().any(|e| e.output == Never) {
+                    Box::new(Never) as Datatype
+                } else {
+                    Box::new(TupT {
+                        entries: tup.elements.iter().map(|e| e.output.clone()).collect(),
+                    })
+                }
+            }
             ExprContents::Function(func) => Box::new(FuncT {
                 params: func.params.iter().map(|(_, t)| t.clone()).collect(),
                 output: func.contents.output.clone(),
@@ -212,15 +276,17 @@ impl Parser {
                 match gspec.base.output.specify_generics(&gspec.types) {
                     Ok(gt) => gt,
                     Err(e) => {
-                        return self
-                            .make_error(e);
+                        return self.make_error(e);
                     }
                 }
             }
-            ExprContents::Return(_) | ExprContents::Break(_) | ExprContents::Continue(_) => Box::new(Never),
+            ExprContents::Return(_) | ExprContents::Break(_) | ExprContents::Continue(_) => {
+                Box::new(Never)
+            }
         };
         Ok(if let Some(ty) = expected_type {
-            ty.assert_same(&res).map_err(|e|self.make_error::<()>(e).unwrap_err())?
+            ty.assert_same(&res)
+                .map_err(|e| self.make_error::<()>(e).unwrap_err())?
         } else {
             res
         })
@@ -262,10 +328,9 @@ impl Parser {
         {
             let contents = self.parse_expr(0, &expected_end, true, None)?;
             let is_last = self.tokens.peek().unwrap() == expected_end.last().unwrap();
-            let new_line =  *self.new_expr(contents, if is_last { expected_type.clone() } else { None })?;
-            exprs.push(
-               new_line,
-            );
+            let new_line =
+                *self.new_expr(contents, if is_last { expected_type.clone() } else { None })?;
+            exprs.push(new_line);
             just_parsed = true;
             if !expected_end.contains(self.tokens.peek().unwrap()) {
                 let str = format!("Expected semicolon or EOF, found {:?}", self.tokens.peek());
@@ -275,10 +340,11 @@ impl Parser {
         if !just_parsed {
             exprs.push(*self.new_expr(ExprContents::Value(Box::new(Void)), None)?);
         }
-        self.var_types.pop();
-        if exprs.iter().any(|e|e.output == Never) {
-            let (idx,_) = exprs.iter()
-                .find_position(|e|e.output == Never)
+        self.pop_scope(false, false)?;
+        if exprs.iter().any(|e| e.output == Never) {
+            let (idx, _) = exprs
+                .iter()
+                .find_position(|e| e.output == Never)
                 .expect("Just confirmed that one such expression exists");
             while exprs.len() > idx + 1 {
                 exprs.pop();
@@ -315,20 +381,30 @@ impl Parser {
                     loop {
                         elements.push(self.parse_expr(
                             0,
-                            &vec![Token::OpLike(OpLike::Bracket(Bracket::RBracket)), Token::Comma],
+                            &vec![
+                                Token::OpLike(OpLike::Bracket(Bracket::RBracket)),
+                                Token::Comma,
+                            ],
                             false,
                             None,
                         )?);
                         match self.tokens.next() {
                             Some(Token::Comma) => continue,
                             Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
-                            Some(tk) => return self.make_error(format!("Expected ] or , but found {tk}")),
+                            Some(tk) => {
+                                return self.make_error(format!("Expected ] or , but found {tk}"));
+                            }
                             None => return self.make_error("Unexpected EOF".to_string()),
                         }
                     }
                     match elements.len() {
                         1 => elements[0].clone(),
-                        _ => ExprContents::Tuple(Tuple { elements: elements.into_iter().map(|e|self.new_expr(e, None).map(|i|*i)).collect::<Result<_,_>>()? })
+                        _ => ExprContents::Tuple(Tuple {
+                            elements: elements
+                                .into_iter()
+                                .map(|e| self.new_expr(e, None).map(|i| *i))
+                                .collect::<Result<_, _>>()?,
+                        }),
                     }
                 }
             }
@@ -345,7 +421,13 @@ impl Parser {
                 if let Some(((), r_bp)) = PREFIX_BINDING_POWER.get(&op) {
                     let op_loc = self.tokens.pos;
                     let rhs = self.parse_expr(*r_bp, expected_end, false, None)?;
-                    self.make_expr(ExprContents::Value(Box::new(Void)), rhs, op, OpType::Prefix, op_loc)?
+                    self.make_expr(
+                        ExprContents::Value(Box::new(Void)),
+                        rhs,
+                        op,
+                        OpType::Prefix,
+                        op_loc,
+                    )?
                 } else {
                     return self.make_error(format!("Invalid prefix operator {op:?}"));
                 }
@@ -420,7 +502,7 @@ impl Parser {
                         INFIX_BINDING_POWER[&OpLike::Assign].1,
                         expected_end,
                         allow_imply_eol,
-                        Some(ret_type.clone())
+                        Some(ret_type.clone()),
                     )?;
                     let expected_type = Some(ret_type.clone());
                     let ret = self.new_expr(ret, expected_type)?;
@@ -581,7 +663,13 @@ impl Parser {
                 }
                 self.tokens.next();
                 let op_loc = self.tokens.pos;
-                lhs = self.make_expr(lhs, ExprContents::Value(Box::new(Void)), op, OpType::Postfix, op_loc)?;
+                lhs = self.make_expr(
+                    lhs,
+                    ExprContents::Value(Box::new(Void)),
+                    op,
+                    OpType::Postfix,
+                    op_loc,
+                )?;
                 continue;
             }
             let (l_bp, r_bp) = match INFIX_BINDING_POWER.get(&op) {
@@ -623,7 +711,11 @@ impl Parser {
                     },
                 )
             } else {
-                if base_expr.output.assert_same(&(Box::new(Void) as Datatype)).is_err() {
+                if base_expr
+                    .output
+                    .assert_same(&(Box::new(Void) as Datatype))
+                    .is_err()
+                {
                     return self.make_error(
                         "Conditional statement without an else clause must return Void".to_string(),
                     );
@@ -646,8 +738,10 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> Result<ExprContents, ParseError> {
+        let loc = self.tokens.pos;
         let (clause, result) = self.parse_conditional_clause(Some(Box::new(Void)), true)?;
         Ok(ExprContents::While(While {
+            loc,
             condition: clause,
             result: result,
         }))
@@ -679,12 +773,13 @@ impl Parser {
             .output
             .prop_type("iter")
             .and_then(|(i_fn, ..)| i_fn.call_result(vec![], None))
-            .and_then(|(i, ..)| i.downcast::<IterT>().ok_or_else(||"Couldn't downcast".to_string()))
-        {
+            .and_then(|(i, ..)| {
+                i.downcast::<IterT>()
+                    .ok_or_else(|| "Couldn't downcast".to_string())
+            }) {
             Ok(i_type) => i_type.output,
             Err(e) => {
-                return self
-                    .make_error(e);
+                return self.make_error(e);
             }
         };
         self.tokens
@@ -695,11 +790,10 @@ impl Parser {
             blocking: false,
             name: "for",
         });
-        self.set_var_type(var.clone(), i_type, false, true)?;
+        self.set_var_type(var.clone(), i_type, false, true, iter_loc)?;
         self.break_t_stack.push(true);
         let sc = ExprContents::Scope(self.parse_scope(true, Some(Box::new(Void)))?);
-        self.break_t_stack.pop();
-        self.var_types.pop();
+        self.pop_scope(true, false)?;
         let body = self.new_expr(sc, Some(Box::new(Void)))?;
         self.tokens
             .expect(Token::OpLike(OpLike::Bracket(Bracket::RCurly)))
@@ -756,7 +850,7 @@ impl Parser {
                 } && match &assignee {
                     Accessor::Property(.., setter, _) => setter.is_some(),
                     Accessor::Index(.., indices) => indices.len() == 1 && indices[0].2.is_some(),
-                    Accessor::Variable(..) => unreachable!("How did you even get here")
+                    Accessor::Variable(..) => unreachable!("How did you even get here"),
                 })
             }
         }
@@ -779,7 +873,7 @@ impl Parser {
         match assign_type {
             AssignType::Reassign => {
                 let old_type = match &assignee {
-                    Accessor::Variable(v, _) => self.get_var_type(v)?,
+                    Accessor::Variable(v, _) => self.use_var_type(v)?,
                     Accessor::Property(base, prop, ..) => match base.output.prop_type(prop) {
                         Ok((pt, ..)) => pt,
                         Err(e) => {
@@ -788,7 +882,9 @@ impl Parser {
                     },
                     Accessor::Index(_, _, indices) => {
                         if indices.len() != 1 {
-                            return self.make_error("Can't use multiple-index pattern for assignment".to_string())
+                            return self.make_error(
+                                "Can't use multiple-index pattern for assignment".to_string(),
+                            );
                         } else {
                             indices[0].3.clone()
                         }
@@ -800,13 +896,13 @@ impl Parser {
                         val.output
                     ));
                 }
-                
+
                 if !self.is_assignable(&assignee) {
                     return self.make_error(format!("{assignee:?} is not reassignable"));
                 }
             }
             AssignType::Create => match &assignee {
-                Accessor::Variable(v, _) => self.set_var_type(v.clone(), ty, true, true)?,
+                Accessor::Variable(v, _) => self.set_var_type(v.clone(), ty, true, true, a_loc)?,
                 _ => {
                     return self.make_error(
                         "Let assignments should only be able to parse lhs as a single variable"
@@ -911,7 +1007,7 @@ impl Parser {
                 .expect(Token::Colon)
                 .map_err(|e| self.make_error::<()>(e).unwrap_err())?;
             let ty = self.parse_type()?;
-            params.push((name, ty));
+            params.push((name, ty, self.tokens.pos));
             match self.tokens.next() {
                 Some(Token::Comma) => (),
                 Some(Token::OpLike(OpLike::Bracket(Bracket::RBracket))) => break,
@@ -923,12 +1019,12 @@ impl Parser {
         } else {
             Box::new(Void)
         };
-        
+
         self.var_types.push(VarScope {
             vars: HashMap::from_iter(
                 params
                     .iter()
-                    .map(|(name, ty)| (name.clone(), (ty.clone(), false))),
+                    .map(|(name, ty, pos)| (name.clone(), (ty.clone(), false, false, *pos))),
             ),
             blocking: false,
             name: "func",
@@ -936,8 +1032,11 @@ impl Parser {
         self.return_t_stack.push(output.clone());
         self.break_t_stack.push(false);
 
-        let contents = if self.tokens
-            .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly))).is_ok() {
+        let contents = if self
+            .tokens
+            .expect(Token::OpLike(OpLike::Bracket(Bracket::LCurly)))
+            .is_ok()
+        {
             let sc = ExprContents::Scope(self.parse_scope(true, Some(output.clone()))?);
             let contents = self.new_expr(sc, Some(output.clone()))?;
             self.tokens
@@ -952,11 +1051,9 @@ impl Parser {
             self.new_expr(expr, Some(output.clone()))?
         };
         // Generics defined in this function go out of scope, as does the expectation of a return/break.
-        self.typedefs.pop();
-        self.return_t_stack.pop();
-        self.break_t_stack.pop();
+        self.pop_scope(true, true)?;
         Ok(ExprContents::Function(Function {
-            params,
+            params: params.into_iter().map(|(a, b, ..)| (a, b)).collect(),
             contents,
             generic,
         }))

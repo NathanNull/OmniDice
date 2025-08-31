@@ -4,7 +4,7 @@ use super::*;
 use crate::{gen_fn_map, invalid, mut_type_init, op_list, type_init};
 
 #[derive(Clone, PartialEq)]
-#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct _InnerArr {
     entry: Datatype,
     pub elements: Vec<Value>,
@@ -175,7 +175,7 @@ fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(arr.inner().elements.len() as i32))
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for ArrT {
     fn real_bin_op_result(&self, other: &Datatype, op: Op) -> Result<(Datatype, BinOpFn), String> {
         if other == self {
@@ -210,7 +210,10 @@ impl Type for ArrT {
         )
     }
 
-    fn real_index_type(&self, index: &Datatype) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
+    fn real_index_type(
+        &self,
+        index: &Datatype,
+    ) -> Result<(Datatype, Option<BinOpFn>, Option<SetAtFn>), String> {
         if index == &IntT {
             fn get_fn(me: &Expr, idx: &Expr, i: &mut Interpreter) -> OpResult {
                 let idx = i.try_eval_as::<i32>(idx)?;
@@ -319,7 +322,7 @@ impl Type for ArrT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Arr {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner()

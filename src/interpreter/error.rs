@@ -61,27 +61,27 @@ impl RuntimeErrorType {
     pub fn is_return(&self) -> bool {
         match self {
             Return(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_break(&self) -> bool {
         match self {
             Break => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_continue(&self) -> bool {
         match self {
             Continue => true,
-            _ => false
+            _ => false,
         }
     }
 }
 
-use serde::{Deserialize, Serialize};
 use RuntimeErrorType::*;
+use serde::{Deserialize, Serialize};
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -154,5 +154,13 @@ impl RuntimeError {
 
     pub fn base_pos(&self) -> Option<LineIndex> {
         self.err_loc
+    }
+}
+
+pub struct Warning(pub LineIndex, pub String);
+
+impl Display for Warning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Warning: {} at {}", self.1, self.0)
     }
 }

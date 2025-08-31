@@ -1,11 +1,11 @@
 use std::sync::LazyLock;
 
-use crate::{gen_fn_map, invalid, interpreter::parser::ExprContents, type_init};
+use crate::{gen_fn_map, interpreter::parser::ExprContents, invalid, type_init};
 
 use super::*;
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature="serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Iter {
     pub next_fn: Value,
     pub output: Datatype,
@@ -404,7 +404,7 @@ pub fn to_map_fn(
     ))
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Type for IterT {
     fn real_prop_type(
         &self,
@@ -441,5 +441,5 @@ impl Type for IterT {
     }
 }
 
-#[cfg_attr(feature="serde", typetag::serde)]
+#[cfg_attr(feature = "serde", typetag::serde)]
 impl Val for Iter {}

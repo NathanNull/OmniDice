@@ -61,7 +61,7 @@ impl Interpreter {
             },
             variables: vec![],
             is_const: true,
-            output: Box::new(|_|{})
+            output: Box::new(|_| {}),
         }
     }
 
@@ -286,6 +286,7 @@ impl Interpreter {
     }
 
     fn eval_while(&mut self, wh: &While) -> Result<Value, RuntimeError> {
+        let mut safety_check = 0;
         loop {
             if let Some(condition) = self.eval_expr(&wh.condition)?.downcast::<bool>() {
                 if condition {
@@ -306,6 +307,14 @@ impl Interpreter {
             } else {
                 return Err(RuntimeError::partial(
                     "UNREACHABLE: Conditional statements should always return boolean values",
+                ));
+            }
+            safety_check += 1;
+            const SAFETY_MAX_ITERS: usize = 100_000;
+            if safety_check > SAFETY_MAX_ITERS {
+                return Err(RuntimeError::single(
+                    &format!("While loop reached safety limit of {SAFETY_MAX_ITERS} iterations"),
+                    wh.loc,
                 ));
             }
         }

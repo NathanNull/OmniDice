@@ -77,7 +77,7 @@ fn println_fn(
         .first()
         .and_then(|v| v.downcast::<String>())
         .ok_or_else(|| RuntimeError::partial("Println first parameter must be a string"))?;
-    i.print(&(res+"\n"));
+    i.print(&(res + "\n"));
     Ok(Box::new(Void))
 }
 
@@ -96,7 +96,7 @@ fn printf_fn(
     let res = format_fn(params, i, o)?
         .downcast::<String>()
         .ok_or_else(|| RuntimeError::partial("Printf first parameter must be a string"))?;
-    i.print(&(res+"\n"));
+    i.print(&(res + "\n"));
     Ok(Box::new(Void))
 }
 

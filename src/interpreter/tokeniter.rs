@@ -130,7 +130,7 @@ impl<I: std::fmt::Debug, T: Iterator<Item = (I, TokenWidth)>> TokenIter<I, T> {
             Some(next) if next == &ele => {
                 self.next();
                 Ok(())
-            },
+            }
             Some(next) => Err(format!("Expected {ele:?}, found {next:?}")),
             None => Err("Unexpected EOF".to_string()),
         }

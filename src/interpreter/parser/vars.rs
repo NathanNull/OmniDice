@@ -274,6 +274,7 @@ impl Expr {
             ExprContents::While(wh) => ExprContents::While(While {
                 condition: wh.condition.replace_generics(generics)?,
                 result: wh.result.replace_generics(generics)?,
+                loc: wh.loc,
             }),
             ExprContents::For(fo) => ExprContents::For(For {
                 var: fo.var.clone(),
@@ -351,6 +352,47 @@ impl Expr {
             output: new_type,
         }))
     }
+
+    pub fn could_contain_break(&self) -> bool {
+        match &self.contents {
+            ExprContents::Value(_) => false,
+            ExprContents::Binop(binop) => {
+                binop.lhs.could_contain_break() || binop.rhs.could_contain_break()
+            }
+            ExprContents::Prefix(prefix) => prefix.rhs.could_contain_break(),
+            ExprContents::Postfix(postfix) => postfix.lhs.could_contain_break(),
+            ExprContents::Assign(assign) => {
+                assign.assignee.could_contain_break() || assign.val.could_contain_break()
+            }
+            ExprContents::Accessor(accessor) => accessor.could_contain_break(),
+            ExprContents::Scope(exprs) => exprs.iter().any(|e| e.could_contain_break()),
+            ExprContents::Conditional(conditional) => {
+                conditional.condition.could_contain_break()
+                    || (conditional.condition.contents != ExprContents::Value(Box::new(false))
+                        && conditional.result.could_contain_break())
+                    || (conditional.condition.contents != ExprContents::Value(Box::new(true))
+                        && conditional
+                            .otherwise
+                            .as_ref()
+                            .is_some_and(|e| e.could_contain_break()))
+            }
+            ExprContents::While(_) => false,
+            ExprContents::For(_) => false,
+            ExprContents::Array(array) => array.elements.iter().any(|e| e.could_contain_break()),
+            ExprContents::Tuple(tuple) => tuple.elements.iter().any(|e| e.could_contain_break()),
+            ExprContents::Function(_) => false,
+            ExprContents::Call(call) => {
+                call.base.could_contain_break()
+                    || call.params.iter().any(|e| e.could_contain_break())
+            }
+            ExprContents::GenericSpecify(generic_specify) => {
+                generic_specify.base.could_contain_break()
+            }
+            ExprContents::Return(_) => true,
+            ExprContents::Break(_) => true,
+            ExprContents::Continue(_) => false,
+        }
+    }
 }
 
 impl From<Value> for Expr {
@@ -380,7 +422,10 @@ impl Accessor {
                                 .filter(|v| !assigned_vars.contains(v)),
                         )
                         .collect();
-                    assigned_vars = assigned_vars.into_iter().chain(index.assigned_variables()).collect();
+                    assigned_vars = assigned_vars
+                        .into_iter()
+                        .chain(index.assigned_variables())
+                        .collect();
                 }
                 Box::new(vars.into_iter())
             }
@@ -419,5 +464,15 @@ impl Accessor {
             )
             .map_err(|e| e.info)?,
         })
+    }
+
+    fn could_contain_break(&self) -> bool {
+        match self {
+            Accessor::Variable(..) => false,
+            Accessor::Property(expr, ..) => expr.could_contain_break(),
+            Accessor::Index(expr, _, items) => {
+                expr.could_contain_break() || items.iter().any(|i| i.0.could_contain_break())
+            }
+        }
     }
 }

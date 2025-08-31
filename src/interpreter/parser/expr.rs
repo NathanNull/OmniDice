@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
 };
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 use serde::{
     Deserialize, Serialize,
     de::{self, VariantAccess, Visitor},
@@ -111,7 +111,7 @@ pub struct Expr {
     unused_qualifications,
     clippy::absolute_paths
 )]
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 const _: () = {
     #[allow(unused_extern_crates, clippy::useless_attribute)]
     extern crate serde as _serde;
@@ -505,7 +505,7 @@ impl PartialEq for Binop {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl Serialize for Binop {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -515,7 +515,7 @@ impl Serialize for Binop {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Binop {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -570,7 +570,7 @@ impl PartialEq for Prefix {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl Serialize for Prefix {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -580,7 +580,7 @@ impl Serialize for Prefix {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Prefix {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -628,7 +628,7 @@ impl PartialEq for Postfix {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl Serialize for Postfix {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -638,7 +638,7 @@ impl Serialize for Postfix {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Postfix {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -728,7 +728,7 @@ impl PartialEq for Accessor {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl Serialize for Accessor {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -758,7 +758,7 @@ impl Serialize for Accessor {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Accessor {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -870,6 +870,7 @@ impl Debug for Conditional {
 pub struct While {
     pub condition: Box<Expr>,
     pub result: Box<Expr>,
+    pub loc: LineIndex,
 }
 
 impl Debug for While {
@@ -963,7 +964,7 @@ impl PartialEq for Call {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl Serialize for Call {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -973,7 +974,7 @@ impl Serialize for Call {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Call {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

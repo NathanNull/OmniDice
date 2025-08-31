@@ -42,9 +42,9 @@ pub static RUST_FUNC_LIST: LazyLock<RwLock<HashMap<String, RustFunc>>> = LazyLoc
     ))
 });
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 pub struct RustFuncEntry(pub &'static str, pub &'static str, pub RustFunc);
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 inventory::collect!(RustFuncEntry);
 
 #[cfg(feature = "serde")]
