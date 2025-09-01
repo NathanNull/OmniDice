@@ -6,6 +6,7 @@ pub mod lexer;
 pub mod parser;
 pub mod tokeniter;
 pub mod types;
+pub mod cache;
 
 use itertools::Itertools;
 use std::{fmt::Display, usize};
@@ -51,7 +52,7 @@ impl InterpreterError {
 
 fn write_err<T: Display>(err: &T, pos: LineIndex, code: &str) -> String {
     format!(
-        "\n\n{}\n{}{}\n{err}",
+        "{}\n{}{}\n{err}",
         code.lines()
             .nth(pos.0 - 1) // Good old off-by-one due to indexing differences
             .expect(&format!(

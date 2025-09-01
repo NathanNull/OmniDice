@@ -2,11 +2,27 @@ use leptos::{
     ev::MouseEvent, portal::Portal, prelude::*, server::codee::string::FromToStringCodec,
 };
 use leptos_use::{storage::use_local_storage, use_debounce_fn};
-
-use crate::interpreter::run_code;
+use web_sys::{
+    MessageEvent, Worker, WorkerOptions, WorkerType,
+    js_sys::Array,
+    wasm_bindgen::{JsCast, prelude::Closure},
+};
 
 mod docs;
 use docs::DOCS;
+
+fn worker_new(url: &str) -> Worker {
+    let options = WorkerOptions::new();
+    options.set_type(WorkerType::Module);
+    Worker::new_with_options(&url, &options).expect("failed to spawn worker")
+}
+
+#[derive(PartialEq, Clone)]
+enum WorkerState {
+    Loading,
+    Ready,
+    Running,
+}
 
 #[component]
 #[allow(non_snake_case)]
@@ -15,7 +31,39 @@ pub fn App() -> impl IntoView {
         use_local_storage::<String, FromToStringCodec>("code-store");
 
     let (code, set_code) = signal(read_stored.get_untracked());
-    let (output, set_output) = signal("".to_string());
+    let (output, set_output) = signal("Code Output".to_string());
+
+    let (worker_state, set_worker_state) = signal(WorkerState::Loading);
+
+    let worker = worker_new("./worker_loader.js");
+    //let worker_clone = worker.clone();
+
+    let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
+        //let worker_clone = worker_clone.clone();
+        let data = Array::from(&msg.data());
+        match data
+            .get(0)
+            .as_string()
+            .expect("first field is string")
+            .as_str()
+        {
+            "ready" => {
+                log::debug!("worker ready");
+                set_worker_state.set(WorkerState::Ready)
+            }
+            "result" => {
+                let out = data
+                    .get(1)
+                    .as_string()
+                    .expect("result second field is string");
+                *set_output.write() += &out;
+            }
+            _ => (),
+        }
+    }) as Box<dyn Fn(MessageEvent)>);
+
+    worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+    onmessage.forget();
 
     // Write code to local storage 500ms after last key pressed
     let debounce = use_debounce_fn(
@@ -26,17 +74,13 @@ pub fn App() -> impl IntoView {
     );
 
     let run_code = move |_: MouseEvent| {
-        set_output.set(String::new());
-        let res = run_code(
-            &code.get(),
-            None,
-            Box::new(move |out| *set_output.write() += out),
-        );
-        match res {
-            Ok(_) => {}
-            Err(err) => {
-                *set_output.write() += &err.write(&code.get());
-            }
+        if worker_state.get() == WorkerState::Ready {
+            log::debug!("running code");
+            set_output.set(String::new());
+            set_worker_state.set(WorkerState::Running);
+            worker
+                .post_message(&code.get().into())
+                .expect("post code to work");
         }
     };
 
@@ -56,10 +100,19 @@ pub fn App() -> impl IntoView {
                     prop:spellcheck=false
                 />
                 <br />
-                <button on:click=run_code class:run-button>
+                <button
+                    on:click=run_code
+                    class:run-button
+                    disabled=move || worker_state.get() != WorkerState::Ready
+                >
                     "Run Code"
                 </button>
-                <pre class:code-output>{output}</pre>
+                <pre class:code-output>
+                    {move || {
+                        let out = output.get();
+                        if out.len() == 0 { "Thinking...".to_string() } else { out }
+                    }}
+                </pre>
             </div>
         </div>
     }
