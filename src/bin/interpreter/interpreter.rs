@@ -310,7 +310,7 @@ impl Interpreter {
                 ));
             }
             safety_check += 1;
-            const SAFETY_MAX_ITERS: usize = 1_000_000;
+            const SAFETY_MAX_ITERS: usize = 100_000;
             if safety_check > SAFETY_MAX_ITERS {
                 return Err(RuntimeError::single(
                     &format!("While loop reached safety limit of {SAFETY_MAX_ITERS} iterations"),

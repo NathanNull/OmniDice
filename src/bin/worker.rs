@@ -1,8 +1,4 @@
-use std::{
-    env, fs,
-    path::Path,
-    sync::{Arc, RwLock},
-};
+use std::{env, fs, path::Path};
 use web_sys::{
     DedicatedWorkerGlobalScope, MessageEvent, console,
     js_sys::{self, Array},
@@ -19,29 +15,30 @@ pub fn main() {
     let scope = DedicatedWorkerGlobalScope::from(JsValue::from(js_sys::global()));
     let scope_clone = scope.clone();
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
+        // this is dumb
+        let scope_clone = scope_clone.clone();
+        let scope_clone_clone = scope_clone.clone();
         console::log_1(&"got message".into());
 
         let code = msg.data().as_string().expect("message to be a string");
-        let output = Arc::new(RwLock::new(String::new()));
-        let out_clone = output.clone();
         let res = run_code(
             &code,
             None,
-            Box::new(move |out| *out_clone.try_write().unwrap() += out),
+            Box::new(move |out| {
+                scope_clone_clone
+                    .post_message(&Array::of2(&"result".into(), &out.into()))
+                    .expect("posting result message succeeds")
+            }),
         );
         match res {
             Ok(_) => {}
             Err(err) => {
-                *output.try_write().unwrap() += &err.write(&code);
+                scope_clone
+                    .post_message(&Array::of2(&"result".into(), &err.write(&code).into()))
+                    .expect("posting result message succeeds");
             }
         }
 
-        scope_clone
-            .post_message(&Array::of2(
-                &"result".into(),
-                &output.try_read().unwrap().clone().into(),
-            ))
-            .expect("posting result message succeeds");
         scope_clone
             .post_message(&Array::of1(&"ready".into()))
             .expect("posting result message succeeds");
