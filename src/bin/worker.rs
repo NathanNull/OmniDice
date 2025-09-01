@@ -58,7 +58,7 @@ fn basic_code_run() {
 
     let cache = cache::try_load_cache(&code, Path::new(filename));
     if cache.is_some() {
-        println!("Using cached AST")
+        println!("Using cached AST") 
     }
     match interpreter::run_code(&code, cache, Box::new(|s| print!("{s}"))) {
         Ok(ast) => cache::write_cache(&code, Path::new(filename), ast),
