@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path};
 use web_sys::{
-    DedicatedWorkerGlobalScope, MessageEvent, console,
+    DedicatedWorkerGlobalScope, MessageEvent,
     js_sys::{self, Array},
     wasm_bindgen::{JsCast, JsValue, prelude::Closure},
 };
@@ -11,14 +11,12 @@ mod interpreter;
 
 pub fn main() {
     console_error_panic_hook::set_once();
-    console::log_1(&"worker starting".into());
     let scope = DedicatedWorkerGlobalScope::from(JsValue::from(js_sys::global()));
     let scope_clone = scope.clone();
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         // this is dumb
         let scope_clone = scope_clone.clone();
         let scope_clone_clone = scope_clone.clone();
-        console::log_1(&"got message".into());
 
         let code = msg.data().as_string().expect("message to be a string");
         let res = run_code(

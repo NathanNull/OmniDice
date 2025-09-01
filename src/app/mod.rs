@@ -48,7 +48,6 @@ pub fn App() -> impl IntoView {
             .as_str()
         {
             "ready" => {
-                log::debug!("worker ready");
                 set_worker_state.set(WorkerState::Ready)
             }
             "result" => {
@@ -75,7 +74,6 @@ pub fn App() -> impl IntoView {
 
     let run_code = move |_: MouseEvent| {
         if worker_state.get() == WorkerState::Ready {
-            log::debug!("running code");
             set_output.set(String::new());
             set_worker_state.set(WorkerState::Running);
             worker
