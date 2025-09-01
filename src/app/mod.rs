@@ -1,7 +1,10 @@
+use std::sync::LazyLock;
+
 use leptos::{
     ev::MouseEvent, portal::Portal, prelude::*, server::codee::string::FromToStringCodec,
 };
 use leptos_use::{storage::use_local_storage, use_debounce_fn};
+use rand::Rng;
 use web_sys::{
     MessageEvent, Worker, WorkerOptions, WorkerType,
     js_sys::Array,
@@ -25,6 +28,31 @@ enum WorkerState {
     Ready,
     Running,
 }
+
+static MOTD_OPTIONS: LazyLock<Vec<&str>> = LazyLock::new(|| {
+    vec![
+        "Dice Calculator that Definitely Isn't Just a Programming Language",
+        "Dice Calculator with Too Much Feature Creep",
+        "Dice Calculator with Real Use Cases, I Swear",
+        "Dice Calculator with Every Feature Ever",
+        "Dice Calculator that Hopefully Beats an Excel Spreadsheet",
+        "Dice Calculator: Now with 42% More Dice and 132% More Calculator",
+        "Dice Calculator: Someone Help Me I'm Trapped in a Subtitle Factory",
+        "Dice Calculator that Took More Time to Make than I'll Admit",
+        "Dice Calculator: If You're Here, You Must Be As Bored As I Was",
+        "Dice Calculator that Definitely Doesn't Fudge Rolls",
+        "Dice Calculator to Make Your Nat 1s Feel Less Bad",
+        "Dice Calculator that You Could Use to Build a Chess Engine",
+        "Dice Calculator that Would Like to Access Your WiFi Network",
+        "Dice Calculator with More Features than Sense",
+        "Dice Calculator with More Edge Cases than Normal Ones",
+        "Dice Calculator: Turning Randomness Into Order Since Five Minutes Ago",
+        "Dice Calculator that Could Run DOOM",
+        "Dice Calculator with No Relevant Subtitle Today",
+        "Dice Calculator that Someone Will Play Bad Apple On",
+        "Dice Calculator: Can't Do Your Homework, But Might Act Like It Can"
+    ]
+});
 
 #[component]
 #[allow(non_snake_case)]
@@ -121,10 +149,17 @@ pub fn App() -> impl IntoView {
 fn SidebarContents() -> impl IntoView {
     let (show_docs, set_show_docs) = signal(false);
 
+    let mut rng = rand::rng();
+    let message_of_the_pageload = if rng.random_bool(1. / 10_000.) {
+        "Nobody will ever believe you saw this message"
+    } else {
+        MOTD_OPTIONS[rng.random_range(0..MOTD_OPTIONS.len())]
+    };
+
     view! {
         <img class:logo src=move || image_url("omnidice-logo.png") />
         <h1>"OmniDice"</h1>
-        <h5>"Dice Calculator That Definitely Isn't Just a Programming Language"</h5>
+        <h5>{move || message_of_the_pageload}</h5>
         <button on:click=move |_| set_show_docs.set(true) class:docs-button>
             "Documentation"
         </button>
