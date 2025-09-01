@@ -5,7 +5,7 @@ use web_sys::{
     wasm_bindgen::{JsCast, JsValue, prelude::Closure},
 };
 
-use crate::interpreter::{cache, run_code};
+use interpreter::{cache, run_code};
 
 mod interpreter;
 
