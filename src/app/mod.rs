@@ -6,11 +6,12 @@ use web_sys::{
     MessageEvent, Worker, WorkerOptions, WorkerType,
     js_sys::Array,
     wasm_bindgen::{JsCast, prelude::Closure},
-    window,
 };
 
 mod docs;
 use docs::DOCS;
+
+use crate::image_url;
 
 fn worker_new(url: &str) -> Worker {
     let options = WorkerOptions::new();
@@ -48,9 +49,7 @@ pub fn App() -> impl IntoView {
             .expect("first field is string")
             .as_str()
         {
-            "ready" => {
-                set_worker_state.set(WorkerState::Ready)
-            }
+            "ready" => set_worker_state.set(WorkerState::Ready),
             "result" => {
                 let out = data
                     .get(1)
@@ -120,12 +119,10 @@ pub fn App() -> impl IntoView {
 #[component]
 #[allow(non_snake_case)]
 fn SidebarContents() -> impl IntoView {
-    let location = window().map(|w| w.location());
-    let url = location.as_ref().and_then(|l| l.href().ok()).unwrap_or(String::new());
     let (show_docs, set_show_docs) = signal(false);
 
     view! {
-        <img class:logo src={move || format!("{url}/public/omnidice-logo.png")} />
+        <img class:logo src=move || image_url("omnidice-logo.png") />
         <h1>"OmniDice"</h1>
         <h5>"Dice Calculator That Definitely Isn't Just a Programming Language"</h5>
         <button on:click=move |_| set_show_docs.set(true) class:docs-button>
