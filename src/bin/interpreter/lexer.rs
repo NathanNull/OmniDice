@@ -243,7 +243,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_identifier(&mut self) -> Option<Token> {
-        if self.code.peek().is_none_or(|c| !c.is_alphabetic()) {
+        if self.code.peek().is_none_or(|c| !c.is_alphabetic() && *c != '_') {
             return None;
         }
         let mut name = vec![];

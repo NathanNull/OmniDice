@@ -1,14 +1,9 @@
 use std::sync::LazyLock;
 
 use super::*;
-use crate::{gen_fn_map, op_list, type_init};
+use crate::{gen_fn_map, od_typedef, op_list, type_init};
 
-static MEAN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(FloatT),
-    generic: vec![],
-    owner_t: Some(Box::new(DiceT)),
-});
+static MEAN_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> FloatT owner DiceT}));
 
 fn mean_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let dice = params[0]
@@ -17,12 +12,7 @@ fn mean_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Op
     Ok(Box::new(dice.mean()))
 }
 
-static STDDEV_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(FloatT),
-    generic: vec![],
-    owner_t: Some(Box::new(DiceT)),
-});
+static STDDEV_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> FloatT owner DiceT}));
 
 fn stddev_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let dice = params[0]
@@ -31,12 +21,7 @@ fn stddev_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> 
     Ok(Box::new(dice.stddev()))
 }
 
-static MIN_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IntT),
-    generic: vec![],
-    owner_t: Some(Box::new(DiceT)),
-});
+static MIN_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> IntT owner DiceT}));
 
 fn min_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let dice = params[0]
@@ -45,18 +30,40 @@ fn min_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
     Ok(Box::new(dice.min()))
 }
 
-static MAX_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IntT),
-    generic: vec![],
-    owner_t: Some(Box::new(DiceT)),
-});
+static MAX_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> IntT owner DiceT}));
 
 fn max_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let dice = params[0]
         .downcast::<Distribution>()
         .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
     Ok(Box::new(dice.max()))
+}
+
+static MEDIAN_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> FloatT owner DiceT}));
+
+fn median_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.median()))
+}
+
+static MODE_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> IntT owner DiceT}));
+
+fn mode_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.mode()))
+}
+
+static ROLL_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> IntT owner DiceT}));
+
+fn roll_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let dice = params[0]
+        .downcast::<Distribution>()
+        .ok_or_else(|| RuntimeError::partial("Expected DiceT owner"))?;
+    Ok(Box::new(dice.roll()))
 }
 
 type_init!(DiceT, Distribution, "dice");
@@ -99,6 +106,9 @@ impl Type for DiceT {
             ("stddev", STDDEV_SIG, stddev_fn, stddev_prop),
             ("max", MAX_SIG, max_fn, max_prop),
             ("min", MIN_SIG, min_fn, min_prop),
+            ("median", MEDIAN_SIG, median_fn, median_prop),
+            ("mode", MODE_SIG, mode_fn, mode_prop),
+            ("roll", ROLL_SIG, roll_fn, roll_prop),
         )
     }
 }

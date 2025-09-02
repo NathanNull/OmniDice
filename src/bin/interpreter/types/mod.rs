@@ -1,9 +1,5 @@
 use std::{
-    any::Any,
-    collections::HashMap,
-    fmt::{Debug, Display},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    any::Any, cmp::Ordering, collections::HashMap, fmt::{Debug, Display}, hash::{Hash, Hasher}, sync::Arc
 };
 
 use super::{
@@ -356,6 +352,9 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
             self.get_type()
         )))
     }
+    fn ord(&self, _other: &Value) -> Ordering {
+        Ordering::Equal
+    }
 }
 
 #[macro_export]
@@ -535,6 +534,43 @@ macro_rules! op_list {
     }}
 }
 
+#[macro_export]
+macro_rules! od_typedef {
+    ({func$(<$($gen:ident),+>)?($($param:tt),*) -> $ret:tt $(owner $owner:tt)?}) => {
+        FuncT {
+            params: vec![
+                $(Box::new(od_typedef!($param))),*
+            ],
+            output: Box::new(od_typedef!($ret)),
+            generic: vec![$($($gen.to_string()),+)?],
+            owner_t: None$(.unwrap_or(Some(Box::new(od_typedef!($owner)))))?,
+        }
+    };
+    ({ref $ty:tt}) => {
+        RefT { ty: Box::new(od_typedef!($ty)) }
+    };
+    ({maybe $ty:tt}) => {
+        MaybeT { output: Box::new(od_typedef!($ty)) }
+    };
+    ({iter $ty:tt}) => {
+        IterT { output: Box::new(od_typedef!($ty)) }
+    };
+    ({tup $($ty:tt),+}) => {
+        TupT {
+            entries: vec![
+                $(Box::new(od_typedef!($ty))),+
+            ]
+        }
+    };
+    ([$arr_t:tt]) => {
+        ArrT {
+            entry: Box::new(od_typedef!($arr_t)),
+        }
+    };
+    (($var: ident)) => {TypeVar::Var($var.to_string())};
+    ($ty: ident) => {$ty};
+}
+
 pub type Datatype = Box<dyn Type>;
 pub type Value = Box<dyn Val>;
 
@@ -580,6 +616,18 @@ impl Hash for Value {
 impl Clone for Value {
     fn clone(&self) -> Self {
         self.dup()
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.ord(other))
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 

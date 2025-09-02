@@ -152,7 +152,7 @@ impl Parser {
                 .unwrap_err()
         })?;
         for (name, (..,used,pos)) in last_scope.vars {
-            if !used {
+            if !used && !name.starts_with("_") {
                 self.warnings.push(Warning(pos, format!("Unused variable {name}")));
             }
         }
@@ -365,6 +365,7 @@ impl Parser {
         let mut imply_eol = false;
         let mut lhs = match self.tokens.next().unwrap() {
             Token::Identifier(id) => {
+                let _ = self.use_var_type(&id);
                 ExprContents::Accessor(Accessor::Variable(id, self.tokens.pos))
             }
             Token::Literal(lit) => ExprContents::Value(lit),
@@ -1318,6 +1319,11 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             OpType::Infix,
             false,
         ),
+        (vec![OpLike::Op(Op::D)], OpType::Infix, false),
+        (vec![OpLike::Op(Op::D)], OpType::Prefix, false),
+        (vec![OpLike::Op(Op::Not)], OpType::Prefix, false),
+        (vec![OpLike::Op(Op::Minus)], OpType::Prefix, false),
+        (vec![OpLike::LTurbofish], OpType::Postfix, false),
         (
             vec![
                 OpLike::Bracket(Bracket::LSquare),
@@ -1326,11 +1332,6 @@ static OP_LIST: LazyLock<Vec<(Vec<OpLike>, OpType, bool)>> = LazyLock::new(|| {
             OpType::Postfix,
             false,
         ),
-        (vec![OpLike::Op(Op::D)], OpType::Infix, false),
-        (vec![OpLike::Op(Op::D)], OpType::Prefix, false),
-        (vec![OpLike::Op(Op::Not)], OpType::Prefix, false),
-        (vec![OpLike::Op(Op::Minus)], OpType::Prefix, false),
-        (vec![OpLike::LTurbofish], OpType::Postfix, false),
         (vec![OpLike::Access], OpType::Infix, false),
     ]
 });

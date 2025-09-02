@@ -1,7 +1,7 @@
 use std::sync::{LazyLock, RwLockReadGuard};
 
 use super::*;
-use crate::{gen_fn_map, invalid, mut_type_init, op_list, type_init};
+use crate::{gen_fn_map, invalid, mut_type_init, od_typedef, op_list, type_init};
 
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -57,15 +57,10 @@ impl Arr {
 
 type_init!(ArrT, Arr, "array", (RwLockReadGuard<_InnerArr>), entry: Datatype);
 
-static TV1_NAME: &str = "__T";
-static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
+static TV1: &str = "__T";
 
-static PUSH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![TV1.clone()],
-    output: Box::new(Void),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
-});
+static PUSH_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>((TV1)) -> Void owner [(TV1)]}));
 
 fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut p_iter = params.iter().cloned();
@@ -81,14 +76,8 @@ fn push_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> Op
     invalid!("Call", "push", params)
 }
 
-static POP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MaybeT {
-        output: TV1.clone(),
-    }),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
-});
+static POP_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>() -> {maybe (TV1)} owner [(TV1)]}));
 
 fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut p_iter = params.iter().cloned();
@@ -100,25 +89,11 @@ fn pop_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpR
     invalid!("Call", "push", params)
 }
 
-static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IterT {
-        output: TV1.clone(),
-    }),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
-});
+static ITER_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>() -> {iter (TV1)} owner [(TV1)]}));
 
-pub static ITER_RET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MaybeT {
-        output: TV1.clone(),
-    }),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(TupT {
-        entries: vec![Box::new(IntT), Box::new(ArrT { entry: TV1.clone() })],
-    })),
-});
+pub static ITER_RET_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>() -> {maybe (TV1)} owner {tup IntT, [(TV1)]}}));
 
 fn iter_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut p_iter = params.iter().cloned();
@@ -161,18 +136,57 @@ pub fn iter_ret_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype
     }));
 }
 
-static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IntT),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(ArrT { entry: TV1.clone() })),
-});
+static LENGTH_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>() -> IntT owner [(TV1)]}));
 
 fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let arr = params[0]
         .downcast::<Arr>()
         .ok_or_else(|| RuntimeError::partial("arrlen owner isn't array"))?;
     Ok(Box::new(arr.inner().elements.len() as i32))
+}
+
+static SORT_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>() -> [(TV1)] owner [(TV1)]}));
+
+fn sort_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let arr = params[0]
+        .downcast::<Arr>()
+        .ok_or_else(|| RuntimeError::partial("sort owner isn't array"))?;
+    let mut mut_inner = arr.inner_mut();
+    mut_inner.elements.sort();
+    drop(mut_inner);
+    Ok(Box::new(arr))
+}
+
+static REVERSE_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>() -> [(TV1)] owner [(TV1)]}));
+
+fn reverse_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let arr = params[0]
+        .downcast::<Arr>()
+        .ok_or_else(|| RuntimeError::partial("sort owner isn't array"))?;
+    let mut mut_inner = arr.inner_mut();
+    mut_inner.elements.reverse();
+    drop(mut_inner);
+    Ok(Box::new(arr))
+}
+
+static CONTAINS_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1>((TV1)) -> BoolT owner [(TV1)]}));
+
+fn contains_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
+    let arr = params[0]
+        .downcast::<Arr>()
+        .ok_or_else(|| RuntimeError::partial("sort owner isn't array"))?;
+    let inner = arr.inner();
+    let val = &params[1];
+    for element in &inner.elements {
+        if element == val {
+            return Ok(Box::new(true));
+        }
+    }
+    Ok(Box::new(false))
 }
 
 #[cfg_attr(feature = "serde", typetag::serde)]
@@ -189,6 +203,17 @@ impl Type for ArrT {
                         .collect(),
                     l.inner().entry.clone(),
                 ));
+            })
+        } else if other == &IntT {
+            op_list!(op => {
+                Times(l: Arr, r: i32) -> (self.clone()) |l: Arr, r: i32| Ok({
+                    let eles = &l.inner().elements;
+                    let len = eles.len();
+                    let new_eles = eles.iter().cycle().take(len*r as usize).cloned().collect::<Vec<_>>();
+                    Arr::new(
+                        new_eles, l.inner().entry.clone()
+                    )
+                });
             })
         } else {
             Err(format!("Type {self} has no binary operations"))
@@ -207,6 +232,9 @@ impl Type for ArrT {
             ("pop", POP_SIG, pop_fn, pop_prop),
             ("iter", ITER_SIG, iter_fn, iter_prop),
             ("length", LENGTH_SIG, length_fn, length_prop),
+            ("sort", SORT_SIG, sort_fn, sort_prop),
+            ("reverse", REVERSE_SIG, reverse_fn, reverse_prop),
+            ("contains", CONTAINS_SIG, contains_fn, contains_prop),
         )
     }
 

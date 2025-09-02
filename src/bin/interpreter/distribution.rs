@@ -5,6 +5,7 @@ use std::{
 };
 
 use ordered_float::OrderedFloat;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -101,6 +102,28 @@ impl Distribution {
             .sum::<f32>()
     }
 
+    pub fn median(&self) -> f32 {
+        let mut prob_sum = 0.;
+        let mut roll_iter = self.values.iter();
+        while let Some((roll, odds)) = roll_iter.next() {
+            prob_sum += odds;
+            match prob_sum {
+                ..0.5 => (),
+                0.5 => {
+                    return (*roll as f32 + *roll_iter.next().unwrap_or((roll, &0.0)).0 as f32)
+                        / 2.;
+                }
+                0.5.. => return *roll as f32,
+                _ => unreachable!("all values covered"),
+            }
+        }
+        return 0.0;
+    }
+
+    pub fn mode(&self) -> i32 {
+        *self.values.iter().max_by_key(|(_,prob)|OrderedFloat(**prob)).unwrap_or((&0, &0.0)).0
+    }
+
     pub fn stddev(&self) -> f32 {
         let mean = self.mean();
         let variance = self
@@ -110,9 +133,21 @@ impl Distribution {
             .sum::<f32>();
         variance.sqrt()
     }
+
+    pub fn roll(&self) -> i32 {
+        let mut roll_prob = rand::rng().random_range(0.0 .. 1.0);
+        for (roll, prob) in &self.values {
+            roll_prob -= prob;
+            // Little bit of epsilon, just in case of floating point weirdness
+            if roll_prob <= 0.0001 {
+                return *roll;
+            }
+        }
+        unreachable!("Probabilities should always sum to 1")
+    }
 }
 
-const OUT_WIDTH: usize = 50;
+const OUT_WIDTH: usize = 100;
 impl Display for Distribution {
     // TODO: when this has too many entries, put it into buckets
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -132,7 +167,8 @@ impl Display for Distribution {
         for (val, prob) in outs {
             let filled_amt = (prob / squished_max_prob * OUT_WIDTH as f32).round() as usize;
             let bar = str::repeat("█", filled_amt);
-            write!(f, "{val: <5}: {bar}\n")?;
+            let odds = format!("{:.2}%", prob * 100.);
+            write!(f, "{val: >5} ({odds: >6}): {bar}\n")?;
         }
         Ok(())
     }

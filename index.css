@@ -16,9 +16,11 @@ body {
 
     --dark-button-col: #303030;
     --dark-button-hover-col: #404040;
+    --dark-button-disabled-col: #1c1c1c;
 
     --light-button-col: #101010;
     --light-button-hover-col: #212121;
+    --light-button-disabled-col: #090909;
 
     --light-text-col: #ccc;
     --light-text-hover-col: #bbb;
@@ -81,7 +83,7 @@ h6 {
     color: inherit;
 }
 
-.docs-button:hover {
+.docs-button:hover:not(:disabled) {
     background-color: var(--light-button-hover-col);
 }
 
@@ -135,8 +137,12 @@ h6 {
     color: var(--light-text-col);
 }
 
-.run-button:hover {
+.run-button:hover:not(:disabled) {
     background-color: var(--dark-button-hover-col);
+}
+
+.run-button:disabled {
+    background-color: var(--dark-button-disabled-col);
 }
 
 .modal-backdrop {

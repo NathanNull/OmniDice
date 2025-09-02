@@ -50,7 +50,7 @@ static MOTD_OPTIONS: LazyLock<Vec<&str>> = LazyLock::new(|| {
         "Dice Calculator that Could Run DOOM",
         "Dice Calculator with No Relevant Subtitle Today",
         "Dice Calculator that Someone Will Play Bad Apple On",
-        "Dice Calculator: Can't Do Your Homework, But Might Act Like It Can"
+        "Dice Calculator: Can't Do Your Homework, Don't Believe the Lies"
     ]
 });
 
@@ -66,10 +66,8 @@ pub fn App() -> impl IntoView {
     let (worker_state, set_worker_state) = signal(WorkerState::Loading);
 
     let worker = worker_new("./worker_loader.js");
-    //let worker_clone = worker.clone();
 
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
-        //let worker_clone = worker_clone.clone();
         let data = Array::from(&msg.data());
         match data
             .get(0)
