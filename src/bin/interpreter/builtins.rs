@@ -278,7 +278,7 @@ fn iter_fn(
 
 /* #region Dice Functions */
 
-static DICEMAP_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func([DiceT]) -> DiceT}));
+static DICEMAP_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func([DiceT], {func([IntT]) -> IntT}) -> DiceT}));
 // static DICEMAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
 //     params: vec![
 //         Box::new(ArrT {
