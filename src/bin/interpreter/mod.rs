@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod cache;
 pub mod distribution;
 pub mod error;
 pub mod interpreter;
@@ -6,7 +7,6 @@ pub mod lexer;
 pub mod parser;
 pub mod tokeniter;
 pub mod types;
-pub mod cache;
 
 use itertools::Itertools;
 use std::{fmt::Display, usize};
@@ -23,7 +23,7 @@ use {
 };
 
 const PRINT_TOKENS: bool = false;
-const PRINT_AST: bool = true;
+const PRINT_AST: bool = false;
 
 pub enum InterpreterError {
     Lex(LexError),
@@ -71,14 +71,14 @@ pub fn run_code(
     // Use the cached AST if the code's hash matches the old one
     let ast = match cache {
         Some(ast) => ast,
-        None => match parse(&code) {
+        None => match parse(&code, &output) {
             Ok((ret, warns)) => {
                 for warn in warns {
                     (output)(&write_err(&warn, warn.0, code));
                     (output)("\n");
                 }
                 ret
-            },
+            }
             Err(e) => return Err(e),
         },
     };
@@ -90,7 +90,10 @@ pub fn run_code(
     }
 }
 
-fn parse(code: &str) -> Result<(Box<Expr>, Vec<Warning>), InterpreterError> {
+fn parse(
+    code: &str,
+    output: &Box<dyn Fn(&str)>,
+) -> Result<(Box<Expr>, Vec<Warning>), InterpreterError> {
     let tokens = match Lexer::new(code).lex() {
         Ok(tokens) => tokens,
         Err(e) => return Err(InterpreterError::Lex(e)),
@@ -102,14 +105,14 @@ fn parse(code: &str) -> Result<(Box<Expr>, Vec<Warning>), InterpreterError> {
         while let Some(_) = tk_iter.next() {
             posns.push(tk_iter.pos);
         }
-        println!(
+        (output)(&format!(
             "Tokens: [\n\t{}\n]\n",
             tokens
                 .iter()
                 .zip(posns)
                 .map(|(t, pos)| format!("({}, {} @ {:?})", t.0, t.1, pos))
                 .join("\n\t")
-        );
+        ));
     }
 
     let mut parser = Parser::new(tokens);
@@ -120,7 +123,7 @@ fn parse(code: &str) -> Result<(Box<Expr>, Vec<Warning>), InterpreterError> {
     };
 
     if PRINT_AST {
-        println!("AST: {ast}\n");
+        (output)(&format!("AST: {ast}\n"));
     }
 
     Ok((ast, parser.warnings))

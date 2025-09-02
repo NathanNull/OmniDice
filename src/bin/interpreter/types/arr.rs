@@ -216,7 +216,7 @@ impl Type for ArrT {
                 });
             })
         } else {
-            Err(format!("Type {self} has no binary operations"))
+            Err(format!("Operation {self} {op:?} {other} is invalid"))
         }
     }
 
