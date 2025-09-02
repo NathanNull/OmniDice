@@ -95,6 +95,9 @@ impl Val for f32 {
             .and_then(|other| PartialOrd::partial_cmp(self, &other))
             .unwrap_or(Ordering::Equal)
     }
+    fn display(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:.3}")
+    }
 }
 
 type_init!(IntT, i32, "int");

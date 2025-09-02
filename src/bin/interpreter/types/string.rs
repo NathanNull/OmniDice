@@ -1,14 +1,9 @@
 use std::sync::LazyLock;
 
 use super::*;
-use crate::{gen_fn_map, op_list, type_init};
+use crate::{gen_fn_map, od_typedef, op_list, type_init};
 
-static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IntT),
-    generic: vec![],
-    owner_t: Some(Box::new(StringT)),
-});
+static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> IntT owner StringT}));
 
 fn length_fn(
     params: Vec<Value>,

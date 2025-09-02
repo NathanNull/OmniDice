@@ -1,5 +1,10 @@
 use std::{
-    any::Any, cmp::Ordering, collections::HashMap, fmt::{Debug, Display}, hash::{Hash, Hasher}, sync::Arc
+    any::Any,
+    cmp::Ordering,
+    collections::HashMap,
+    fmt::{Debug, Display},
+    hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use super::{
@@ -328,12 +333,14 @@ pub trait Type: Send + Sync + Debug + Display + Any + BaseType {
 trait BaseVal {
     fn base_dup(&self) -> Value;
     fn base_get_type(&self) -> Datatype;
+    fn base_deepcopy(&self) -> Value;
+    fn base_display(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
     fn eq(&self, other: &Value) -> bool;
 }
 
 #[allow(private_bounds)]
 #[cfg_attr(feature = "serde", typetag::serde(tag = "type"))]
-pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
+pub trait Val: Debug + Send + Sync + Any + BaseVal {
     fn get_type(&self) -> Datatype {
         self.base_get_type()
     }
@@ -354,6 +361,13 @@ pub trait Val: Debug + Display + Send + Sync + Any + BaseVal {
     }
     fn ord(&self, _other: &Value) -> Ordering {
         Ordering::Equal
+    }
+    fn deepcopy(&self) -> Value {
+        self.base_deepcopy()
+    }
+
+    fn display(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.base_display(f)
     }
 }
 
@@ -513,6 +527,12 @@ macro_rules! type_init {
                     false
                 }
             }
+            fn base_deepcopy(&self) -> Value {
+                Box::new(self.clone())
+            }
+            fn base_display(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{self}")
+            }
         }
     };
 }
@@ -562,12 +582,19 @@ macro_rules! od_typedef {
             ]
         }
     };
+    ({map $key:tt : $val:tt}) => {
+        MapT {
+            key: Box::new(od_typedef!($key)),
+            value: Box::new(od_typedef!($val)),
+        }
+    };
     ([$arr_t:tt]) => {
         ArrT {
             entry: Box::new(od_typedef!($arr_t)),
         }
     };
     (($var: ident)) => {TypeVar::Var($var.to_string())};
+    (($var: ident dup)) => {$var.clone()};
     ($ty: ident) => {$ty};
 }
 
@@ -628,6 +655,12 @@ impl PartialOrd for Value {
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.display(f)
     }
 }
 

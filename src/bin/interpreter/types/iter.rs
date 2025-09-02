@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::{gen_fn_map, interpreter::parser::ExprContents, invalid, type_init};
+use crate::{gen_fn_map, interpreter::parser::ExprContents, invalid, od_typedef, type_init};
 
 use super::*;
 
@@ -25,26 +25,11 @@ impl Display for Iter {
 
 type_init!(IterT, Iter, "iter", output: Datatype);
 
-static ITER_T_NAME: &str = "__IterT";
-static ITER_T: LazyLock<Datatype> =
-    LazyLock::new(|| Box::new(TypeVar::Var(ITER_T_NAME.to_string())));
+static ITER_T: &str = "__IterT";
+static TV2: &str = "__T2";
+static TV3: &str = "__T3";
 
-static TV2_NAME: &str = "__T2";
-static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME.to_string())));
-
-static TV3_NAME: &str = "__T3";
-static TV3: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV3_NAME.to_string())));
-
-pub static NEXT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MaybeT {
-        output: ITER_T.clone(),
-    }),
-    generic: vec![ITER_T_NAME.to_string()],
-    owner_t: Some(Box::new(IterT {
-        output: ITER_T.clone(),
-    })),
-});
+pub static NEXT_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<ITER_T>() -> {maybe (ITER_T)} owner {iter (ITER_T)}}));
 
 pub fn next_fn(
     params: Vec<Value>,
@@ -67,39 +52,11 @@ pub fn next_fn(
     }
 }
 
-static MAPPER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![ITER_T.clone()],
-    output: TV2.clone(),
-    generic: vec![],
-    owner_t: None,
-});
+static MAPPER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func((ITER_T)) -> (TV2)}));
 
-static MAP_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MaybeT {
-        output: TV2.clone(),
-    }),
-    generic: vec![],
-    owner_t: Some(Box::new(TupT {
-        entries: vec![
-            Box::new(IterT {
-                output: ITER_T.clone(),
-            }),
-            MAPPER_SIG.dup(),
-        ],
-    })),
-});
+static MAP_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> {maybe (TV2)} owner {tup {iter (ITER_T)}, (MAPPER_SIG dup)}}));
 
-pub static MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![MAPPER_SIG.dup()],
-    output: Box::new(IterT {
-        output: TV2.clone(),
-    }),
-    generic: vec![ITER_T_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(IterT {
-        output: ITER_T.clone(),
-    })),
-});
+pub static MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<ITER_T, TV2>((MAPPER_SIG dup)) -> (TV2) owner {iter (ITER_T)}}));
 
 pub fn map_fn(
     params: Vec<Value>,
@@ -122,8 +79,8 @@ pub fn map_fn(
         next_fn: Box::new(
             MAP_ITER_SIG
                 .insert_generics(&HashMap::from_iter([
-                    (ITER_T_NAME.to_string(), me.output.clone()),
-                    (TV2_NAME.to_string(), mapper.output.clone()),
+                    (ITER_T.to_string(), me.output.clone()),
+                    (TV2.to_string(), mapper.output.clone()),
                 ]))
                 .map_err(|e| RuntimeError::partial(&e))?
                 .downcast::<FuncT>()
@@ -175,39 +132,11 @@ fn map_iter_fn(
     }))
 }
 
-static FILTERER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![ITER_T.clone()],
-    output: Box::new(BoolT),
-    generic: vec![],
-    owner_t: None,
-});
+static FILTERER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func((ITER_T)) -> BoolT}));
 
-static FILTER_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MaybeT {
-        output: ITER_T.clone(),
-    }),
-    generic: vec![],
-    owner_t: Some(Box::new(TupT {
-        entries: vec![
-            Box::new(IterT {
-                output: ITER_T.clone(),
-            }),
-            FILTERER_SIG.dup(),
-        ],
-    })),
-});
+static FILTER_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> {maybe (ITER_T)} owner {tup {iter (ITER_T)}, (FILTERER_SIG dup)}}));
 
-pub static FILTER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![FILTERER_SIG.dup()],
-    output: Box::new(IterT {
-        output: ITER_T.clone(),
-    }),
-    generic: vec![ITER_T_NAME.to_string()],
-    owner_t: Some(Box::new(IterT {
-        output: ITER_T.clone(),
-    })),
-});
+pub static FILTER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<ITER_T>((FILTERER_SIG dup)) -> {iter (ITER_T)} owner {iter (ITER_T)}}));
 
 pub fn filter_fn(
     params: Vec<Value>,
@@ -226,7 +155,7 @@ pub fn filter_fn(
         next_fn: Box::new(
             FILTER_ITER_SIG
                 .insert_generics(&HashMap::from_iter([(
-                    ITER_T_NAME.to_string(),
+                    ITER_T.to_string(),
                     me.output.clone(),
                 )]))
                 .map_err(|e| RuntimeError::partial(&e))?
@@ -287,21 +216,9 @@ fn filter_iter_fn(
     Ok(Box::new(res))
 }
 
-static FOLDER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![TV2.clone(), ITER_T.clone()],
-    output: TV2.clone(),
-    generic: vec![TV2_NAME.to_string()],
-    owner_t: None,
-});
+static FOLDER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func((TV2), (ITER_T)) -> (TV2)}));
 
-pub static FOLD_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![TV2.clone(), FOLDER_SIG.dup()],
-    output: TV2.clone(),
-    generic: vec![ITER_T_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(IterT {
-        output: ITER_T.clone(),
-    })),
-});
+pub static FOLD_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<ITER_T, TV2>((TV2), (FOLDER_SIG dup)) -> (TV2) owner {iter (ITER_T)}}));
 
 pub fn fold_fn(
     params: Vec<Value>,
@@ -338,12 +255,7 @@ pub fn fold_fn(
     Ok(curr)
 }
 
-pub static IDENT_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: ITER_T.clone(),
-    generic: vec![ITER_T_NAME.to_string()],
-    owner_t: Some(ITER_T.clone()),
-});
+pub static IDENT_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<ITER_T>() -> {iter (ITER_T)} owner {iter (ITER_T)}}));
 
 pub fn ident_fn(
     params: Vec<Value>,
@@ -356,19 +268,8 @@ pub fn ident_fn(
         .clone())
 }
 
-pub static TO_MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MapT {
-        key: TV2.clone(),
-        value: TV3.clone(),
-    }),
-    generic: vec![TV2_NAME.to_string(), TV3_NAME.to_string()],
-    owner_t: Some(Box::new(IterT {
-        output: Box::new(TupT {
-            entries: vec![TV2.clone(), TV3.clone()],
-        }),
-    })),
-});
+pub static TO_MAP_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<TV2, TV3>() -> {map (TV2) : (TV3)} owner {iter {tup (TV2), (TV3)}}}));
+
 pub fn to_map_fn(
     params: Vec<Value>,
     i: &mut Interpreter,

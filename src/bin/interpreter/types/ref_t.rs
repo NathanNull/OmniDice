@@ -119,4 +119,7 @@ impl Val for Ref {
     fn hash(&self, h: &mut dyn Hasher) -> Result<(), RuntimeError> {
         self.inner().val.as_ref().hash(h)
     }
+    fn deepcopy(&self) -> Value {
+        Box::new(Self::make(self.inner().clone()))
+    }
 }

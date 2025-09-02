@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     gen_fn_map,
     interpreter::types::arr::{ITER_RET_SIG, iter_ret_fn},
-    invalid, mut_type_init, op_list, type_init,
+    invalid, mut_type_init, od_typedef, op_list, type_init,
 };
 
 #[derive(Clone)]
@@ -88,25 +88,13 @@ impl Map {
 
 type_init!(MapT, Map, "map", (RwLockReadGuard<_InnerMap>), key: Datatype, value: Datatype);
 
-static TV1_NAME: &str = "__T1";
-static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
+static TV1: &str = "__T1";
 
-static TV2_NAME: &str = "__T2";
-static TV2: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV2_NAME.to_string())));
+static TV2: &str = "__T2";
 
-static ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IterT {
-        output: Box::new(TupT {
-            entries: vec![TV1.clone(), TV2.clone()],
-        }),
-    }),
-    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(MapT {
-        key: TV1.clone(),
-        value: TV2.clone(),
-    })),
-});
+static ITER_SIG: LazyLock<FuncT> = LazyLock::new(
+    || od_typedef!({func<TV1, TV2>() -> {iter {tup (TV1), (TV2)}} owner {map (TV1): (TV2)}}),
+);
 
 fn iter_fn(
     params: Vec<Value>,
@@ -142,15 +130,8 @@ fn iter_fn(
     invalid!("Call", "iter", params);
 }
 
-static SET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![TV1.clone(), TV2.clone()],
-    output: Box::new(Void),
-    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(MapT {
-        key: TV1.clone(),
-        value: TV2.clone(),
-    })),
-});
+static SET_SIG: LazyLock<FuncT> =
+    LazyLock::new(|| od_typedef!({func<TV1, TV2>((TV1), (TV2)) -> Void owner {map (TV1): (TV2)}}));
 
 fn set_fn(
     params: Vec<Value>,
@@ -175,15 +156,9 @@ fn set_fn(
     invalid!("Call", "push", params)
 }
 
-static GET_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![TV1.clone()],
-    output: TV2.clone(),
-    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(MapT {
-        key: TV1.clone(),
-        value: TV2.clone(),
-    })),
-});
+static GET_SIG: LazyLock<FuncT> = LazyLock::new(
+    || od_typedef!({func<TV1, TV2>((TV1)) -> {maybe (TV2)} owner {map (TV1): (TV2)}}),
+);
 
 fn get_fn(
     params: Vec<Value>,
@@ -193,28 +168,16 @@ fn get_fn(
     let mut p_iter = params.iter().cloned();
     if let Some(arr) = p_iter.next_as::<Map>() {
         if let Some(key) = p_iter.next() {
-            return Ok(arr
-                .inner_mut()
-                .elements
-                .get(&key)
-                .ok_or_else(|| {
-                    RuntimeError::partial(&format!("Can't access nonexistent key {key:?} of map"))
-                })?
-                .clone());
+            return Ok(Box::new(Maybe {
+                contents: arr.inner_mut().elements.get(&key).cloned(),
+                output: arr.inner().value.clone(),
+            }));
         }
     }
     invalid!("Call", "push", params)
 }
 
-static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IntT),
-    generic: vec![TV1_NAME.to_string(), TV2_NAME.to_string()],
-    owner_t: Some(Box::new(MapT {
-        key: TV1.clone(),
-        value: TV2.clone(),
-    })),
-});
+static LENGTH_SIG: LazyLock<FuncT> = LazyLock::new(||od_typedef!({func<TV1, TV2>() -> IntT owner {map (TV1): (TV2)}}));
 
 fn length_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let arr = params[0]
@@ -336,4 +299,8 @@ impl Type for MapT {
 }
 
 #[cfg_attr(feature = "serde", typetag::serde)]
-impl Val for Map {}
+impl Val for Map {
+    fn deepcopy(&self) -> Value {
+        Box::new(Self::make(self.inner().clone()))
+    }
+}

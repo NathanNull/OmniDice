@@ -347,6 +347,7 @@ impl<'a> Lexer<'a> {
                         '\\' => '\\',
                         '"' => '"',
                         'n' => '\n',
+                        't' => '\t',
                         _ => {
                             for c in string_chars.into_iter().rev() {
                                 self.code.replace(c);

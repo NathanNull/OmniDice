@@ -98,7 +98,7 @@ impl Interpreter {
     pub fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         let res = match (&expr.contents, self.is_const) {
             // const-legal expressions (everything that has no side effects and doesn't loop)
-            (ExprContents::Value(val), _) => Ok(val.clone()),
+            (ExprContents::Value(val), _) => Ok(val.deepcopy()),
             (ExprContents::Binop(binop), _) => self.eval_binop(binop),
             (ExprContents::Prefix(prefix), _) => self.eval_prefix(prefix),
             (ExprContents::Postfix(postfix), _) => self.eval_postfix(postfix),

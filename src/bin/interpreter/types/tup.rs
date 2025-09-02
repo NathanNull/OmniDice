@@ -175,4 +175,7 @@ impl Val for Tuple {
             .collect::<Result<Vec<_>, _>>()
             .map(|_| ())
     }
+    fn deepcopy(&self) -> Value {
+        Box::new(Self::make(self.inner().clone()))
+    }
 }

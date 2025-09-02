@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::{gen_fn_map, mut_type_init, type_init};
+use crate::{gen_fn_map, mut_type_init, od_typedef, type_init};
 
 use super::*;
 
@@ -35,23 +35,9 @@ impl Range {
 
 type_init!(RangeT, Range, "range");
 
-static RANGE_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(IterT {
-        output: Box::new(IntT),
-    }),
-    generic: vec![],
-    owner_t: Some(Box::new(RangeT)),
-});
+static RANGE_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> {iter IntT} owner RangeT}));
 
-static RANGE_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: Box::new(MaybeT {
-        output: Box::new(IntT),
-    }),
-    generic: vec![],
-    owner_t: Some(Box::new(RangeT)),
-});
+static RANGE_ITER_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func() -> {maybe IntT} owner RangeT}));
 
 fn range_fn(
     params: Vec<Value>,
@@ -118,5 +104,8 @@ impl Val for Range {
         h.write_i32(self.inner().curr);
         h.write_i32(self.inner().last);
         Ok(())
+    }
+    fn deepcopy(&self) -> Value {
+        Box::new(Self::make(self.inner().clone()))
     }
 }

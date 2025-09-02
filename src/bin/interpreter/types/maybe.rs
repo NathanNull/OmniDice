@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use crate::{gen_fn_map, invalid, type_init};
+use crate::{gen_fn_map, invalid, od_typedef, type_init};
 
 use super::*;
 
@@ -28,17 +28,9 @@ impl Display for Maybe {
 
 type_init!(MaybeT, Maybe, "maybe", output: Datatype);
 
-static TV1_NAME: &str = "__T";
-static TV1: LazyLock<Datatype> = LazyLock::new(|| Box::new(TypeVar::Var(TV1_NAME.to_string())));
+static TV1: &str = "__T";
 
-static UNWRAP_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: TV1.clone(),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(MaybeT {
-        output: TV1.clone(),
-    })),
-});
+static UNWRAP_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<TV1>() -> (TV1) owner {maybe (TV1)}}));
 
 fn unwrap_fn(
     params: Vec<Value>,
@@ -56,14 +48,7 @@ fn unwrap_fn(
     }
 }
 
-static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| FuncT {
-    params: vec![],
-    output: TV1.clone(),
-    generic: vec![TV1_NAME.to_string()],
-    owner_t: Some(Box::new(MaybeT {
-        output: TV1.clone(),
-    })),
-});
+static FILLED_SIG: LazyLock<FuncT> = LazyLock::new(|| od_typedef!({func<TV1>() -> BoolT owner {maybe (TV1)}}));
 
 fn filled_fn(params: Vec<Value>, _i: &mut Interpreter, _o: Option<Datatype>) -> OpResult {
     let mut it = params.iter().cloned();
